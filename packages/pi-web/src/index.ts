@@ -1,0 +1,35 @@
+/**
+ * @byte/pi-web — web_search + web_fetch for the pi coding agent.
+ *
+ * Zero-config: the default provider is keyless DuckDuckGo, so the two tools
+ * work the moment the package loads. Run /web (or set per-provider env vars) to
+ * switch to a key-backed provider (Tavily, Exa, Brave, Jina, Firecrawl).
+ */
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readConfig } from "./config.js";
+import { installProxyDispatcher } from "./proxy.js";
+import { registerWebCommand, registerWebFetchTool, registerWebSearchTool } from "./tools.js";
+
+export { createProvider } from "./providers/factory.js";
+export { DEFAULT_PROVIDER_NAME, PROVIDERS } from "./providers/registry.js";
+export type {
+	AnyProvider,
+	FetchResponse,
+	FullProvider,
+	SearchProvider,
+	SearchResponse,
+	SearchResult,
+} from "./providers/types.js";
+export { installProxyDispatcher } from "./proxy.js";
+export { registerWebCommand, registerWebFetchTool, registerWebSearchTool } from "./tools.js";
+
+export default async function registerWebTools(pi: ExtensionAPI): Promise<void> {
+	// Route fetches through a proxy so web tools reach hosts that are only
+	// reachable via the proxy (e.g. a blocked duckduckgo.com). Uses the config
+	// `proxy` if set, else HTTP(S)_PROXY env. No-op when neither is present.
+	await installProxyDispatcher(readConfig().proxy);
+	registerWebSearchTool(pi);
+	registerWebFetchTool(pi);
+	registerWebCommand(pi);
+}

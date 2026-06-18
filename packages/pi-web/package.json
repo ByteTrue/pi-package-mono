@@ -1,0 +1,48 @@
+{
+  "name": "@byte/pi-web",
+  "version": "0.1.0",
+  "description": "Pi extension: web_search + web_fetch with a zero-config free default (Bing, works in mainland China) and pluggable providers (DuckDuckGo, Bocha, Tavily, Exa, Brave, Jina, Firecrawl).",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "web-search",
+    "web-fetch",
+    "search",
+    "fetch",
+    "duckduckgo",
+    "tavily",
+    "exa",
+    "brave",
+    "jina",
+    "firecrawl",
+    "ai",
+    "llm",
+    "agent"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "byte",
+  "files": [
+    "src/**",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "dependencies": {
+    "undici": "^8.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  }
+}
