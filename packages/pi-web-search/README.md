@@ -1,4 +1,4 @@
-# @byte/pi-web
+# @byte/pi-web-search
 
 `web_search` + `web_fetch` for the [pi coding agent](https://pi.dev) — same two-tool
 surface as Claude Code / Codex CLI.
@@ -19,7 +19,7 @@ surface as Claude Code / Codex CLI.
 ## Install
 
 ```bash
-pi install /absolute/path/to/pi-package-mono/packages/pi-web
+pi install /absolute/path/to/pi-package-mono/packages/pi-web-search
 ```
 
 > If you previously used another web package (e.g. `@juicesharp/rpiv-web-tools`),
