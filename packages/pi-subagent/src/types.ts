@@ -1,5 +1,5 @@
 /**
- * Shared types for @byte/pi-subagent.
+ * Shared types for @bytetrue/pi-subagent.
  *
  * These are the locked contracts for the whole package — later phases fill in
  * function bodies but must not change these shapes.

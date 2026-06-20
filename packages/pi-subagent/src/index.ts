@@ -1,5 +1,5 @@
 /**
- * @byte/pi-subagent — Claude Code-style subagents for the pi coding agent.
+ * @bytetrue/pi-subagent — Claude Code-style subagents for the pi coding agent.
  *
  * Registers a single `Agent` tool (delegate to an isolated specialist subagent by
  * `subagent_type` + `prompt`) and a `/subagent` command (list/inspect/configure

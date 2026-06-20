@@ -72,22 +72,23 @@ function extractAnchors(html: string, classToken: string): RawHit[] {
 		const tag = m[0];
 		const hrefMatch = tag.match(hrefRe);
 		if (!hrefMatch) continue;
-		const title = cleanText(m[1]);
+		const title = cleanText(m[1] ?? "");
 		if (!title) continue;
-		hits.push({ url: decodeDdgUrl(hrefMatch[1]), title });
+		hits.push({ url: decodeDdgUrl(hrefMatch[1] ?? ""), title });
 	}
 	return hits;
 }
 
 function extractCells(html: string, tag: string, classToken: string): string[] {
 	const re = new RegExp(`<${tag}\\b[^>]*class=["'][^"']*${classToken}[^"']*["'][^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi");
-	return [...html.matchAll(re)].map((m) => cleanText(m[1]));
+	return [...html.matchAll(re)].map((m) => cleanText(m[1] ?? ""));
 }
 
 function zipResults(hits: RawHit[], snippets: string[], maxResults: number): SearchResult[] {
 	const results: SearchResult[] = [];
 	for (let i = 0; i < hits.length && results.length < maxResults; i++) {
 		const hit = hits[i];
+		if (!hit) continue;
 		// Skip DDG's own ad / internal links.
 		if (!/^https?:\/\//i.test(hit.url) || /duckduckgo\.com\/y\.js/.test(hit.url)) continue;
 		results.push({ title: hit.title, url: hit.url, snippet: snippets[i] ?? "" });

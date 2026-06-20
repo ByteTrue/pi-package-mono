@@ -30,11 +30,11 @@ describe("DuckDuckGoProvider", () => {
 		vi.stubGlobal("fetch", vi.fn(async () => mockResponse(HTML_FIXTURE)));
 		const { results } = await new DuckDuckGoProvider().search("earendil pi", 5);
 		expect(results).toHaveLength(2);
-		expect(results[0].url).toBe("https://pi.dev/docs");
-		expect(results[0].title).toBe("Pi & coding agent — Today's docs"); // &amp; and &#x27; decoded
-		expect(results[0].snippet).toContain("Earendil");
-		expect(results[0].snippet).not.toContain("<b>");
-		expect(results[1].url).toBe("https://github.com/earendil");
+		expect(results[0]!.url).toBe("https://pi.dev/docs");
+		expect(results[0]!.title).toBe("Pi & coding agent — Today's docs"); // &amp; and &#x27; decoded
+		expect(results[0]!.snippet).toContain("Earendil");
+		expect(results[0]!.snippet).not.toContain("<b>");
+		expect(results[1]!.url).toBe("https://github.com/earendil");
 	});
 
 	it("respects maxResults", async () => {
@@ -55,7 +55,7 @@ describe("DuckDuckGoProvider", () => {
 		);
 		const { results } = await new DuckDuckGoProvider().search("x", 5);
 		expect(results).toHaveLength(1);
-		expect(results[0].url).toBe("https://example.com/a");
+		expect(results[0]!.url).toBe("https://example.com/a");
 	});
 
 	it("throws an actionable rate-limit error on persistent HTTP 202", async () => {

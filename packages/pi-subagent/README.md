@@ -1,4 +1,4 @@
-# @byte/pi-subagent
+# @bytetrue/pi-subagent
 
 Claude Code-style **subagents** for the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent).
 

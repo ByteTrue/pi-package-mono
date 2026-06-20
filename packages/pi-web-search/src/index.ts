@@ -1,5 +1,5 @@
 /**
- * @byte/pi-web — web_search + web_fetch for the pi coding agent.
+ * @bytetrue/pi-web — web_search + web_fetch for the pi coding agent.
  *
  * Zero-config: the default provider is keyless DuckDuckGo, so the two tools
  * work the moment the package loads. Run /web (or set per-provider env vars) to

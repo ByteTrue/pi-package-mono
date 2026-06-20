@@ -48,14 +48,14 @@ function parseBing(html: string, maxResults: number): SearchResult[] {
 
 		const titleMatch = block.match(/<h2\b[^>]*>\s*<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
 		if (!titleMatch) continue;
-		const url = decodeBingUrl(titleMatch[1]);
-		const title = cleanText(titleMatch[2]);
+		const url = decodeBingUrl(titleMatch[1] ?? "");
+		const title = cleanText(titleMatch[2] ?? "");
 		if (!title || !/^https?:\/\//i.test(url)) continue;
 
 		const snippetMatch =
 			block.match(/<p class="[^"]*b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ||
 			block.match(/<div class="b_caption"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
-		const snippet = snippetMatch ? cleanText(snippetMatch[1]) : "";
+		const snippet = snippetMatch ? cleanText(snippetMatch[1] ?? "") : "";
 
 		results.push({ title, url, snippet });
 	}

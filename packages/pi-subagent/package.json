@@ -1,5 +1,5 @@
 {
-  "name": "@byte/pi-subagent",
+  "name": "@bytetrue/pi-subagent",
   "version": "0.1.0",
   "description": "Pi extension: Claude Code-style subagents. Delegate tasks to isolated, per-agent provider/model-configurable specialists (general-purpose, explore, plan) defined as Markdown files, driven entirely through tools (no TUI required).",
   "keywords": [
@@ -17,8 +17,12 @@
   "type": "module",
   "license": "MIT",
   "author": "byte",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "src/**",
+    "!src/**/*.test.ts",
     "README.md"
   ],
   "pi": {
@@ -27,7 +31,8 @@
     ]
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

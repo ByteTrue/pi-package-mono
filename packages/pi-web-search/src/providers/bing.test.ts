@@ -13,10 +13,10 @@ describe("BingProvider", () => {
 		vi.stubGlobal("fetch", vi.fn(async () => new Response(FIXTURE, { status: 200 })));
 		const { results } = await new BingProvider().search("openai news", 5);
 		expect(results.length).toBeGreaterThanOrEqual(3);
-		expect(results[0].url).toBe("https://www.ithome.com/tags/OpenAI/");
-		expect(results[0].title).toContain("IT之家");
-		expect(results[0].snippet).not.toContain("<");
-		expect(results[1].url).toBe("https://www.newsnow.com/us/Science/AI/OpenAI");
+		expect(results[0]!.url).toBe("https://www.ithome.com/tags/OpenAI/");
+		expect(results[0]!.title).toContain("IT之家");
+		expect(results[0]!.snippet).not.toContain("<");
+		expect(results[1]!.url).toBe("https://www.newsnow.com/us/Science/AI/OpenAI");
 	});
 
 	it("respects maxResults", async () => {
@@ -31,7 +31,7 @@ describe("BingProvider", () => {
 		const wrapped = `<ol><li class="b_algo"><h2 class=""><a href="https://www.bing.com/ck/a?!&u=a1${b64}">Wrapped</a></h2><p class="b_lineclamp2">snip</p></li></ol>`;
 		vi.stubGlobal("fetch", vi.fn(async () => new Response(wrapped, { status: 200 })));
 		const { results } = await new BingProvider().search("x", 1);
-		expect(results[0].url).toBe(target);
+		expect(results[0]!.url).toBe(target);
 	});
 
 	it("returns empty (no throw) when markup has no results", async () => {

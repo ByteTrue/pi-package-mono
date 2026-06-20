@@ -82,7 +82,7 @@ export function htmlToText(html: string): string {
 export function extractTitle(html: string): string | undefined {
 	const match = html.match(TITLE_TAG_REGEX);
 	if (!match) return undefined;
-	return match[1].replace(ANY_REMAINING_TAG_REGEX, "").trim() || undefined;
+	return match[1]?.replace(ANY_REMAINING_TAG_REGEX, "").trim() || undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-# @byte/pi-web-search
+# @bytetrue/pi-web-search
 
 `web_search` + `web_fetch` for the [pi coding agent](https://pi.dev) — same two-tool
 surface as Claude Code / Codex CLI.

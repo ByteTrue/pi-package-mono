@@ -55,6 +55,7 @@ export async function searchWithFallback(
 	for (let i = 0; i < candidates.length; i++) {
 		if (signal?.aborted) throw new Error("Search aborted");
 		const name = candidates[i];
+		if (!name) continue;
 		let provider: ReturnType<typeof createProvider>;
 		try {
 			provider = createProvider(name, { apiKey: resolveApiKey(name, config) });

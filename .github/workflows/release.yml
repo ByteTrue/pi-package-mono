@@ -1,0 +1,37 @@
+name: Release
+
+# Publish packages to npm when a version tag (e.g. v0.1.0) is pushed.
+# Requires the NPM_TOKEN repo secret (an npm automation token with publish
+# rights for the package scope). Each package is published only if its current
+# version isn't already on npm, so re-tagging or bumping just one package is safe.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck --workspaces --if-present
+      - run: npm test
+      - name: Publish changed packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in packages/*/; do
+            name=$(node -p "require('./${dir}package.json').name")
+            ver=$(node -p "require('./${dir}package.json').version")
+            if npm view "${name}@${ver}" version >/dev/null 2>&1; then
+              echo "✓ ${name}@${ver} already on npm — skipping"
+            else
+              echo "→ publishing ${name}@${ver}"
+              npm publish -w "${name}" --access public
+            fi
+          done

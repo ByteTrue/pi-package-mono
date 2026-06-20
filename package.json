@@ -7,12 +7,6 @@
   "workspaces": [
     "packages/*"
   ],
-  "pi": {
-    "extensions": [
-      "./packages/pi-web-search/src/index.ts",
-      "./packages/pi-subagent/src/index.ts"
-    ]
-  },
   "scripts": {
     "test": "npm run test --workspaces --if-present"
   }
