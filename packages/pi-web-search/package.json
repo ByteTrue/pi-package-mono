@@ -25,6 +25,11 @@
     "access": "public"
   },
   "author": "byte",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteTrue/pi-package-mono.git",
+    "directory": "packages/pi-web-search"
+  },
   "files": [
     "src/**",
     "!src/**/*.test.ts",
