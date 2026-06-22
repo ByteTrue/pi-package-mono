@@ -36,23 +36,9 @@ export type EnrichOptions = {
 export async function enrichModelId(modelId: string, options: EnrichOptions = {}): Promise<ModelEnrichmentResult> {
 	const catalog = options.catalog ?? (await loadOfficialCatalog());
 	const officialCandidates = collectOfficialCandidates(catalog, modelId);
-	if (officialCandidates.length === 1) {
-		const [firstOfficial] = officialCandidates;
-		return firstOfficial
-			? {
-				kind: "ready",
-				source: "official",
-				model: stripOfficialRoutingFields(firstOfficial.model),
-			  }
-			: {
-				kind: "ready",
-				source: "default",
-				model: createDefaultModelConfig(modelId),
-				warning: `No official catalog or template match for ${modelId}; using safe defaults.`,
-			  };
-	}
 
-	if (officialCandidates.length > 1) {
+	// Always require user confirmation when we have official candidates (even just 1)
+	if (officialCandidates.length >= 1) {
 		return {
 			kind: "official-ambiguous",
 			modelId,

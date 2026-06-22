@@ -88,6 +88,12 @@ Safe defaults:
 - Resolve `$NAME` and `${NAME}` env references only for the fetch. Keep the env reference in `models.json`; never persist the resolved secret.
 - Parse only OpenAI-compatible `{ data: [{ id: string }] }`, ignore invalid entries, dedupe and sort ids.
 
+#### `/vendor` TUI navigation
+- Root provider list: `Esc` exits `/vendor` because there is no parent page.
+- Nested pages must treat `Esc` as "go back" to the immediate parent page, not as command exit. Examples: provider edit -> provider list; Manage models -> provider edit; Add model/search/provider-confirmation -> the previous model flow page.
+- Footer help text must match the actual `Esc` behavior (`Esc exits` only on the root provider list; `Esc goes back` elsewhere).
+- Manual model search shows unique model IDs first. After the user chooses a model ID, show all official provider candidates for that ID and save only the chosen candidate's routing-stripped metadata.
+
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |

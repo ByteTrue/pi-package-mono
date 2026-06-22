@@ -133,6 +133,48 @@ export function collectOfficialCandidates(catalog: OfficialModelsCatalog | null 
 	return matches;
 }
 
+export type OfficialModelEntry = {
+	provider: string;
+	modelId: string;
+	model: OfficialModelConfig;
+};
+
+export type OfficialModelGroup = {
+	modelId: string;
+	entries: OfficialModelEntry[];
+};
+
+export function listAllOfficialModels(catalog: OfficialModelsCatalog | null | undefined): OfficialModelEntry[] {
+	if (!catalog) return [];
+
+	const entries: OfficialModelEntry[] = [];
+	for (const [provider, providerModels] of Object.entries(catalog)) {
+		for (const [modelId, model] of Object.entries(providerModels)) {
+			if (model && typeof model === "object" && !Array.isArray(model) && typeof model.id === "string") {
+				entries.push({ provider, modelId, model: cloneJson(model) as OfficialModelConfig });
+			}
+		}
+	}
+	return entries;
+}
+
+export function groupOfficialModelsById(entries: OfficialModelEntry[]): OfficialModelGroup[] {
+	const groups: OfficialModelGroup[] = [];
+	const byId = new Map<string, OfficialModelGroup>();
+
+	for (const entry of entries) {
+		let group = byId.get(entry.modelId);
+		if (!group) {
+			group = { modelId: entry.modelId, entries: [] };
+			byId.set(entry.modelId, group);
+			groups.push(group);
+		}
+		group.entries.push(entry);
+	}
+
+	return groups;
+}
+
 export function stripOfficialRoutingFields(model: OfficialModelConfig): ProviderModelConfig {
 	const next = cloneJson(model) as ProviderModelConfig;
 	for (const field of STRIPPED_FIELDS) {

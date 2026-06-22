@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { enrichModelId } from "./enrich.js";
 
 describe("model enrichment", () => {
-	it("uses official catalog metadata before fallback templates", async () => {
+	it("requires confirmation even with single official candidate", async () => {
 		const result = await enrichModelId("gpt-4o", {
 			catalog: {
 				openai: {
@@ -30,26 +30,27 @@ describe("model enrichment", () => {
 			],
 		});
 
+		// Even with a single candidate, should require user confirmation
 		expect(result).toMatchObject({
-			kind: "ready",
-			source: "official",
-			model: {
-				id: "gpt-4o",
-				name: "Official GPT-4o",
-				api: "openai-completions",
-				contextWindow: 128000,
-				maxTokens: 16384,
-				compat: { supportsReasoningEffort: true },
-			},
+			kind: "official-ambiguous",
+			modelId: "gpt-4o",
 		});
-		expect(result.kind).toBe("ready");
-		if (result.kind === "ready") {
-			expect(result.model).not.toHaveProperty("provider");
-			expect(result.model).not.toHaveProperty("baseUrl");
+		if (result.kind === "official-ambiguous") {
+			expect(result.candidates).toHaveLength(1);
+			expect(result.candidates[0]).toMatchObject({
+				provider: "openai",
+				model: {
+					id: "gpt-4o",
+					name: "Official GPT-4o",
+					api: "openai-completions",
+					contextWindow: 128000,
+					maxTokens: 16384,
+				},
+			});
 		}
 	});
 
-	it("reports official ambiguity instead of guessing", async () => {
+	it("reports official ambiguity with multiple candidates", async () => {
 		const result = await enrichModelId("gpt-4o", {
 			catalog: {
 				openai: {
