@@ -1,0 +1,44 @@
+{
+  "name": "@bytetrue/pi-vendor",
+  "version": "0.1.0",
+  "description": "Pi extension: wizard for managing custom providers in ~/.pi/agent/models.json.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "models.json",
+    "provider",
+    "vendor",
+    "llm",
+    "agent"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "byte",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteTrue/pi-package-mono.git",
+    "directory": "packages/pi-vendor"
+  },
+  "files": [
+    "src/**",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  }
+}
