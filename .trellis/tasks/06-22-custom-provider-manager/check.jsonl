@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/index.md","reason":"Shared quality guidance for reviewing config/data-flow changes."}
+{"file":".trellis/spec/pi-vendor/backend/index.md","reason":"Package-specific quality check commands and contract entrypoint."}
+{"file":".trellis/spec/pi-vendor/backend/provider-manager-contract.md","reason":"Check implementation against /vendor, models.json, official catalog, templates, and /models contracts."}
+{"file":".trellis/tasks/06-22-custom-provider-manager/research/pi-custom-models-and-extension-api.md","reason":"Check implementation against Pi extension and models.json research."}
+{"file":".trellis/tasks/06-22-custom-provider-manager/research/official-catalog-lookup.md","reason":"Check official catalog enrichment behavior and routing/auth stripping."}
