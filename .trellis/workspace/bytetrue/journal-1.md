@@ -40,3 +40,36 @@ Implemented @bytetrue/pi-vendor with /vendor custom provider management for mode
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Vendor fuzzy search fixes
+
+**Date**: 2026-06-23
+**Task**: Vendor fuzzy search fixes
+**Branch**: `main`
+
+### Summary
+
+Improved @bytetrue/pi-vendor manual model add flow with fuzzy official-catalog search, grouped model-id/provider confirmation, compact boxed TUI, consistent Esc back navigation, and npm release metadata.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7d84b30` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
