@@ -15,11 +15,21 @@ vi.mock("./model.js", () => ({
 }));
 
 vi.mock("./runner.js", () => ({
-	runSubagent: vi.fn(async (opts: { prompt: string }) => ({
-		text: `ran: ${opts.prompt}`,
-		modelId: "sonnet-test",
-		provider: "anthropic",
-	})),
+	runSubagent: vi.fn(async (opts: { prompt: string; onProgress?: (progress: any) => void }) => {
+		opts.onProgress?.({
+			status: "running",
+			activity: "read packages/foo.ts",
+			modelId: "sonnet-test",
+			provider: "anthropic",
+			thinkingLevel: "high",
+		});
+		return {
+			text: `ran: ${opts.prompt}`,
+			modelId: "sonnet-test",
+			provider: "anthropic",
+			thinkingLevel: "high",
+		};
+	}),
 }));
 
 vi.mock("./config.js", () => ({
@@ -51,6 +61,7 @@ const PROFILES: AgentProfile[] = [
 		description: "A project agent.",
 		systemPrompt: "x".repeat(900),
 		model: "openai/gpt-test",
+		thinking: "low",
 		source: "project",
 		filePath: "/proj/.pi/agents/custom.md",
 	},
@@ -70,6 +81,7 @@ interface FakePi {
 	commands: Map<string, any>;
 	registerTool(def: any): void;
 	registerCommand(name: string, opts: any): void;
+	getThinkingLevel(): string;
 }
 
 function makePi(): FakePi {
@@ -80,6 +92,7 @@ function makePi(): FakePi {
 		commands,
 		registerTool: (def) => tools.set(def.name, def),
 		registerCommand: (name, opts) => commands.set(name, opts),
+		getThinkingLevel: () => "xhigh",
 	};
 }
 
@@ -90,6 +103,17 @@ function makeCtx() {
 		model: undefined,
 		ui: { notify: vi.fn() },
 	};
+}
+
+function plainTheme() {
+	return {
+		fg: (_name: string, value: string) => value,
+		bold: (value: string) => value,
+	};
+}
+
+function renderText(component: { render(width: number): string[] }): string {
+	return component.render(200).join("\n");
 }
 
 /** Interactive ctx with a UI: `select` resolves to the option matching each predicate in order. */
@@ -134,10 +158,21 @@ describe("registerAgentTool", () => {
 		const onUpdate = vi.fn();
 		const res = await def.execute("id", { subagent_type: "explore", prompt: "find foo" }, undefined, onUpdate, makeCtx());
 		expect(res.content[0].text).toBe("ran: find foo");
-		expect(res.details).toMatchObject({ subagent_type: "explore", model: "sonnet-test", provider: "anthropic" });
+		expect(res.details).toMatchObject({ subagent_type: "explore", model: "sonnet-test", provider: "anthropic", thinking: "high" });
 		expect(runSubagent).toHaveBeenCalledOnce();
 		expect(applyConfigOverrides).toHaveBeenCalled();
 		expect(readConfig).toHaveBeenCalled();
+		expect(onUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				details: expect.objectContaining({
+					activity: "read packages/foo.ts",
+					model: "sonnet-test",
+					provider: "anthropic",
+					thinking: "high",
+				}),
+			}),
+		);
+		expect(vi.mocked(runSubagent).mock.calls[0]?.[0]).toMatchObject({ inheritedThinkingLevel: "xhigh" });
 	});
 
 	it("returns a clear error for an unknown subagent_type", async () => {
@@ -152,6 +187,42 @@ describe("registerAgentTool", () => {
 	});
 });
 
+	it("renders partial progress with model, thinking, and latest activity", () => {
+		const pi = makePi();
+		registerAgentTool(pi as any, makeDeps());
+		const def = pi.tools.get("Agent");
+		const out = renderText(
+			def.renderResult(
+				{ details: { subagent_type: "explore", model: "sonnet-test", provider: "anthropic", thinking: "high", activity: "read packages/foo.ts" } },
+				{ isPartial: true },
+				plainTheme(),
+				{},
+			),
+		);
+		expect(out).toContain("explore");
+		expect(out).toContain("anthropic/sonnet-test");
+		expect(out).toContain("thinking high");
+		expect(out).toContain("read packages/foo.ts");
+		expect(out).not.toContain("Running subagent");
+	});
+
+	it("renders final result with model, thinking, and warnings", () => {
+		const pi = makePi();
+		registerAgentTool(pi as any, makeDeps());
+		const def = pi.tools.get("Agent");
+		const out = renderText(
+			def.renderResult(
+				{ details: { subagent_type: "explore", model: "sonnet-test", provider: "anthropic", thinking: "high", warning: "fallback" } },
+				{ isPartial: false },
+				plainTheme(),
+				{},
+			),
+		);
+		expect(out).toContain("Subagent finished");
+		expect(out).toContain("anthropic/sonnet-test · thinking high");
+		expect(out).toContain("fallback");
+	});
+
 describe("registerSubagentCommand", () => {
 	it("lists all profiles via notify with --list", async () => {
 		const pi = makePi();
@@ -164,6 +235,7 @@ describe("registerSubagentCommand", () => {
 		expect(out).toMatch(/custom/);
 		expect(out).toMatch(/anthropic\/sonnet-test/);
 		expect(resolveModel).toHaveBeenCalled();
+		expect(out).toMatch(/thinking: inherit/);
 	});
 
 	it("explains how to list when run with no args and no UI", async () => {
@@ -217,6 +289,7 @@ describe("registerSubagentCommand", () => {
 		expect(out).toMatch(/\/proj\/\.pi\/agents\/custom\.md/);
 		// long system prompt should be truncated with an ellipsis.
 		expect(out).toMatch(/…/);
+		expect(out).toMatch(/thinking: low/);
 	});
 
 	it("reports unknown name on --show", async () => {

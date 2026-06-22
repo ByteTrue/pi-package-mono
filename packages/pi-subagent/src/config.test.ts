@@ -59,9 +59,9 @@ describe("readConfig (fail-soft)", () => {
 	});
 
 	it("parses a valid config", () => {
-		const base = stubConfig(JSON.stringify({ agents: { explore: { model: "sonnet" } } }));
+		const base = stubConfig(JSON.stringify({ agents: { explore: { model: "sonnet", thinking: "high" } } }));
 		try {
-			expect(readConfig()).toEqual({ agents: { explore: { model: "sonnet" } } });
+			expect(readConfig()).toEqual({ agents: { explore: { model: "sonnet", thinking: "high" } } });
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}
@@ -85,6 +85,22 @@ describe("applyConfigOverrides", () => {
 		expect(result.tools).toEqual(["read", "grep"]);
 		expect(baseProfile.model).toBe("haiku");
 		expect(result).not.toBe(baseProfile);
+	});
+
+	it("overrides valid thinking values", () => {
+		const result = applyConfigOverrides(baseProfile, { agents: { explore: { thinking: "xhigh" } } });
+		expect(result.thinking).toBe("xhigh");
+		expect(result.model).toBe("haiku");
+		expect(result).not.toBe(baseProfile);
+	});
+
+	it("ignores invalid thinking values without dropping other overrides", () => {
+		const profile: AgentProfile = { ...baseProfile, thinking: "minimal" };
+		const result = applyConfigOverrides(profile, {
+			agents: { explore: { thinking: "huge", tools: "read" } },
+		});
+		expect(result.thinking).toBe("minimal");
+		expect(result.tools).toEqual(["read"]);
 	});
 
 	it("overrides tools and disallowedTools from comma-separated strings", () => {

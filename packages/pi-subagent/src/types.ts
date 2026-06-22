@@ -19,6 +19,16 @@ export type PiModel = NonNullable<ExtensionContext["model"]>;
 /** Where a profile came from; controls override precedence (project > user > builtin). */
 export type ProfileSource = "builtin" | "user" | "project";
 
+/** Pi thinking levels supported by createAgentSession. */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+export function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return (THINKING_LEVELS as readonly string[]).includes(trimmed) ? (trimmed as ThinkingLevel) : undefined;
+}
+
 /**
  * Raw YAML frontmatter of an agent `.md` file, before normalization/validation.
  * `tools` / `disallowedTools` are comma-separated strings as written by the user.
@@ -34,6 +44,8 @@ export interface AgentFrontmatter {
 	disallowedTools?: string;
 	/** "inherit" | alias (opus|sonnet|haiku|fable) | "provider/model-id". */
 	model?: string;
+	/** Optional thinking level for the child session. Omitted = inherit the parent. */
+	thinking?: string;
 	/** Optional UI accent color name. */
 	color?: string;
 }
@@ -52,6 +64,8 @@ export interface AgentProfile {
 	disallowedTools?: string[];
 	/** Raw model spec; resolved to a concrete model by `model.ts`. */
 	model?: string;
+	/** Optional thinking level for the child session. Omitted = inherit the parent. */
+	thinking?: ThinkingLevel;
 	/** Optional UI accent color name. */
 	color?: string;
 	/** Origin of this profile; drives precedence on name collisions. */

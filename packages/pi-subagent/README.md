@@ -12,8 +12,8 @@ This solves three gaps in vanilla pi:
 
 1. **The main agent never delegates on its own.** The `Agent` tool ships with proactive guidelines
    (modeled on Claude Code) telling the model *when* to reach for a subagent.
-2. **Subagents can't pick a provider/model.** Each agent runs on `inherit` (the main model) by
-   default; set a specific `provider/model-id` per agent via `/subagent` or the config.
+2. **Subagents can pin provider/model and thinking.** Each agent inherits the main model and
+   thinking level by default; set a specific `provider/model-id` via `/subagent` or config, and set `thinking` via frontmatter or config.
 3. **No natural division of labor.** Three built-ins (`general-purpose`, `explore`, `plan`) mirror
    Claude Code's defaults; add your own as Markdown files.
 
@@ -25,8 +25,8 @@ This solves three gaps in vanilla pi:
 
 | Surface | What it does |
 |---|---|
-| `Agent` tool | Delegate a task to a subagent. Args: `subagent_type` (which agent), `prompt` (the complete, self-contained task), optional `description` (3–5 word UI title). Returns the subagent's final message plus the model it ran on. |
-| `/subagent` command | `/subagent` (no args) interactively configures a subagent's model — pick an agent, pick a model from the live registry (or `inherit`), and it's saved to the config. `/subagent --list` lists every subagent with its source, resolved model, and tools; `/subagent --show <name>` prints one agent's full details (file path, model, tools, description, system-prompt preview). List/show go through `ctx.ui.notify`; the picker uses `ui.select` — both work over CLI/RPC. |
+| `Agent` tool | Delegate a task to a subagent. Args: `subagent_type` (which agent), `prompt` (the complete, self-contained task), optional `description` (3–5 word UI title). Running and final UI show the provider/model, thinking level, and latest activity; the tool returns the subagent's final message. |
+| `/subagent` command | `/subagent` (no args) interactively configures a subagent's model — pick an agent, pick a model from the live registry (or `inherit`), and it's saved to the config. `/subagent --list` lists every subagent with its source, resolved model, thinking, and tools; `/subagent --show <name>` prints one agent's full details (file path, model, thinking, tools, description, system-prompt preview). List/show go through `ctx.ui.notify`; the picker uses `ui.select` — both work over CLI/RPC. |
 
 ## Install
 
@@ -36,11 +36,11 @@ pi install /absolute/path/to/pi-package-mono/packages/pi-subagent
 
 ## Built-in agents
 
-| Name | Tools | Model | Use it for |
-|---|---|---|---|
-| `general-purpose` | all (inherited) | inherit | Open-ended, multi-step work that needs both investigation and edits; the fallback when nothing more specific fits. |
-| `explore` | `read`, `grep`, `find`, `ls` (read-only) | inherit | Locating files, tracing how something is implemented, answering "where is X / how does Y work". Fast and non-destructive. |
-| `plan` | `read`, `grep`, `find`, `ls` (read-only) | inherit | Turning a goal into a concrete, ordered implementation plan (which files to change, in what order, with what risks) without editing code. |
+| Name | Tools | Model | Thinking | Use it for |
+|---|---|---|---|---|
+| `general-purpose` | all (inherited) | inherit | inherit | Open-ended, multi-step work that needs both investigation and edits; the fallback when nothing more specific fits. |
+| `explore` | `read`, `grep`, `find`, `ls` (read-only) | inherit | inherit | Locating files, tracing how something is implemented, answering "where is X / how does Y work". Fast and non-destructive. |
+| `plan` | `read`, `grep`, `find`, `ls` (read-only) | inherit | inherit | Turning a goal into a concrete, ordered implementation plan (which files to change, in what order, with what risks) without editing code. |
 
 Built-ins are the lowest precedence — a user or project file with the same `name` overrides them
 (e.g. drop an `explore.md` in `./.pi/subagents` to give the project its own explorer).
@@ -56,6 +56,7 @@ description: Reviews a diff for correctness and style. Use proactively before co
 tools: read, grep, find, ls
 disallowedTools: write, edit, bash
 model: inherit
+thinking: high
 color: cyan
 ---
 You are a code-review subagent. Read the changed files, then return a concise list of
@@ -71,6 +72,7 @@ concrete issues (file path + line + problem + suggested fix). Do not modify anyt
 | `tools` | no | comma-separated | Allowlist of tool names. Omitted ⇒ inherit pi's full default tool set. Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`. |
 | `disallowedTools` | no | comma-separated | Denylist, subtracted from whatever is enabled. The `Agent` tool is always denied regardless. |
 | `model` | no | string | Model spec — see below. Omitted ⇒ `inherit`. |
+| `thinking` | no | `off`/`minimal`/`low`/`medium`/`high`/`xhigh` | Child-session thinking level. Omitted ⇒ inherit the parent session's current thinking level. |
 | `color` | no | string | Optional UI accent color name. |
 
 Both `tools` and `disallowedTools` are split on commas and trimmed; an empty/whitespace-only
@@ -109,6 +111,10 @@ breaks delegation.
 The subagent shares the parent's `ModelRegistry`, so credentials/providers are reused — you don't
 re-authenticate per subagent.
 
+## Thinking levels
+
+The `thinking` field (in frontmatter, or overridden in config) accepts `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Omitted means the subagent inherits the parent session's current thinking level from `pi.getThinkingLevel()`. Invalid values are ignored fail-soft and the profile/config keeps loading.
+
 ## Configuration
 
 Optional per-agent overrides live in `~/.pi/byte-pi-subagent/config.json` (override the base dir with
@@ -119,15 +125,16 @@ blocks startup.
 ```jsonc
 {
   "agents": {
-    // Run the read-only explorer on a cheap fast model:
-    "explore": { "model": "bytetrueapi/deepseek-v4-flash" },
+    // Run the read-only explorer on a cheap fast model with low thinking:
+    "explore": { "model": "bytetrueapi/deepseek-v4-flash", "thinking": "low" },
 
-    // Pin planning to a specific provider/model:
-    "plan": { "model": "anthropic/claude-opus-4-5" },
+    // Pin planning to a specific provider/model and stronger thinking:
+    "plan": { "model": "anthropic/claude-opus-4-5", "thinking": "high" },
 
     // Tighten general-purpose: explicit allowlist + extra denylist:
     "general-purpose": {
       "model": "inherit",
+      "thinking": "medium",
       "tools": "read, grep, find, ls, edit, write",
       "disallowedTools": "bash"
     }
@@ -135,8 +142,8 @@ blocks startup.
 }
 ```
 
-Each entry under `agents` is keyed by the agent's `name` and may set `model`, `tools`, and/or
-`disallowedTools` (same formats as the frontmatter). Only the fields you list are overridden.
+Each entry under `agents` is keyed by the agent's `name` and may set `model`, `thinking`, `tools`,
+and/or `disallowedTools` (same formats as the frontmatter). Only the fields you list are overridden.
 
 ## Writing good delegation prompts
 

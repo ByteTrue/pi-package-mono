@@ -24,7 +24,7 @@ export {
 } from "./config.js";
 export { type LoadProfilesResult, loadProfiles } from "./loader.js";
 export { resolveModel } from "./model.js";
-export { type RunOptions, type RunResult, runSubagent } from "./runner.js";
+export { type RunOptions, type RunProgress, type RunResult, type RunStatus, runSubagent } from "./runner.js";
 export { type AgentsDeps, registerAgentTool, registerSubagentCommand } from "./tools.js";
 export type {
 	AgentFrontmatter,
@@ -33,7 +33,9 @@ export type {
 	ModelResolveContext,
 	PiModel,
 	ProfileSource,
+	ThinkingLevel,
 } from "./types.js";
+export { THINKING_LEVELS, normalizeThinkingLevel } from "./types.js";
 
 export default async function registerSubagents(pi: ExtensionAPI): Promise<void> {
 	const deps: AgentsDeps = { loadProfiles };

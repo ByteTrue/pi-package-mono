@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { BUILTIN_PROFILES } from "./builtins.js";
-import type { AgentFrontmatter, AgentProfile, ProfileSource } from "./types.js";
+import { normalizeThinkingLevel, type AgentFrontmatter, type AgentProfile, type ProfileSource } from "./types.js";
 
 export interface LoadProfilesResult {
 	/** Effective profiles, keyed by agent name (after precedence merge). */
@@ -110,6 +110,12 @@ function loadProfileFile(
 
 	const model = typeof frontmatter.model === "string" ? frontmatter.model.trim() : undefined;
 	const color = typeof frontmatter.color === "string" ? frontmatter.color.trim() : undefined;
+	const thinking = normalizeThinkingLevel(frontmatter.thinking);
+	if (frontmatter.thinking !== undefined && !thinking) {
+		diagnostics.push(
+			`Ignored ${filePath}: invalid frontmatter field "thinking" (expected off|minimal|low|medium|high|xhigh)`,
+		);
+	}
 
 	return {
 		name,
@@ -118,6 +124,7 @@ function loadProfileFile(
 		tools: splitToolList(frontmatter.tools),
 		disallowedTools: splitToolList(frontmatter.disallowedTools),
 		model: model || undefined,
+		thinking,
 		color: color || undefined,
 		source,
 		filePath,

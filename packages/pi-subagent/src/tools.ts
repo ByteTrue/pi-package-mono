@@ -17,8 +17,8 @@ import { Type } from "typebox";
 import { applyConfigOverrides, getConfigPath, readConfig, setAgentModel, writeConfig } from "./config.js";
 import type { LoadProfilesResult } from "./loader.js";
 import { resolveModel } from "./model.js";
-import { runSubagent } from "./runner.js";
-import type { AgentProfile } from "./types.js";
+import { type RunProgress, runSubagent } from "./runner.js";
+import type { AgentProfile, ThinkingLevel } from "./types.js";
 
 /** Shared dependencies wired by index.ts so tools and commands stay in sync. */
 export interface AgentsDeps {
@@ -77,6 +77,11 @@ function toolsLabel(profile: AgentProfile): string {
 	return profile.tools.join(", ");
 }
 
+function thinkingLabel(profile: AgentProfile): string {
+	const merged = applyConfigOverrides(profile, readConfig());
+	return merged.thinking ?? "inherit";
+}
+
 /**
  * Best-effort resolved model string for display, e.g. "anthropic/claude-...".
  * Never throws: model resolution is fail-soft and only used for reporting here.
@@ -130,7 +135,28 @@ interface AgentDetails {
 	subagent_type: string;
 	model?: string;
 	provider?: string;
+	thinking?: ThinkingLevel;
+	activity?: string;
+	status?: "starting" | "running" | "completed" | "error";
 	warning?: string;
+}
+
+function detailsFromProgress(subagentType: string, progress: RunProgress): AgentDetails {
+	return {
+		subagent_type: subagentType,
+		model: progress.modelId,
+		provider: progress.provider,
+		thinking: progress.thinkingLevel,
+		activity: progress.activity,
+		status: progress.status,
+		...(progress.warning ? { warning: progress.warning } : {}),
+	};
+}
+
+function runMeta(details: AgentDetails | undefined): string {
+	const model = details?.provider && details.model ? `${details.provider}/${details.model}` : "resolving model";
+	const thinking = details?.thinking ? `thinking ${details.thinking}` : "thinking inherit";
+	return `${model} · ${thinking}`;
 }
 
 /**
@@ -192,15 +218,17 @@ export function registerAgentTool(pi: ExtensionAPI, deps: AgentsDeps): void {
 			// Apply user-config overrides (model overrides, defaults) before running.
 			const effective = applyConfigOverrides(profile, readConfig());
 
+			const inheritedThinkingLevel = pi.getThinkingLevel() as ThinkingLevel;
 			const result = await runSubagent({
 				profile: effective,
 				prompt: params.prompt,
 				ctx,
 				signal,
-				onProgress: (text) =>
+				inheritedThinkingLevel,
+				onProgress: (progress) =>
 					onUpdate?.({
-						content: [{ type: "text", text }],
-						details: { subagent_type: params.subagent_type },
+						content: [{ type: "text", text: progress.activity }],
+						details: detailsFromProgress(params.subagent_type, progress),
 					}),
 			});
 
@@ -210,6 +238,9 @@ export function registerAgentTool(pi: ExtensionAPI, deps: AgentsDeps): void {
 					subagent_type: params.subagent_type,
 					model: result.modelId,
 					provider: result.provider,
+					thinking: result.thinkingLevel,
+					activity: "completed",
+					status: "completed",
 					...(result.warning ? { warning: result.warning } : {}),
 				},
 			};
@@ -225,11 +256,19 @@ export function registerAgentTool(pi: ExtensionAPI, deps: AgentsDeps): void {
 		},
 
 		renderResult(result, { isPartial }, theme, _context) {
-			if (isPartial) return new Text(theme.fg("warning", "Running subagent..."), 0, 0);
 			const details = result.details as AgentDetails | undefined;
+			if (isPartial) {
+				const type = details?.subagent_type ?? "subagent";
+				const activity = details?.activity ?? "started";
+				return new Text(
+					`${theme.fg("warning", "⠹")} ${theme.fg("accent", type)}${theme.fg("muted", ` · ${runMeta(details)}`)}\n${theme.fg("muted", `⎿ ${activity}`)}`,
+					0,
+					0,
+				);
+			}
 			let text = theme.fg("success", "✓ Subagent finished");
 			if (details?.provider && details?.model) {
-				text += theme.fg("muted", ` (${details.provider}/${details.model})`);
+				text += theme.fg("muted", ` (${runMeta(details)})`);
 			}
 			if (details?.warning) text += theme.fg("warning", ` — ${details.warning}`);
 			return new Text(text, 0, 0);
@@ -247,6 +286,7 @@ function formatList(result: LoadProfilesResult, ctx: ResolveDeps["ctx"]): string
 	for (const p of profiles) {
 		lines.push(`  ${p.name}  [${sourceLabel(p)}]`);
 		lines.push(`    model: ${resolvedModelLabel(p, { ctx })}`);
+		lines.push(`    thinking: ${thinkingLabel(p)}`);
 		lines.push(`    tools: ${toolsLabel(p)}`);
 		lines.push(`    ${firstLine(p.description)}`);
 		lines.push("");
@@ -276,6 +316,7 @@ function formatShow(name: string, result: LoadProfilesResult, ctx: ResolveDeps["
 		`Subagent: ${profile.name}  [${sourceLabel(profile)}]`,
 		profile.filePath ? `  file: ${profile.filePath}` : "  file: (built-in)",
 		`  model: ${resolvedModelLabel(profile, { ctx })}`,
+		`  thinking: ${thinkingLabel(profile)}`,
 		`  tools: ${toolsLabel(profile)}`,
 	];
 	if (profile.disallowedTools?.length) lines.push(`  disallowedTools: ${profile.disallowedTools.join(", ")}`);

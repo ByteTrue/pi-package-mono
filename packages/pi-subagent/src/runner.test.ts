@@ -4,7 +4,7 @@ import type { AgentProfile } from "./types.js";
 // --- Mock the pi SDK so runSubagent can be exercised without a real session ----
 const loaderCtor = vi.fn();
 const sessionAbort = vi.fn(async () => {});
-let lastSubscribe: ((ev: { type: string }) => void) | undefined;
+let lastSubscribe: ((ev: any) => void) | undefined;
 // A gate so a test can keep prompt() in-flight while it fires the abort signal.
 let releasePrompt: () => void = () => {};
 const sessionPrompt = vi.fn(
@@ -22,12 +22,13 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		async reload() {}
 	},
 	SessionManager: { inMemory: () => ({}) },
-	createAgentSession: vi.fn(async () => ({
+	createAgentSession: vi.fn(async (opts: { thinkingLevel?: string } = {}) => ({
 		session: {
+			thinkingLevel: opts.thinkingLevel ?? "medium",
 			prompt: sessionPrompt,
 			abort: sessionAbort,
 			getLastAssistantText: () => "final answer",
-			subscribe: (fn: (ev: { type: string }) => void) => {
+			subscribe: (fn: (ev: any) => void) => {
 				lastSubscribe = fn;
 				return () => {};
 			},
@@ -40,7 +41,8 @@ vi.mock("./model.js", () => ({
 	resolveModel: () => ({ model: undefined, modelId: "m1", provider: "anthropic" }),
 }));
 
-import { buildToolSelection, runSubagent } from "./runner.js";
+import { createAgentSession } from "@earendil-works/pi-coding-agent";
+import { buildToolSelection, runSubagent, type RunProgress } from "./runner.js";
 
 function makeCtx(signal?: AbortSignal) {
 	return { cwd: "/repo", modelRegistry: {}, model: undefined, signal } as never;
@@ -151,6 +153,57 @@ describe("runSubagent", () => {
 		expect(res.text).toBe("final answer");
 		expect(res.modelId).toBe("m1");
 		expect(res.provider).toBe("anthropic");
+		expect(res.thinkingLevel).toBe("medium");
+	});
+
+	it("passes profile thinking to createAgentSession and returns it", async () => {
+		const run = runSubagent({ profile: profile({ thinking: "low" }), prompt: "x", ctx: makeCtx(), inheritedThinkingLevel: "xhigh" });
+		await flush();
+		releasePrompt();
+		const res = await run;
+		const opts = vi.mocked(createAgentSession).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+		expect(opts.thinkingLevel).toBe("low");
+		expect(res.thinkingLevel).toBe("low");
+	});
+
+	it("inherits the parent thinking level when the profile does not set one", async () => {
+		const run = runSubagent({ profile: profile(), prompt: "x", ctx: makeCtx(), inheritedThinkingLevel: "xhigh" });
+		await flush();
+		releasePrompt();
+		await run;
+		const opts = vi.mocked(createAgentSession).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+		expect(opts.thinkingLevel).toBe("xhigh");
+	});
+
+	it("emits compact lifecycle and tool progress", async () => {
+		const progress: RunProgress[] = [];
+		const run = runSubagent({
+			profile: profile(),
+			prompt: "x",
+			ctx: makeCtx(),
+			inheritedThinkingLevel: "high",
+			onProgress: (p) => progress.push(p),
+		});
+		await flush();
+		lastSubscribe?.({ type: "agent_start" });
+		lastSubscribe?.({ type: "turn_start", turnIndex: 0 });
+		lastSubscribe?.({ type: "tool_execution_start", toolCallId: "1", toolName: "read", args: { path: "packages/foo.ts" } });
+		lastSubscribe?.({ type: "tool_execution_end", toolCallId: "1", toolName: "read", result: {}, isError: false });
+		lastSubscribe?.({ type: "turn_end", turnIndex: 0, message: {}, toolResults: [] });
+		lastSubscribe?.({ type: "agent_end", messages: [], willRetry: false });
+		releasePrompt();
+		await run;
+		expect(progress.map((p) => p.activity)).toEqual(
+			expect.arrayContaining([
+				"started",
+				"turn 1 started",
+				"running read packages/foo.ts",
+				"read packages/foo.ts done",
+				"turn 1 complete",
+				"completed",
+			]),
+		);
+		expect(progress.at(-1)).toMatchObject({ modelId: "m1", provider: "anthropic", thinkingLevel: "high" });
 	});
 
 	it("aborts the child session when the signal fires mid-run", async () => {

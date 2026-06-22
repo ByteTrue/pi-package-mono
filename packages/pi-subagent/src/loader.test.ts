@@ -77,6 +77,23 @@ describe("loadProfiles", () => {
 		expect(p?.disallowedTools).toEqual(["write", "bash"]);
 	});
 
+	it("parses valid thinking and ignores invalid thinking with a diagnostic", () => {
+		writeAgent(
+			userAgents(),
+			"thinker.md",
+			["---", "name: thinker", "description: Thinks", "thinking: high", "---", "body"].join("\n"),
+		);
+		writeAgent(
+			userAgents(),
+			"bad-thinker.md",
+			["---", "name: badthinker", "description: Bad", "thinking: huge", "---", "body"].join("\n"),
+		);
+		const { profiles, diagnostics } = loadProfiles(project);
+		expect(profiles.get("thinker")?.thinking).toBe("high");
+		expect(profiles.get("badthinker")?.thinking).toBeUndefined();
+		expect(diagnostics.some((d) => d.includes("bad-thinker.md") && d.includes("thinking"))).toBe(true);
+	});
+
 	it("treats an empty tools string as inherit (undefined)", () => {
 		writeAgent(
 			userAgents(),

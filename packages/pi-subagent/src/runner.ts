@@ -13,11 +13,12 @@ import { join } from "node:path";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
+	type AgentSessionEvent,
 	type ExtensionContext,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { resolveModel } from "./model.js";
-import type { AgentProfile } from "./types.js";
+import type { AgentProfile, ThinkingLevel } from "./types.js";
 
 /** The Agent tool's own name. A child must never be able to call it (no nested subagents). */
 const AGENT_TOOL_NAME = "Agent";
@@ -31,8 +32,21 @@ export interface RunOptions {
 	ctx: ExtensionContext;
 	/** Optional cancellation signal. */
 	signal?: AbortSignal;
-	/** Optional progress callback, invoked with human-readable status text. */
-	onProgress?: (text: string) => void;
+	/** Parent-session thinking level used when the profile does not pin one. */
+	inheritedThinkingLevel?: ThinkingLevel;
+	/** Optional progress callback, invoked with compact structured status. */
+	onProgress?: (progress: RunProgress) => void;
+}
+
+export type RunStatus = "starting" | "running" | "completed" | "error";
+
+export interface RunProgress {
+	status: RunStatus;
+	activity: string;
+	modelId: string;
+	provider: string;
+	thinkingLevel?: ThinkingLevel;
+	warning?: string;
 }
 
 export interface RunResult {
@@ -42,6 +56,8 @@ export interface RunResult {
 	modelId: string;
 	/** Provider the subagent actually ran on. */
 	provider: string;
+	/** Thinking level the child session actually ran with. */
+	thinkingLevel: ThinkingLevel;
 	/** Set when the requested model could not be honored and a fallback was used. */
 	warning?: string;
 }
@@ -83,11 +99,81 @@ export function buildToolSelection(profile: AgentProfile): ToolSelection {
 	return { tools: allow, excludeTools };
 }
 
+function oneLine(value: string, max = 80): string {
+	const s = value.replace(/\s+/g, " ").trim();
+	return s.length > max ? `${s.slice(0, max - 3)}...` : s;
+}
+
+function argSummary(args: unknown): string | undefined {
+	if (!args || typeof args !== "object") return undefined;
+	const record = args as Record<string, unknown>;
+	for (const key of ["path", "file", "command", "pattern", "query"]) {
+		const value = record[key];
+		if (typeof value !== "string" || !value.trim()) continue;
+		const text = oneLine(value);
+		return key === "pattern" || key === "query" ? `"${text}"` : text;
+	}
+	return undefined;
+}
+
+function describeTool(toolName: string, args?: unknown): string {
+	const name = toolName.trim() || "tool";
+	const summary = argSummary(args);
+	return summary ? `${name} ${summary}` : name;
+}
+
+function turnActivity(ev: AgentSessionEvent, suffix: "started" | "complete"): string {
+	const index = (ev as { turnIndex?: unknown }).turnIndex;
+	return typeof index === "number" ? `turn ${index + 1} ${suffix}` : `turn ${suffix}`;
+}
+
+function progressFromEvent(
+	ev: AgentSessionEvent,
+	toolSummaries: Map<string, string>,
+): Pick<RunProgress, "status" | "activity"> | undefined {
+	switch (ev.type) {
+		case "agent_start":
+			return { status: "starting", activity: "started" };
+		case "turn_start":
+			return { status: "running", activity: turnActivity(ev, "started") };
+		case "tool_execution_start": {
+			const summary = describeTool(ev.toolName, ev.args);
+			toolSummaries.set(ev.toolCallId, summary);
+			return { status: "running", activity: `running ${summary}` };
+		}
+		case "tool_execution_end": {
+			const summary = toolSummaries.get(ev.toolCallId) ?? describeTool(ev.toolName);
+			toolSummaries.delete(ev.toolCallId);
+			return { status: ev.isError ? "error" : "running", activity: `${summary} ${ev.isError ? "failed" : "done"}` };
+		}
+		case "turn_end":
+			return { status: "running", activity: turnActivity(ev, "complete") };
+		case "agent_end":
+			return ev.willRetry
+				? { status: "running", activity: "retrying" }
+				: { status: "completed", activity: "completed" };
+		default:
+			return undefined;
+	}
+}
+
 export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 	const { profile, ctx } = opts;
 
 	// 1. Resolve the model spec (fail-soft: may return a fallback with a warning).
 	const m = resolveModel(profile.model, ctx);
+	let currentThinkingLevel: ThinkingLevel | undefined = profile.thinking ?? opts.inheritedThinkingLevel;
+
+	const emit = (status: RunStatus, activity: string): void => {
+		opts.onProgress?.({
+			status,
+			activity,
+			modelId: m.modelId,
+			provider: m.provider,
+			...(currentThinkingLevel ? { thinkingLevel: currentThinkingLevel } : {}),
+			...(m.warning ? { warning: m.warning } : {}),
+		});
+	};
 
 	// 2. Compute the tool set: task is always excluded; honor the profile's
 	//    allowlist/denylist on top of that.
@@ -117,12 +203,15 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 		const { session } = await createAgentSession({
 			cwd: ctx.cwd,
 			model: m.model,
+			...(currentThinkingLevel ? { thinkingLevel: currentThinkingLevel } : {}),
 			modelRegistry: ctx.modelRegistry,
 			sessionManager: SessionManager.inMemory(ctx.cwd),
 			resourceLoader: loader,
 			excludeTools,
 			...(tools ? { tools } : {}),
 		});
+		currentThinkingLevel = session.thinkingLevel as ThinkingLevel;
+		emit("starting", "started");
 
 		// 5. Wire cancellation: PromptOptions has no signal field, so the only way to
 		//    stop an in-flight subagent is session.abort(). Bridge the parent's signal
@@ -139,26 +228,31 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 		const onAbort = (): void => safeAbort();
 		sig?.addEventListener("abort", onAbort, { once: true });
 
-		// 6. Optionally forward coarse progress (one tick per agent turn end), then
-		//    run the prompt to completion and read the final assistant message.
+		// 6. Forward compact lifecycle/tool progress, then run the prompt to
+		//    completion and read the final assistant message.
 		let unsub: (() => void) | undefined;
 		if (opts.onProgress) {
+			const toolSummaries = new Map<string, string>();
 			unsub = session.subscribe((ev) => {
-				if (ev.type === "agent_end") opts.onProgress?.(`${profile.name}: turn complete`);
+				const progress = progressFromEvent(ev, toolSummaries);
+				if (progress) emit(progress.status, progress.activity);
 			});
 		}
 		try {
 			await session.prompt(opts.prompt);
+			emit("completed", "completed");
 		} finally {
 			unsub?.();
 			sig?.removeEventListener("abort", onAbort);
 		}
 
 		const text = session.getLastAssistantText() ?? "";
-		return { text, modelId: m.modelId, provider: m.provider, warning: m.warning };
+		const thinkingLevel = currentThinkingLevel ?? "medium";
+		return { text, modelId: m.modelId, provider: m.provider, thinkingLevel, warning: m.warning };
 	} catch (err) {
 		// Surface a readable error to the caller (the task tool's execute wraps it).
 		const reason = err instanceof Error ? err.message : String(err);
+		emit("error", `failed: ${reason}`);
 		throw new Error(`subagent "${profile.name}" failed: ${reason}`);
 	}
 }

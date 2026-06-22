@@ -5,7 +5,7 @@
  * violation degrades to `{}` so a broken config never crashes startup — the
  * built-in subagents keep working with no config at all.
  *
- * Shape: `{ agents?: { <name>: { model?, tools?, disallowedTools? } } }`.
+ * Shape: `{ agents?: { <name>: { model?, thinking?, tools?, disallowedTools? } } }`.
  * A per-agent entry overrides the matching profile's fields; config wins over
  * the `.md` frontmatter (which in turn wins over the built-in defaults).
  */
@@ -15,12 +15,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
-import type { AgentProfile } from "./types.js";
+import { normalizeThinkingLevel, type AgentProfile } from "./types.js";
 
 /** Per-agent override entry: same surface as the `.md` frontmatter knobs. */
 const AgentOverrideSchema = Type.Object({
 	/** Model spec ("inherit" | alias | "provider/model-id"). Overrides the profile's model. */
 	model: Type.Optional(Type.String()),
+	/** Thinking level (off|minimal|low|medium|high|xhigh). Invalid values are ignored. */
+	thinking: Type.Optional(Type.Any()),
 	/** Comma-separated tool allowlist. Overrides the profile's allowlist. */
 	tools: Type.Optional(Type.String()),
 	/** Comma-separated tool denylist. Overrides the profile's denylist. */
@@ -102,9 +104,9 @@ function parseToolList(spec: string): string[] {
 /**
  * Apply the user's per-agent config override on top of a profile.
  *
- * If `config.agents[profile.name]` exists, its `model` / `tools` /
- * `disallowedTools` replace the corresponding profile fields (config wins over
- * `.md` frontmatter). Otherwise the profile is returned unchanged. Never mutates
+ * If `config.agents[profile.name]` exists, its `model` / `thinking` /
+ * `tools` / `disallowedTools` replace the corresponding profile fields (config
+ * wins over `.md` frontmatter). Otherwise the profile is returned unchanged. Never mutates
  * the input — returns a fresh profile when an override applies.
  */
 export function applyConfigOverrides(profile: AgentProfile, config: AgentsConfig): AgentProfile {
@@ -113,6 +115,8 @@ export function applyConfigOverrides(profile: AgentProfile, config: AgentsConfig
 
 	const next: AgentProfile = { ...profile };
 	if (override.model !== undefined) next.model = override.model;
+	const thinking = normalizeThinkingLevel(override.thinking);
+	if (thinking) next.thinking = thinking;
 	if (override.tools !== undefined) next.tools = parseToolList(override.tools);
 	if (override.disallowedTools !== undefined) {
 		next.disallowedTools = parseToolList(override.disallowedTools);
