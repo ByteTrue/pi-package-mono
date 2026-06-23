@@ -3,7 +3,6 @@ name: Release
 # Publish packages to npm when a version tag is pushed.
 #
 # Package-scoped tags publish one workspace only:
-#   pi-subagent-v0.2.1
 #   pi-vendor-v0.1.1
 #   pi-subagents-plus-v0.1.0
 # The legacy v* tag publishes every workspace whose current version isn't already on npm.
@@ -14,7 +13,7 @@ name: Release
 # are generated automatically.
 on:
   push:
-    tags: ["v*", "pi-subagent-v*", "pi-vendor-v*", "pi-subagents-plus-v*"]
+    tags: ["v*", "pi-vendor-v*", "pi-subagents-plus-v*"]
 
 jobs:
   publish:
@@ -37,7 +36,6 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           case "$tag" in
-            pi-subagent-v*) packages=(packages/pi-subagent/) ;;
             pi-vendor-v*) packages=(packages/pi-vendor/) ;;
             pi-subagents-plus-v*) packages=(packages/pi-subagents-plus/) ;;
             v*) packages=(packages/*/) ;;

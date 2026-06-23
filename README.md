@@ -9,7 +9,7 @@
 | 包 | 说明 |
 |---|---|
 | [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` 两个工具,默认零配置走 Bing(大陆可直连),一个源失败自动切换其他源,可选接入 Bocha / Tavily / Exa / Brave / Jina / Firecrawl。 |
-| [`@bytetrue/pi-subagent`](packages/pi-subagent) | 照搬 Claude Code 的 subagent 体系:`Agent` 工具委派任务给隔离的专用子代理(general-purpose / explore / plan,可自定义 `.md`),每个子代理可独立指定 provider/model,`/subagent` 命令交互配置。 |
+| [`@bytetrue/pi-subagents-plus`](packages/pi-subagents-plus) | `@gotgenes/pi-subagents` 的非侵入式增强:`/agents-plus` 快速配置已 eject/custom agent 的 model/thinking,不接管 subagent runtime。 |
 | [`@bytetrue/pi-vendor`](packages/pi-vendor) | `/vendor` wizard for custom providers in `~/.pi/agent/models.json`, with provider drafting, model enrichment, and `/models` import. |
 
 ## 本地开发
