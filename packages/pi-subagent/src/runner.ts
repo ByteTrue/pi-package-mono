@@ -46,6 +46,8 @@ export interface RunProgress {
 	modelId: string;
 	provider: string;
 	thinkingLevel?: ThinkingLevel;
+	turnCount?: number;
+	toolUseCount?: number;
 	warning?: string;
 }
 
@@ -60,6 +62,10 @@ export interface RunResult {
 	thinkingLevel: ThinkingLevel;
 	/** Set when the requested model could not be honored and a fallback was used. */
 	warning?: string;
+	/** Number of child turns observed during the run. */
+	turnCount?: number;
+	/** Number of child tool calls observed during the run. */
+	toolUseCount?: number;
 }
 
 /** The tool-set knobs passed to `createAgentSession`, computed from a profile. */
@@ -127,31 +133,52 @@ function turnActivity(ev: AgentSessionEvent, suffix: "started" | "complete"): st
 	return typeof index === "number" ? `turn ${index + 1} ${suffix}` : `turn ${suffix}`;
 }
 
+interface ProgressCounters {
+	turnCount: number;
+	toolUseCount: number;
+}
+
+interface ToolSummary {
+	summary: string;
+	index: number;
+}
+
 function progressFromEvent(
 	ev: AgentSessionEvent,
-	toolSummaries: Map<string, string>,
-): Pick<RunProgress, "status" | "activity"> | undefined {
+	toolSummaries: Map<string, ToolSummary>,
+	counters: ProgressCounters,
+): Pick<RunProgress, "status" | "activity" | "turnCount" | "toolUseCount"> | undefined {
 	switch (ev.type) {
 		case "agent_start":
-			return { status: "starting", activity: "started" };
-		case "turn_start":
-			return { status: "running", activity: turnActivity(ev, "started") };
+			return { status: "starting", activity: "started", ...counters };
+		case "turn_start": {
+			const index = (ev as { turnIndex?: unknown }).turnIndex;
+			counters.turnCount = typeof index === "number" ? Math.max(counters.turnCount, index + 1) : counters.turnCount + 1;
+			return { status: "running", activity: turnActivity(ev, "started"), ...counters };
+		}
 		case "tool_execution_start": {
 			const summary = describeTool(ev.toolName, ev.args);
-			toolSummaries.set(ev.toolCallId, summary);
-			return { status: "running", activity: `running ${summary}` };
+			const index = ++counters.toolUseCount;
+			toolSummaries.set(ev.toolCallId, { summary, index });
+			return { status: "running", activity: `running ${summary} (tool #${index})`, ...counters };
 		}
 		case "tool_execution_end": {
-			const summary = toolSummaries.get(ev.toolCallId) ?? describeTool(ev.toolName);
+			const stored = toolSummaries.get(ev.toolCallId);
+			const summary = stored?.summary ?? describeTool(ev.toolName);
+			const label = stored ? `tool #${stored.index}` : "tool";
 			toolSummaries.delete(ev.toolCallId);
-			return { status: ev.isError ? "error" : "running", activity: `${summary} ${ev.isError ? "failed" : "done"}` };
+			return {
+				status: ev.isError ? "error" : "running",
+				activity: `${summary} ${ev.isError ? "failed" : "done"} (${label})`,
+				...counters,
+			};
 		}
 		case "turn_end":
-			return { status: "running", activity: turnActivity(ev, "complete") };
+			return { status: "running", activity: turnActivity(ev, "complete"), ...counters };
 		case "agent_end":
 			return ev.willRetry
-				? { status: "running", activity: "retrying" }
-				: { status: "completed", activity: "completed" };
+				? { status: "running", activity: "retrying", ...counters }
+				: { status: "completed", activity: "completed", ...counters };
 		default:
 			return undefined;
 	}
@@ -164,10 +191,9 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 	const m = resolveModel(profile.model, ctx);
 	let currentThinkingLevel: ThinkingLevel | undefined = profile.thinking ?? opts.inheritedThinkingLevel;
 
-	const emit = (status: RunStatus, activity: string): void => {
+	const emit = (progress: Pick<RunProgress, "status" | "activity" | "turnCount" | "toolUseCount">): void => {
 		opts.onProgress?.({
-			status,
-			activity,
+			...progress,
 			modelId: m.modelId,
 			provider: m.provider,
 			...(currentThinkingLevel ? { thinkingLevel: currentThinkingLevel } : {}),
@@ -178,6 +204,7 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 	// 2. Compute the tool set: task is always excluded; honor the profile's
 	//    allowlist/denylist on top of that.
 	const { tools, excludeTools } = buildToolSelection(profile);
+	const counters: ProgressCounters = { turnCount: 0, toolUseCount: 0 };
 
 	try {
 		// 3. Build a resource loader whose system prompt IS the agent's body, mirroring
@@ -211,7 +238,7 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 			...(tools ? { tools } : {}),
 		});
 		currentThinkingLevel = session.thinkingLevel as ThinkingLevel;
-		emit("starting", "started");
+		emit({ status: "starting", activity: "started", ...counters });
 
 		// 5. Wire cancellation: PromptOptions has no signal field, so the only way to
 		//    stop an in-flight subagent is session.abort(). Bridge the parent's signal
@@ -232,15 +259,15 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 		//    completion and read the final assistant message.
 		let unsub: (() => void) | undefined;
 		if (opts.onProgress) {
-			const toolSummaries = new Map<string, string>();
+			const toolSummaries = new Map<string, ToolSummary>();
 			unsub = session.subscribe((ev) => {
-				const progress = progressFromEvent(ev, toolSummaries);
-				if (progress) emit(progress.status, progress.activity);
+				const progress = progressFromEvent(ev, toolSummaries, counters);
+				if (progress) emit(progress);
 			});
 		}
 		try {
 			await session.prompt(opts.prompt);
-			emit("completed", "completed");
+			emit({ status: "completed", activity: "completed", ...counters });
 		} finally {
 			unsub?.();
 			sig?.removeEventListener("abort", onAbort);
@@ -248,11 +275,11 @@ export async function runSubagent(opts: RunOptions): Promise<RunResult> {
 
 		const text = session.getLastAssistantText() ?? "";
 		const thinkingLevel = currentThinkingLevel ?? "medium";
-		return { text, modelId: m.modelId, provider: m.provider, thinkingLevel, warning: m.warning };
+		return { text, modelId: m.modelId, provider: m.provider, thinkingLevel, warning: m.warning, ...counters };
 	} catch (err) {
 		// Surface a readable error to the caller (the task tool's execute wraps it).
 		const reason = err instanceof Error ? err.message : String(err);
-		emit("error", `failed: ${reason}`);
+		emit({ status: "error", activity: `failed: ${reason}`, ...counters });
 		throw new Error(`subagent "${profile.name}" failed: ${reason}`);
 	}
 }

@@ -18,16 +18,20 @@ vi.mock("./runner.js", () => ({
 	runSubagent: vi.fn(async (opts: { prompt: string; onProgress?: (progress: any) => void }) => {
 		opts.onProgress?.({
 			status: "running",
-			activity: "read packages/foo.ts",
+			activity: "running read packages/foo.ts (tool #1)",
 			modelId: "sonnet-test",
 			provider: "anthropic",
 			thinkingLevel: "high",
+			turnCount: 1,
+			toolUseCount: 1,
 		});
 		return {
 			text: `ran: ${opts.prompt}`,
 			modelId: "sonnet-test",
 			provider: "anthropic",
 			thinkingLevel: "high",
+			turnCount: 1,
+			toolUseCount: 1,
 		};
 	}),
 }));
@@ -165,10 +169,12 @@ describe("registerAgentTool", () => {
 		expect(onUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				details: expect.objectContaining({
-					activity: "read packages/foo.ts",
+					activity: "running read packages/foo.ts (tool #1)",
 					model: "sonnet-test",
 					provider: "anthropic",
 					thinking: "high",
+					turnCount: 1,
+					toolUseCount: 1,
 				}),
 			}),
 		);
@@ -193,16 +199,19 @@ describe("registerAgentTool", () => {
 		const def = pi.tools.get("Agent");
 		const out = renderText(
 			def.renderResult(
-				{ details: { subagent_type: "explore", model: "sonnet-test", provider: "anthropic", thinking: "high", activity: "read packages/foo.ts" } },
+				{ details: { subagent_type: "explore", description: "Read-only explorer.", model: "sonnet-test", provider: "anthropic", thinking: "high", activity: "running read packages/foo.ts (tool #1)", turnCount: 1, toolUseCount: 1, spinnerFrame: 2 } },
 				{ isPartial: true },
 				plainTheme(),
 				{},
 			),
 		);
 		expect(out).toContain("explore");
+		expect(out).toContain("⠹");
 		expect(out).toContain("anthropic/sonnet-test");
 		expect(out).toContain("thinking high");
-		expect(out).toContain("read packages/foo.ts");
+		expect(out).toContain("turn 1");
+		expect(out).toContain("1 tool use");
+		expect(out).toContain("└ running read packages/foo.ts (tool #1)");
 		expect(out).not.toContain("Running subagent");
 	});
 
@@ -212,14 +221,14 @@ describe("registerAgentTool", () => {
 		const def = pi.tools.get("Agent");
 		const out = renderText(
 			def.renderResult(
-				{ details: { subagent_type: "explore", model: "sonnet-test", provider: "anthropic", thinking: "high", warning: "fallback" } },
+				{ details: { subagent_type: "explore", model: "sonnet-test", provider: "anthropic", thinking: "high", turnCount: 1, toolUseCount: 1, warning: "fallback" } },
 				{ isPartial: false },
 				plainTheme(),
 				{},
 			),
 		);
 		expect(out).toContain("Subagent finished");
-		expect(out).toContain("anthropic/sonnet-test · thinking high");
+		expect(out).toContain("anthropic/sonnet-test · thinking high · turn 1 · 1 tool use");
 		expect(out).toContain("fallback");
 	});
 

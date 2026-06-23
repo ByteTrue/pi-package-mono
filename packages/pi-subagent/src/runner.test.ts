@@ -192,18 +192,19 @@ describe("runSubagent", () => {
 		lastSubscribe?.({ type: "turn_end", turnIndex: 0, message: {}, toolResults: [] });
 		lastSubscribe?.({ type: "agent_end", messages: [], willRetry: false });
 		releasePrompt();
-		await run;
+		const result = await run;
 		expect(progress.map((p) => p.activity)).toEqual(
 			expect.arrayContaining([
 				"started",
 				"turn 1 started",
-				"running read packages/foo.ts",
-				"read packages/foo.ts done",
+				"running read packages/foo.ts (tool #1)",
+				"read packages/foo.ts done (tool #1)",
 				"turn 1 complete",
 				"completed",
 			]),
 		);
-		expect(progress.at(-1)).toMatchObject({ modelId: "m1", provider: "anthropic", thinkingLevel: "high" });
+		expect(progress.find((p) => p.activity.includes("tool #1"))).toMatchObject({ toolUseCount: 1, turnCount: 1 });
+		expect(result).toMatchObject({ modelId: "m1", provider: "anthropic", thinkingLevel: "high", toolUseCount: 1, turnCount: 1 });
 	});
 
 	it("aborts the child session when the signal fires mid-run", async () => {

@@ -35,6 +35,8 @@ const SUBAGENT_COMMAND_NAME = "subagent";
 const LIST_FLAG = "--list";
 const SHOW_FLAG = "--show";
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_MS = 120;
 /** Cap the inline system-prompt preview printed by `/subagent --show`. */
 const SYSTEM_PROMPT_PREVIEW_CHARS = 400;
 
@@ -133,22 +135,29 @@ const AGENT_GUIDELINES: string[] = [
 
 interface AgentDetails {
 	subagent_type: string;
+	description?: string;
 	model?: string;
 	provider?: string;
 	thinking?: ThinkingLevel;
 	activity?: string;
 	status?: "starting" | "running" | "completed" | "error";
+	turnCount?: number;
+	toolUseCount?: number;
+	spinnerFrame?: number;
 	warning?: string;
 }
 
-function detailsFromProgress(subagentType: string, progress: RunProgress): AgentDetails {
+function detailsFromProgress(profile: AgentProfile, progress: RunProgress): AgentDetails {
 	return {
-		subagent_type: subagentType,
+		subagent_type: profile.name,
+		description: firstLine(profile.description),
 		model: progress.modelId,
 		provider: progress.provider,
 		thinking: progress.thinkingLevel,
 		activity: progress.activity,
 		status: progress.status,
+		turnCount: progress.turnCount,
+		toolUseCount: progress.toolUseCount,
 		...(progress.warning ? { warning: progress.warning } : {}),
 	};
 }
@@ -156,7 +165,9 @@ function detailsFromProgress(subagentType: string, progress: RunProgress): Agent
 function runMeta(details: AgentDetails | undefined): string {
 	const model = details?.provider && details.model ? `${details.provider}/${details.model}` : "resolving model";
 	const thinking = details?.thinking ? `thinking ${details.thinking}` : "thinking inherit";
-	return `${model} · ${thinking}`;
+	const turn = details?.turnCount ? `turn ${details.turnCount}` : undefined;
+	const tools = details?.toolUseCount ? `${details.toolUseCount} tool use${details.toolUseCount === 1 ? "" : "s"}` : undefined;
+	return [model, thinking, turn, tools].filter(Boolean).join(" · ");
 }
 
 /**
@@ -219,31 +230,54 @@ export function registerAgentTool(pi: ExtensionAPI, deps: AgentsDeps): void {
 			const effective = applyConfigOverrides(profile, readConfig());
 
 			const inheritedThinkingLevel = pi.getThinkingLevel() as ThinkingLevel;
-			const result = await runSubagent({
-				profile: effective,
-				prompt: params.prompt,
-				ctx,
-				signal,
-				inheritedThinkingLevel,
-				onProgress: (progress) =>
-					onUpdate?.({
-						content: [{ type: "text", text: progress.activity }],
-						details: detailsFromProgress(params.subagent_type, progress),
-					}),
-			});
-
-			return {
-				content: [{ type: "text", text: result.text }],
-				details: {
-					subagent_type: params.subagent_type,
-					model: result.modelId,
-					provider: result.provider,
-					thinking: result.thinkingLevel,
-					activity: "completed",
-					status: "completed",
-					...(result.warning ? { warning: result.warning } : {}),
-				},
+			let spinnerFrame = 0;
+			let latestDetails: AgentDetails | undefined;
+			const pushUpdate = (details: AgentDetails): void => {
+				onUpdate?.({
+					content: [{ type: "text", text: details.activity ?? "started" }],
+					details,
+				});
 			};
+			const spinner = onUpdate
+				? setInterval(() => {
+					if (!latestDetails) return;
+					spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
+					latestDetails = { ...latestDetails, spinnerFrame };
+					pushUpdate(latestDetails);
+				}, SPINNER_MS)
+				: undefined;
+
+			try {
+				const result = await runSubagent({
+					profile: effective,
+					prompt: params.prompt,
+					ctx,
+					signal,
+					inheritedThinkingLevel,
+					onProgress: (progress) => {
+						latestDetails = { ...detailsFromProgress(effective, progress), spinnerFrame };
+						pushUpdate(latestDetails);
+					},
+				});
+
+				return {
+					content: [{ type: "text", text: result.text }],
+					details: {
+						subagent_type: params.subagent_type,
+						description: firstLine(effective.description),
+						model: result.modelId,
+						provider: result.provider,
+						thinking: result.thinkingLevel,
+						turnCount: result.turnCount,
+						toolUseCount: result.toolUseCount,
+						activity: "completed",
+						status: "completed",
+						...(result.warning ? { warning: result.warning } : {}),
+					},
+				};
+			} finally {
+				if (spinner) clearInterval(spinner);
+			}
 		},
 
 		renderCall(args, theme, _context) {
@@ -260,8 +294,13 @@ export function registerAgentTool(pi: ExtensionAPI, deps: AgentsDeps): void {
 			if (isPartial) {
 				const type = details?.subagent_type ?? "subagent";
 				const activity = details?.activity ?? "started";
+				const isError = details?.status === "error";
+				const isDone = details?.status === "completed";
+				const frame = SPINNER_FRAMES[details?.spinnerFrame ?? 0] ?? "⠋";
+				const icon = isError ? "✗" : isDone ? "✓" : frame;
+				const color = isError ? "error" : isDone ? "success" : "accent";
 				return new Text(
-					`${theme.fg("warning", "⠹")} ${theme.fg("accent", type)}${theme.fg("muted", ` · ${runMeta(details)}`)}\n${theme.fg("muted", `⎿ ${activity}`)}`,
+					`${theme.fg(color, icon)} ${theme.fg("accent", type)}${theme.fg("muted", ` · ${runMeta(details)}`)}\n${theme.fg("muted", `└ ${activity}`)}`,
 					0,
 					0,
 				);
