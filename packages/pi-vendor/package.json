@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-vendor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension: wizard for managing custom providers in ~/.pi/agent/models.json.",
   "keywords": [
     "pi-package",
