@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { patchFrontmatterField } from "./frontmatter.js";
+import { patchFrontmatterField, readFrontmatterField } from "./frontmatter.js";
 
 describe("patchFrontmatterField", () => {
 	it("preserves body and unrelated fields while setting model", () => {
@@ -25,5 +25,15 @@ describe("patchFrontmatterField", () => {
 		expect(patchFrontmatterField(input, "model", { value: "new/model" })).toBe(
 			"---\nmetadata:\n  model: nested\nmodel: new/model\n---\n\nBody\n",
 		);
+	});
+});
+
+describe("readFrontmatterField", () => {
+	it("reads displayed agent config fields without touching nested keys", () => {
+		const input = "---\ndescription: 'Explore code'\nmetadata:\n  model: nested\nmodel: bytetrueapi/claude\nthinking: high\n---\n\nBody\n";
+
+		expect(readFrontmatterField(input, "description")).toBe("Explore code");
+		expect(readFrontmatterField(input, "model")).toBe("bytetrueapi/claude");
+		expect(readFrontmatterField(input, "thinking")).toBe("high");
 	});
 });

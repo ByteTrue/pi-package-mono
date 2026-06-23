@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { type AgentDirs, type AgentEntry, discoverAgents, readAgentFile, resetOverride, writeAgentFile } from "./agents.js";
-import { patchFrontmatterField } from "./frontmatter.js";
+import { patchFrontmatterField, readFrontmatterField } from "./frontmatter.js";
 
 const COMMAND_NAME = "agents-plus";
 const GOTGENES_INSTALL_COMMAND = "pi install npm:@gotgenes/pi-subagents";
@@ -11,6 +11,7 @@ const MANUAL_MODEL = "manual input...";
 const THINKING = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 type SlashCommand = { name: string; source?: string };
+type AgentDetails = { model: string; thinking: string; description?: string; path?: string };
 
 export function registerAgentsPlusCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(COMMAND_NAME, {
@@ -24,48 +25,54 @@ export function registerAgentsPlusCommand(pi: ExtensionAPI): void {
 				ctx.ui.notify(`Install gotgenes subagents first: ${GOTGENES_INSTALL_COMMAND}`, "error");
 				return;
 			}
-			const action = await ctx.ui.select("Agents Plus", ["Configure model", "Configure thinking", "Reset built-in override"]);
-			if (action === "Configure model") await configureModel(ctx);
-			else if (action === "Configure thinking") await configureThinking(ctx);
+			const action = await ctx.ui.select("Agents Plus", ["Manage agents", "Reset built-in override"]);
+			if (action === "Manage agents") await manageAgents(ctx);
 			else if (action === "Reset built-in override") await resetBuiltin(ctx);
-			else ctx.ui.notify("Agents Plus unchanged", "info");
+			else unchanged(ctx);
 		},
 	});
 }
 
-async function configureModel(ctx: ExtensionCommandContext): Promise<void> {
-	const dirs = getDirs(ctx);
-	const agent = await chooseAgent(ctx, discoverAgents(dirs), "Configure model for which agent?");
+async function manageAgents(ctx: ExtensionCommandContext): Promise<void> {
+	const agent = await chooseAgent(ctx, discoverAgents(getDirs(ctx)), "Manage which agent?");
 	if (!agent) return unchanged(ctx);
-	const path = ensureConfigFile(ctx, agent);
-	if (!path) return unchanged(ctx);
+	await showAgentMenu(ctx, agent);
+}
 
-	const choice = await ctx.ui.select(`Model for ${agent.name}`, [INHERIT_MODEL, ...availableModels(ctx), MANUAL_MODEL]);
-	if (choice == null) return unchanged(ctx);
-	const model = choice === MANUAL_MODEL ? await promptModel(ctx, agent.name) : choice;
+async function showAgentMenu(ctx: ExtensionCommandContext, agent: AgentEntry): Promise<void> {
+	const options = ["Configure model & thinking"];
+	if (agent.isBuiltin && agent.path) options.push("Reset built-in override");
+	const action = await ctx.ui.select(agentDetailsTitle(agent), [...options, "Back"]);
+	if (action === "Configure model & thinking") await configureModelAndThinking(ctx, agent);
+	else if (action === "Reset built-in override") await resetAgentOverride(ctx, agent);
+	else unchanged(ctx);
+}
+
+async function configureModelAndThinking(ctx: ExtensionCommandContext, agent: AgentEntry): Promise<void> {
+	const path = ensureConfigFile(ctx, agent);
+	if (!path) return;
+
+	const model = await chooseModel(ctx, agent.name);
 	if (!model) return unchanged(ctx);
-
-	writeAgentFile(path, patchFrontmatterField(readAgentFile(path), "model", { value: model }));
-	ctx.ui.notify(`${agent.name} model set to ${model}. Run /reload to apply.`, "info");
-}
-
-async function configureThinking(ctx: ExtensionCommandContext): Promise<void> {
-	const dirs = getDirs(ctx);
-	const agent = await chooseAgent(ctx, discoverAgents(dirs), "Configure thinking for which agent?");
-	if (!agent) return unchanged(ctx);
-	const path = ensureConfigFile(ctx, agent);
-	if (!path) return unchanged(ctx);
-
-	const thinking = await ctx.ui.select(`Thinking for ${agent.name}`, [...THINKING]);
+	const thinking = await chooseThinking(ctx, agent.name);
 	if (thinking == null) return unchanged(ctx);
-	writeAgentFile(path, patchFrontmatterField(readAgentFile(path), "thinking", { value: thinking === "inherit" ? undefined : thinking }));
-	ctx.ui.notify(`${agent.name} thinking set to ${thinking}. Run /reload to apply.`, "info");
+
+	let next = patchFrontmatterField(readAgentFile(path), "model", { value: model });
+	next = patchFrontmatterField(next, "thinking", { value: thinking === "inherit" ? undefined : thinking });
+	writeAgentFile(path, next);
+	ctx.ui.notify(`${agent.name} model/thinking updated. Run /reload to apply.`, "info");
 }
+
 
 async function resetBuiltin(ctx: ExtensionCommandContext): Promise<void> {
 	const overrides = discoverAgents(getDirs(ctx)).filter((agent) => agent.isBuiltin && agent.path);
 	const agent = await chooseAgent(ctx, overrides, "Reset which built-in override?");
-	if (!agent?.path) return unchanged(ctx);
+	if (!agent) return unchanged(ctx);
+	await resetAgentOverride(ctx, agent);
+}
+
+async function resetAgentOverride(ctx: ExtensionCommandContext, agent: AgentEntry): Promise<void> {
+	if (!agent.path) return unchanged(ctx);
 	const confirmed = await ctx.ui.confirm(`Reset ${agent.name}?`, `Move ${agent.path} to a timestamped backup so gotgenes defaults apply again.`);
 	if (!confirmed) return unchanged(ctx);
 	const backup = resetOverride(agent.path);
@@ -89,6 +96,17 @@ async function chooseAgent(ctx: ExtensionCommandContext, agents: AgentEntry[], t
 	return index < 0 ? undefined : agents[index];
 }
 
+async function chooseModel(ctx: ExtensionCommandContext, name: string): Promise<string | undefined> {
+	const choice = await ctx.ui.select(`Model for ${name}`, [INHERIT_MODEL, ...availableModels(ctx), MANUAL_MODEL]);
+	if (choice == null) return undefined;
+	return choice === MANUAL_MODEL ? promptModel(ctx, name) : choice;
+}
+
+async function chooseThinking(ctx: ExtensionCommandContext, name: string): Promise<(typeof THINKING)[number] | undefined> {
+	const choice = await ctx.ui.select(`Thinking for ${name}`, [...THINKING]);
+	return THINKING.includes(choice as (typeof THINKING)[number]) ? (choice as (typeof THINKING)[number]) : undefined;
+}
+
 async function promptModel(ctx: ExtensionCommandContext, name: string): Promise<string | undefined> {
 	const value = await ctx.ui.input(`Model for ${name}`, "provider/model-id");
 	return value?.trim() || undefined;
@@ -108,7 +126,42 @@ function availableModels(ctx: ExtensionCommandContext): string[] {
 }
 
 function formatAgent(agent: AgentEntry): string {
-	return `${agent.name} (${agent.source}${agent.path ? `: ${agent.path}` : ""})`;
+	const details = getAgentDetails(agent);
+	return `${agent.name} · model: ${details.model} · thinking: ${details.thinking} · ${formatSource(agent)}`;
+}
+
+function agentDetailsTitle(agent: AgentEntry): string {
+	const details = getAgentDetails(agent);
+	const lines = [
+		`Agent: ${agent.name}`,
+		`Source: ${formatSource(agent)}`,
+		`Model: ${details.model}`,
+		`Thinking: ${details.thinking}`,
+	];
+	if (details.description) lines.push(`Description: ${details.description}`);
+	if (details.path) lines.push(`File: ${details.path}`);
+	return lines.join("\n");
+}
+
+function getAgentDetails(agent: AgentEntry): AgentDetails {
+	if (!agent.path) return { model: "gotgenes default", thinking: "gotgenes default" };
+	try {
+		const markdown = readAgentFile(agent.path);
+		return {
+			model: readFrontmatterField(markdown, "model") ?? "inherit",
+			thinking: readFrontmatterField(markdown, "thinking") ?? "inherit",
+			description: readFrontmatterField(markdown, "description"),
+			path: agent.path,
+		};
+	} catch {
+		return { model: "unknown", thinking: "unknown", path: agent.path };
+	}
+}
+
+function formatSource(agent: AgentEntry): string {
+	if (agent.source === "builtin") return "built-in";
+	if (agent.isBuiltin) return `${agent.source} override`;
+	return agent.source;
 }
 
 function unchanged(ctx: ExtensionCommandContext): void {

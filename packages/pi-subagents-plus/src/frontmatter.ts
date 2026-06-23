@@ -30,6 +30,16 @@ export function patchFrontmatterField(markdown: string, key: "model" | "thinking
 	return `---${parsed.newline}${nextLines.join(parsed.newline)}${parsed.newline}---${separator}${parsed.afterFence}`;
 }
 
+export function readFrontmatterField(markdown: string, key: string): string | undefined {
+	const parsed = splitFrontmatter(markdown);
+	if (!parsed) return undefined;
+	for (const line of parsed.frontmatter.split(parsed.newline)) {
+		const match = new RegExp(`^${escapeRegExp(key)}\\s*:\\s*(.*)$`).exec(line);
+		if (match) return unquoteScalar((match[1] ?? "").trim());
+	}
+	return undefined;
+}
+
 function splitFrontmatter(markdown: string): { frontmatter: string; afterFence: string; newline: "\n" | "\r\n" } | undefined {
 	if (!markdown.startsWith("---\n") && !markdown.startsWith("---\r\n")) return undefined;
 	const newline: "\n" | "\r\n" = markdown.startsWith("---\r\n") ? "\r\n" : "\n";
@@ -48,4 +58,15 @@ function isKeyLine(line: string, key: string): boolean {
 
 function formatScalar(value: string): string {
 	return /^[A-Za-z0-9_./:@+-]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+function unquoteScalar(value: string): string {
+	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+		return value.slice(1, -1);
+	}
+	return value;
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
