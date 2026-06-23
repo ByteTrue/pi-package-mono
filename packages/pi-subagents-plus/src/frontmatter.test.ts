@@ -19,6 +19,11 @@ describe("patchFrontmatterField", () => {
 		expect(patchFrontmatterField(input, "thinking", { value: undefined })).toBe("---\ndescription: Keep\nmodel: x/y\n---\n\nBody\n");
 	});
 
+	it("removes model for inherit", () => {
+		const input = "---\ndescription: Keep\nmodel: old/model\nthinking: high\n---\n\nBody\n";
+		expect(patchFrontmatterField(input, "model", { value: undefined })).toBe("---\ndescription: Keep\nthinking: high\n---\n\nBody\n");
+	});
+
 	it("does not treat nested YAML keys as frontmatter fields", () => {
 		const input = "---\nmetadata:\n  model: nested\nmodel: old/model\n---\n\nBody\n";
 

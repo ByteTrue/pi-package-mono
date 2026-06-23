@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-subagents-plus",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pi extension: small configuration helper for @gotgenes/pi-subagents agent model and thinking frontmatter.",
   "keywords": [
     "pi-package",

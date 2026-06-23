@@ -57,7 +57,7 @@ async function configureModelAndThinking(ctx: ExtensionCommandContext, agent: Ag
 	const thinking = await chooseThinking(ctx, agent.name);
 	if (thinking == null) return unchanged(ctx);
 
-	let next = patchFrontmatterField(readAgentFile(path), "model", { value: model });
+	let next = patchFrontmatterField(readAgentFile(path), "model", { value: model === INHERIT_MODEL ? undefined : model });
 	next = patchFrontmatterField(next, "thinking", { value: thinking === "inherit" ? undefined : thinking });
 	writeAgentFile(path, next);
 	ctx.ui.notify(`${agent.name} model/thinking updated. Run /reload to apply.`, "info");
