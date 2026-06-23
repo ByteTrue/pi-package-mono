@@ -1,15 +1,20 @@
 name: Release
 
-# Publish packages to npm when a version tag (e.g. v0.1.0) is pushed.
+# Publish packages to npm when a version tag is pushed.
+#
+# Package-scoped tags publish one workspace only:
+#   pi-subagent-v0.2.1
+#   pi-vendor-v0.1.1
+#   pi-subagents-plus-v0.1.0
+# The legacy v* tag publishes every workspace whose current version isn't already on npm.
 #
 # Uses npm Trusted Publishing (OIDC) — no NPM_TOKEN needed. Each package must
 # have a Trusted Publisher configured on npmjs.com pointing at this repo and
 # this workflow file (.github/workflows/release.yml). Provenance attestations
-# are generated automatically. Each package is published only if its current
-# version isn't already on npm, so re-tagging or bumping one package is safe.
+# are generated automatically.
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "pi-subagent-v*", "pi-vendor-v*", "pi-subagents-plus-v*"]
 
 jobs:
   publish:
@@ -28,15 +33,24 @@ jobs:
       - run: npm ci
       - run: npm run typecheck --workspaces --if-present
       - run: npm test
-      - name: Publish changed packages (OIDC, no token)
+      - name: Publish package (OIDC, no token)
         run: |
-          for dir in packages/*/; do
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            pi-subagent-v*) packages=(packages/pi-subagent/) ;;
+            pi-vendor-v*) packages=(packages/pi-vendor/) ;;
+            pi-subagents-plus-v*) packages=(packages/pi-subagents-plus/) ;;
+            v*) packages=(packages/*/) ;;
+            *) echo "Unsupported release tag: $tag"; exit 1 ;;
+          esac
+
+          for dir in "${packages[@]}"; do
             name=$(node -p "require('./${dir}package.json').name")
             ver=$(node -p "require('./${dir}package.json').version")
             if npm view "${name}@${ver}" version >/dev/null 2>&1; then
               echo "✓ ${name}@${ver} already on npm — skipping"
             else
               echo "→ publishing ${name}@${ver}"
-              npm publish -w "${name}"
+              npm publish -w "${name}" --access public
             fi
           done
