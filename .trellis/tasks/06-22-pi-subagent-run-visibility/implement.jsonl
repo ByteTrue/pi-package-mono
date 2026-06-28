@@ -1,4 +1,0 @@
-{"file":".trellis/spec/pi-subagent/backend/index.md","reason":"Backend extension contracts for Agent tool execution, config, runner, and tests."}
-{"file":".trellis/spec/pi-subagent/frontend/index.md","reason":"TUI rendering expectations for Agent call/result visibility."}
-{"file":".trellis/spec/guides/index.md","reason":"Cross-layer and code-reuse checklist for run metadata/progress data flow."}
-{"file":".trellis/tasks/06-22-pi-subagent-run-visibility/research/gotgenes-ui-and-pi-sdk.md","reason":"Reference UI behavior and Pi SDK thinking/progress APIs for implementation."}

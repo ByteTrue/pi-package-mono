@@ -1,3 +1,0 @@
-{"file":".trellis/spec/pi-vendor/backend/index.md","reason":"pi-vendor /vendor TUI and provider manager guidelines"}
-{"file":".trellis/spec/pi-vendor/backend/provider-manager-contract.md","reason":"provider manager persistence and catalog behavior must stay unchanged while UI is optimized"}
-{"file":".trellis/spec/guides/index.md","reason":"shared pre-modification and reuse guidance"}

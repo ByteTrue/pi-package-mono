@@ -1,5 +1,0 @@
-{"file":".trellis/spec/guides/index.md","reason":"Shared thinking guides for config/data-flow changes and code reuse checks."}
-{"file":".trellis/spec/pi-vendor/backend/index.md","reason":"Package-specific backend contract for /vendor implementation."}
-{"file":".trellis/spec/pi-vendor/backend/provider-manager-contract.md","reason":"Executable contract for models.json persistence, official catalog enrichment, templates, and /models import."}
-{"file":".trellis/tasks/06-22-custom-provider-manager/research/pi-custom-models-and-extension-api.md","reason":"Pi extension API, models.json schema, and package shape research for implementation."}
-{"file":".trellis/tasks/06-22-custom-provider-manager/research/official-catalog-lookup.md","reason":"Official Pi model catalog lookup and merge-ready behavior required for enrichment."}

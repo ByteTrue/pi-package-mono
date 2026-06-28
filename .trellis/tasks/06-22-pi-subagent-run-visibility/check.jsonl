@@ -1,4 +1,0 @@
-{"file":".trellis/spec/pi-subagent/backend/index.md","reason":"Backend quality expectations for Agent tool execution, config, runner, and tests."}
-{"file":".trellis/spec/pi-subagent/frontend/index.md","reason":"Rendering quality expectations for Agent call/result visibility."}
-{"file":".trellis/spec/guides/index.md","reason":"Cross-layer and code-reuse checklist for reviewing run metadata/progress data flow."}
-{"file":".trellis/tasks/06-22-pi-subagent-run-visibility/research/gotgenes-ui-and-pi-sdk.md","reason":"Reference behavior and SDK facts for checking implementation correctness."}

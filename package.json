@@ -9,5 +9,11 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present"
+  },
+  "allowScripts": {
+    "@google/genai@1.52.0": true,
+    "esbuild@0.27.7": true,
+    "protobufjs@7.6.4": true,
+    "fsevents": false
   }
 }

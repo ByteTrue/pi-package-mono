@@ -4,7 +4,6 @@ name: Release
 #
 # Package-scoped tags publish one workspace only:
 #   pi-vendor-v0.1.1
-#   pi-subagents-plus-v0.1.0
 # The legacy v* tag publishes every workspace whose current version isn't already on npm.
 #
 # Uses npm Trusted Publishing (OIDC) — no NPM_TOKEN needed. Each package must
@@ -13,7 +12,7 @@ name: Release
 # are generated automatically.
 on:
   push:
-    tags: ["v*", "pi-vendor-v*", "pi-subagents-plus-v*"]
+    tags: ["v*", "pi-vendor-v*"]
 
 jobs:
   publish:
@@ -37,7 +36,6 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           case "$tag" in
             pi-vendor-v*) packages=(packages/pi-vendor/) ;;
-            pi-subagents-plus-v*) packages=(packages/pi-subagents-plus/) ;;
             v*) packages=(packages/*/) ;;
             *) echo "Unsupported release tag: $tag"; exit 1 ;;
           esac
