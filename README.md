@@ -1,22 +1,34 @@
 # pi-package-mono
 
-个人自用的 [pi coding agent](https://pi.dev) package 集合(npm workspaces monorepo)。
+Personal [pi coding agent](https://pi.dev) extensions as an npm workspaces monorepo. Each package loads as TypeScript source via jiti — no build step required.
 
-每个包在 `packages/` 下平铺。pi 通过 jiti 直接加载 `.ts` 源码,无需编译。
+[Features](#packages) • [Local development](#local-development) • [Packages](#packages)
 
 ## Packages
 
-| 包 | 说明 |
+| Package | Description |
 |---|---|
-| [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` 两个工具,默认零配置走 Bing(大陆可直连),一个源失败自动切换其他源,可选接入 Bocha / Tavily / Exa / Brave / Jina / Firecrawl。 |
-| [`@bytetrue/pi-vendor`](packages/pi-vendor) | `/vendor` wizard for custom providers in `~/.pi/agent/models.json`, with provider drafting, model enrichment, and `/models` import. |
+| [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` tools with zero-config Bing (free, no API key, mainland China reachable) and pluggable providers (DuckDuckGo, Bocha, Tavily, Exa, Brave, Jina, Firecrawl). |
+| [`@bytetrue/pi-vendor`](packages/pi-vendor) | `/vendor` wizard for managing custom providers in `~/.pi/agent/models.json` — provider drafting, model enrichment, and `/models` import. |
 
-## 本地开发
+## Local development
 
 ```bash
-# 直接加载某个包(本地路径,无需发布 npm)
-pi install /Users/byte/workspace/projects/pi-package-mono/packages/pi-web-search
+# Install a package by local path (no npm publish needed)
+pi install /absolute/path/to/pi-package-mono/packages/pi-web-search
 
-# 或临时挂载一个扩展试跑
-pi -e /Users/byte/workspace/projects/pi-package-mono/packages/pi-web-search
+# Or mount an extension for a quick trial run
+pi -e /absolute/path/to/pi-package-mono/packages/pi-web-search
+```
+
+Run tests across all packages:
+
+```bash
+npm test
+```
+
+Run tests for a specific package:
+
+```bash
+npm --workspace @bytetrue/pi-web-search test
 ```
