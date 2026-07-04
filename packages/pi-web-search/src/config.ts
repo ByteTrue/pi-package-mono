@@ -2,12 +2,17 @@
  * Self-contained config for ~/.pi/byte-pi-web/config.json.
  *
  * Zero external deps. Fail-soft: malformed JSON or a schema violation degrades
- * to `{}` so a broken config never crashes startup — the default DuckDuckGo
+ * to `{}` so a broken config never crashes startup — the default Exa MCP free
  * provider keeps working with no config at all.
  *
  * Key resolution per provider (first wins):
  *   1. per-provider env var (e.g. TAVILY_API_KEY)
  *   2. apiKeys[name] in the config file
+ *
+ * Base URL resolution per provider (first wins):
+ *   1. per-provider env var (e.g. SEARXNG_URL)
+ *   2. baseUrls[name] in the config file
+ *   3. provider's defaultBaseUrl from registry
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -73,11 +78,20 @@ export function getActiveProviderName(config: WebConfig): string {
 }
 
 // Resolve a provider's API key: env var first, then config. Keyless providers
-// (DuckDuckGo) return undefined and don't need one.
+// (Exa MCP free, Bing, SearXNG) return undefined and don't need one.
 export function resolveApiKey(providerName: string, config: WebConfig): string | undefined {
 	const meta = findProviderMeta(providerName);
 	if (!meta) return undefined;
 	const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
 	if (envKey) return envKey;
 	return config.apiKeys?.[providerName]?.trim() || undefined;
+}
+
+// Resolve a provider's base URL: env var first, then config, then default.
+export function resolveBaseUrl(providerName: string, config: WebConfig): string | undefined {
+	const meta = findProviderMeta(providerName);
+	if (!meta) return undefined;
+	const envUrl = meta.baseUrlEnvVar ? process.env[meta.baseUrlEnvVar]?.trim() : undefined;
+	if (envUrl) return envUrl;
+	return config.baseUrls?.[providerName]?.trim() || meta.defaultBaseUrl;
 }

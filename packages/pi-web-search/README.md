@@ -7,8 +7,8 @@
 
 [Tools](#tools) • [Install](#install) • [Configure](#configure) • [Fallback](#automatic-fallback) • [Proxy](#proxy-support)
 
-- **Zero config.** Default provider is **Bing** (free, no API key, no account) — scraped from `bing.com`, reachable from mainland China without a proxy. **DuckDuckGo** also available as a keyless option.
-- **Pluggable.** Configure a key-backed provider for higher reliability: **Bocha 博查 (China), Tavily, Exa, Brave, Jina, Firecrawl**.
+- **Zero config.** Default provider is **Exa MCP free** (free, no API key) and returns clean result URLs. **Bing** remains available as a keyless fallback that works well in mainland China.
+- **Pluggable.** Configure **SearXNG** (self-hosted URL) or a key-backed provider for higher reliability: **Bocha 博查 (China), Tavily, Exa, Brave, Jina, Firecrawl**.
 
 ## Tools
 
@@ -34,8 +34,9 @@ Keys can also come from environment variables (env wins over config):
 
 | Provider | Env var | Roles | Notes |
 |---|---|---|---|
-| Bing | — (keyless, default) | search | scrapes bing.com; **reachable from mainland China without a proxy** |
-| DuckDuckGo | — (keyless) | search | needs to reach duckduckgo.com (proxy in CN) |
+| Exa MCP free | — (keyless, default) | search | hosted Exa MCP search, no API key |
+| Bing | — (keyless) | search | scrapes bing.com; **reachable from mainland China without a proxy** |
+| SearXNG | `SEARXNG_URL` | search | self-hosted; `/web` prompts for the base URL |
 | Bocha 博查 | `BOCHA_API_KEY` | search | China AI-search API, LLM-optimized, domestic/compliant |
 | Tavily | `TAVILY_API_KEY` | search + fetch | |
 | Exa | `EXA_API_KEY` | search + fetch | |
@@ -49,26 +50,26 @@ Config lives at `~/.pi/byte-pi-web/config.json` (override the base dir with `PI_
 
 ```json
 {
-  "provider": "bing",
+  "provider": "exa-free",
   "proxy": "http://127.0.0.1:7890",
   "apiKeys": { "tavily": "tvly-...", "exa": "..." }
 }
 ```
 
 > [!NOTE]
-> `proxy` applies to **all** web fetches. Bing works without a proxy in mainland China, so omit `proxy` if you don't need it; keep it if you also rely on DuckDuckGo or on fetching otherwise-blocked URLs.
+> `proxy` applies to **all** web fetches. Keep it when your selected provider or fetched URLs require a proxy; Bing often works without one in mainland China.
 
 When a key-backed provider with a native fetch endpoint is active (Tavily, Exa, Jina, Firecrawl), `web_fetch` uses it; otherwise it falls back to a built-in, keyless HTML→text fetcher.
 
 ## Automatic fallback
 
-When the active search provider fails (error, rate-limit) or returns nothing, `web_search` automatically tries the other **available** providers — keyless ones (Bing, DuckDuckGo) plus any keyed ones you've configured — in order, and returns the first that yields results. No manual `/web` switching needed. The result details report which `backend` actually answered (and `fellBackFrom` if it fell back). Disable with `"autoFallback": false` in the config.
+When the active search provider fails (error, rate-limit) or returns nothing, `web_search` automatically tries the other **available** providers — keyless ones (Exa MCP free, Bing, and SearXNG only when a URL is configured) plus any keyed ones you've configured — in order, and returns the first that yields results. The returned tool content and details report which provider actually answered and what it fell back from. Disable with `"autoFallback": false` in the config.
 
 `web_fetch` similarly falls back to the built-in HTML extractor if a keyed provider's native fetch fails.
 
 ## Proxy support
 
-Node's global `fetch` does **not** honor `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` by default. In a region-restricted network this shows up as: `web_fetch` of a reachable site works, but `web_search` fails — because the search backend's host (e.g. `duckduckgo.com`) is only reachable through your proxy, and `fetch` bypasses it.
+Node's global `fetch` does **not** honor `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` by default. In a region-restricted network this shows up as: `web_fetch` of a reachable site works, but `web_search` fails — because the selected provider's host is only reachable through your proxy, and `fetch` bypasses it.
 
 Set an explicit proxy in the config — the most reliable option, independent of how pi was launched:
 
@@ -78,6 +79,10 @@ Set an explicit proxy in the config — the most reliable option, independent of
 
 On load the package routes all fetches through it via undici (`NO_PROXY` / localhost endpoints bypass it). If `proxy` is unset it falls back to the `HTTP(S)_PROXY` env vars. Set `BYTE_PI_WEB_NO_PROXY=1` to disable entirely.
 
-## DuckDuckGo caveats
+## Live provider tests
 
-DuckDuckGo has no official API; this scrapes its non-JS HTML endpoints (`lite.duckduckgo.com` / `html.duckduckgo.com`) like the community-standard `ddgs` library. It throttles after roughly 20–30 searches/min per IP and can break on markup changes. The provider retries with backoff across both endpoints and surfaces a clear, actionable error on rate-limit. For heavy use, configure a key-backed provider via `/web`.
+Copy `live.e2e.example.json` to `live.e2e.local.json` and fill any provider keys / SearXNG URL you want to test. Missing providers are skipped; keyless Exa MCP free and Bing run by default.
+
+```bash
+npm run test:e2e --workspace @bytetrue/pi-web-search
+```

@@ -2,7 +2,7 @@
  * web_search + web_fetch tools and the /web config command.
  *
  * Two tools, same surface as Claude Code / Codex CLI. The default provider is
- * keyless DuckDuckGo, so this works with zero configuration; /web (or env vars)
+ * keyless Exa MCP free, so this works with zero configuration; /web (or env vars)
  * swaps in a key-backed provider for higher reliability.
  */
 
@@ -24,13 +24,14 @@ import {
 	getConfigPath,
 	readConfig,
 	resolveApiKey,
+	resolveBaseUrl,
 	type WebConfig,
 	writeConfig,
 } from "./config.js";
 import { fetchViaGenericHtml, parseAndAssertHttpUrl } from "./html.js";
 import { createProvider } from "./providers/factory.js";
 import { PROVIDERS } from "./providers/registry.js";
-import type { AnyProvider, FetchResponse, SearchResult } from "./providers/types.js";
+import type { AnyProvider, FetchResponse, ProviderMeta, SearchResult } from "./providers/types.js";
 import { searchWithFallback } from "./search.js";
 
 // ---------------------------------------------------------------------------
@@ -85,21 +86,42 @@ const WEB_SEARCH_GUIDELINES: string[] = [
 	"If results look weak or off-topic, retry with a more specific query. The tool already fails over across search providers automatically, so do not tell the user to switch providers.",
 ];
 
-function formatSearchResults(query: string, results: SearchResult[]): string {
-	let text = `**Search results for "${query}":**\n\n`;
+interface SearchDetails {
+	query?: string;
+	backend?: string;
+	resultCount?: number;
+	results?: SearchResult[];
+	attempted?: string[];
+	fellBackFrom?: string[];
+}
+
+export function formatSearchResults(query: string, results: SearchResult[], details: SearchDetails = {}): string {
+	let text = `**Search results for "${query}":**\n`;
+	if (details.backend) text += `Search provider: ${details.backend}\n`;
+	const attempts = details.fellBackFrom ?? details.attempted;
+	if (attempts?.length) text += `Fallback: ${attempts.join("; ")}\n`;
+	text += "\n";
 	results.forEach((r, i) => {
 		text += `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}\n\n`;
 	});
 	return text.trimEnd();
 }
 
-function renderSearchPreview(results: SearchResult[], theme: Theme): string {
-	let text = "";
-	for (const r of results.slice(0, SEARCH_RESULT_PREVIEW_LIMIT)) {
-		text += `\n  ${theme.fg("dim", `• ${r.title}`)}`;
-	}
-	if (results.length > SEARCH_RESULT_PREVIEW_LIMIT) {
-		text += `\n  ${theme.fg("dim", `... and ${results.length - SEARCH_RESULT_PREVIEW_LIMIT} more`)}`;
+function renderSearchPreview(details: SearchDetails | undefined, expanded: boolean, theme: Theme): string {
+	const count = details?.resultCount ?? 0;
+	const backend = details?.backend ? ` via ${details.backend}` : "";
+	const query = details?.query ? ` for "${details.query}"` : "";
+	let text = theme.fg("success", `✓ ${count} result${count !== 1 ? "s" : ""}${backend}${query}`);
+
+	if (!expanded) return text;
+
+	const attempts = details?.fellBackFrom ?? details?.attempted;
+	if (attempts?.length) text += `\n${theme.fg("dim", `Fallback: ${attempts.join("; ")}`)}`;
+
+	for (const [i, r] of (details?.results ?? []).entries()) {
+		text += `\n${theme.fg("accent", `${i + 1}. ${r.title || r.url}`)}`;
+		if (r.url) text += `\n  ${theme.fg("muted", r.url)}`;
+		if (r.snippet) text += `\n  ${theme.fg("dim", r.snippet)}`;
 	}
 	return text;
 }
@@ -143,15 +165,16 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			});
 
 			if (outcome.results.length === 0) {
+				const provider = outcome.backend ? ` Provider: ${outcome.backend}.` : "";
 				const detail = outcome.attempted.length ? ` Tried — ${outcome.attempted.join("; ")}.` : "";
 				return {
-					content: [{ type: "text", text: `No results found for "${params.query}".${detail}` }],
+					content: [{ type: "text", text: `No results found for "${params.query}".${provider}${detail}` }],
 					details: { query: params.query, backend: outcome.backend, resultCount: 0, attempted: outcome.attempted },
 				};
 			}
 
 			return {
-				content: [{ type: "text", text: formatSearchResults(params.query, outcome.results) }],
+				content: [{ type: "text", text: formatSearchResults(params.query, outcome.results, { backend: outcome.backend, ...(outcome.fellBack ? { fellBackFrom: outcome.attempted } : {}) }) }],
 				details: {
 					query: params.query,
 					backend: outcome.backend,
@@ -167,12 +190,13 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 		},
 
 		renderResult(result, { expanded, isPartial }, theme, _context) {
-			if (isPartial) return new Text(theme.fg("warning", "Searching..."), 0, 0);
-			const details = result.details as { resultCount?: number; results?: SearchResult[] } | undefined;
-			const count = details?.resultCount ?? 0;
-			let text = theme.fg("success", `✓ ${count} result${count !== 1 ? "s" : ""}`);
-			if (expanded && details?.results) text += renderSearchPreview(details.results, theme);
-			return new Text(text, 0, 0);
+			const details = result.details as SearchDetails | undefined;
+			if (isPartial) {
+				const backend = details?.backend ? ` ${details.backend}` : "";
+				const query = details?.query ? ` for "${details.query}"` : "";
+				return new Text(theme.fg("warning", `Searching${backend}${query}...`), 0, 0);
+			}
+			return new Text(renderSearchPreview(details, expanded, theme), 0, 0);
 		},
 	});
 }
@@ -381,6 +405,36 @@ async function configureProxy(
 	);
 }
 
+export function needsBaseUrlPrompt(meta: ProviderMeta, config: WebConfig): boolean {
+	if (!meta.baseUrlEnvVar) return false;
+	const envUrl = process.env[meta.baseUrlEnvVar]?.trim();
+	const configUrl = config.baseUrls?.[meta.name]?.trim();
+	return !envUrl && !configUrl;
+}
+
+async function configureBaseUrl(
+	ctx: { ui: { input(t: string, p?: string): Promise<string | undefined>; notify(m: string, t?: string): void } },
+	config: WebConfig,
+	meta: ProviderMeta,
+): Promise<void> {
+	const placeholder = meta.defaultBaseUrl ? `e.g. ${meta.defaultBaseUrl}` : `set ${meta.baseUrlEnvVar}`;
+	const input = await ctx.ui.input(`${meta.label} base URL`, placeholder);
+	if (input == null || !input.trim()) {
+		ctx.ui.notify("Web config unchanged (no URL provided)", "info");
+		return;
+	}
+	const next: WebConfig = {
+		...config,
+		provider: meta.name,
+		baseUrls: { ...config.baseUrls, [meta.name]: input.trim() },
+	};
+	if (!writeConfig(next)) {
+		ctx.ui.notify(`Failed to save ${meta.label} URL to ${getConfigPath()}`, "error");
+		return;
+	}
+	ctx.ui.notify(`Saved ${meta.label} URL and set as active provider`, "info");
+}
+
 export function registerWebCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(WEB_COMMAND_NAME, {
 		description: "Configure the web_search / web_fetch provider and API keys",
@@ -399,19 +453,19 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 
 			const active = getActiveProviderName(config);
 			const ordered = [...PROVIDERS.filter((p) => p.name === active), ...PROVIDERS.filter((p) => p.name !== active)];
-			const isConfigured = (name: string) => resolveApiKey(name, config) !== undefined;
-			const labelOf = (name: string, label: string, keyless: boolean | undefined) => {
+			const isConfigured = (p: ProviderMeta) => resolveApiKey(p.name, config) !== undefined || (p.baseUrlEnvVar ? !needsBaseUrlPrompt(p, config) : false);
+			const labelOf = (p: ProviderMeta) => {
 				const markers: string[] = [];
-				if (name === active) markers.push("✓");
-				if (keyless) markers.push("(free)");
-				else if (isConfigured(name)) markers.push("(configured)");
-				return markers.length ? `${label} ${markers.join(" ")}` : label;
+				if (p.name === active) markers.push("✓");
+				if (p.keyless) markers.push("(free)");
+				if (isConfigured(p)) markers.push("(configured)");
+				return markers.length ? `${p.label} ${markers.join(" ")}` : p.label;
 			};
 
 			const PROXY_ENTRY = `⚙ Set HTTP proxy… (current: ${config.proxy?.trim() || UNSET_LABEL})`;
 			const selected = await ctx.ui.select(
 				"Web search provider",
-				[...ordered.map((p) => labelOf(p.name, p.label, p.keyless)), PROXY_ENTRY],
+				[...ordered.map((p) => labelOf(p)), PROXY_ENTRY],
 				{},
 			);
 			if (selected == null) {
@@ -430,7 +484,12 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// Keyless provider: just switch and persist.
+			if (needsBaseUrlPrompt(meta, config)) {
+				await configureBaseUrl(ctx, config, meta);
+				return;
+			}
+
+			// Keyless provider: just switch and persist after any required base URL is configured.
 			if (meta.keyless) {
 				if (writeConfig({ ...config, provider: meta.name })) {
 					ctx.ui.notify(`Active provider set to ${meta.label}`, "info");

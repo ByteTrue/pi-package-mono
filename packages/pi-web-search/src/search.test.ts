@@ -9,8 +9,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("buildSearchCandidates", () => {
 	it("puts the active provider first", () => {
-		expect(buildSearchCandidates({ provider: "duckduckgo" })[0]).toBe("duckduckgo");
-		expect(buildSearchCandidates({})[0]).toBe("bing"); // default
+		expect(buildSearchCandidates({ provider: "exa-free" })[0]).toBe("exa-free");
+		expect(buildSearchCandidates({})[0]).toBe("exa-free"); // default
 	});
 
 	it("includes keyed providers only when a key is present", () => {
@@ -19,7 +19,12 @@ describe("buildSearchCandidates", () => {
 		expect(c).not.toContain("exa");
 		// keyless ones are always present
 		expect(c).toContain("bing");
-		expect(c).toContain("duckduckgo");
+		expect(c).toContain("exa-free");
+	});
+
+	it("skips base-url providers unless an explicit URL is configured", () => {
+		expect(buildSearchCandidates({})).not.toContain("searxng");
+		expect(buildSearchCandidates({ baseUrls: { searxng: "http://localhost:8080" } })).toContain("searxng");
 	});
 });
 

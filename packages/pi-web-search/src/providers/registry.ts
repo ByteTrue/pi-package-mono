@@ -6,18 +6,26 @@
 
 import type { ProviderMeta } from "./types.js";
 
-export const DEFAULT_PROVIDER_NAME = "bing";
+export const DEFAULT_PROVIDER_NAME = "exa-free";
 
 export const PROVIDERS: ReadonlyArray<ProviderMeta> = [
 	{
-		name: "duckduckgo",
-		label: "DuckDuckGo (free, no key)",
+		name: "exa-free",
+		label: "Exa (free, no key — neural search via Exa MCP)",
 		roles: ["search"],
 		keyless: true,
 	},
 	{
 		name: "bing",
 		label: "Bing (free, no key — works in mainland China)",
+		roles: ["search"],
+		keyless: true,
+	},
+	{
+		name: "searxng",
+		label: "SearXNG (self-hosted, no key — requires SEARXNG_URL)",
+		baseUrlEnvVar: "SEARXNG_URL",
+		defaultBaseUrl: "http://localhost:8080",
 		roles: ["search"],
 		keyless: true,
 	},

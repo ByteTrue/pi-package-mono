@@ -6,3 +6,6 @@ coverage/
 *.tsbuildinfo
 .claude
 .pi
+.pi-subagents/
+
+packages/pi-web-search/live.e2e.local.json
