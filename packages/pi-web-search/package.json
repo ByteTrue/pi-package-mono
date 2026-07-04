@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-web-search",
-  "version": "0.1.0",
-  "description": "Pi extension: web_search + web_fetch with a zero-config free default (Bing, works in mainland China) and pluggable providers (DuckDuckGo, Bocha, Tavily, Exa, Brave, Jina, Firecrawl).",
+  "version": "0.1.1",
+  "description": "Pi extension: web_search + web_fetch with zero-config Exa MCP free search, keyless Bing, self-hosted SearXNG, and pluggable providers (Bocha, Tavily, Exa, Brave, Jina, Firecrawl).",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -9,7 +9,6 @@
     "web-fetch",
     "search",
     "fetch",
-    "duckduckgo",
     "tavily",
     "exa",
     "brave",
@@ -43,6 +42,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:e2e": "vitest run src/live.e2e.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {

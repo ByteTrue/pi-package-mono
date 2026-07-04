@@ -8,7 +8,7 @@ Personal [pi coding agent](https://pi.dev) extensions as an npm workspaces monor
 
 | Package | Description |
 |---|---|
-| [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` tools with zero-config Bing (free, no API key, mainland China reachable) and pluggable providers (DuckDuckGo, Bocha, Tavily, Exa, Brave, Jina, Firecrawl). |
+| [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` tools with zero-config Exa MCP free search, keyless Bing fallback, self-hosted SearXNG, and pluggable providers (Bocha, Tavily, Exa, Brave, Jina, Firecrawl). |
 | [`@bytetrue/pi-vendor`](packages/pi-vendor) | `/vendor` wizard for managing custom providers in `~/.pi/agent/models.json` — provider drafting, model enrichment, and `/models` import. |
 
 ## Local development

@@ -1,0 +1,25 @@
+{
+  "providers": [
+    "exa-free",
+    "bing",
+    "searxng",
+    "bocha",
+    "tavily",
+    "exa",
+    "brave",
+    "jina",
+    "firecrawl"
+  ],
+  "proxy": "http://127.0.0.1:7890",
+  "apiKeys": {
+    "bocha": "",
+    "tavily": "",
+    "exa": "",
+    "brave": "",
+    "jina": "",
+    "firecrawl": ""
+  },
+  "baseUrls": {
+    "searxng": ""
+  }
+}

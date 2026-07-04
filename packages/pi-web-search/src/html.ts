@@ -14,7 +14,7 @@ import type { FetchResponse } from "./providers/types.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-// A real browser UA — some hosts (and DuckDuckGo's HTML endpoints) refuse the
+// A real browser UA — some hosts refuse the bot-shaped default fetch UA.
 // bot-shaped default fetch UA.
 export const BROWSER_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";

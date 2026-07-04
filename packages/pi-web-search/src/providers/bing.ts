@@ -1,7 +1,7 @@
 /**
  * Bing — keyless scraping of the public search HTML. Reachable from mainland
  * China without a proxy (requests redirect to cn.bing.com), which makes it the
- * China-friendly free default alternative to DuckDuckGo.
+ * China-friendly keyless fallback.
  *
  * Microsoft retired the Bing Search API in Aug 2025, so scraping the HTML
  * endpoint is the remaining keyless route. Same fragility class as any scraper

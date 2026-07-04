@@ -7,7 +7,7 @@
  * manual /web switch. Kept free of TUI deps so it is unit-testable.
  */
 
-import { getActiveProviderName, resolveApiKey, type WebConfig } from "./config.js";
+import { getActiveProviderName, resolveApiKey, resolveBaseUrl, type WebConfig } from "./config.js";
 import { createProvider } from "./providers/factory.js";
 import { PROVIDERS } from "./providers/registry.js";
 import type { SearchResult } from "./providers/types.js";
@@ -29,11 +29,18 @@ export interface SearchProgress {
 	previousFailure?: string;
 }
 
+function hasExplicitBaseUrl(name: string, config: WebConfig): boolean {
+	const meta = PROVIDERS.find((p) => p.name === name);
+	if (!meta?.baseUrlEnvVar) return true;
+	return Boolean(process.env[meta.baseUrlEnvVar]?.trim() || config.baseUrls?.[name]?.trim());
+}
 // Active provider first, then other available search providers in registry order.
 export function buildSearchCandidates(config: WebConfig): string[] {
 	const active = getActiveProviderName(config);
 	const available = PROVIDERS.filter(
-		(p) => p.roles.includes("search") && (p.keyless || resolveApiKey(p.name, config) !== undefined),
+		(p) =>
+			p.roles.includes("search") &&
+			((p.keyless && hasExplicitBaseUrl(p.name, config)) || resolveApiKey(p.name, config) !== undefined),
 	).map((p) => p.name);
 	return [active, ...available.filter((n) => n !== active)];
 }
@@ -58,7 +65,7 @@ export async function searchWithFallback(
 		if (!name) continue;
 		let provider: ReturnType<typeof createProvider>;
 		try {
-			provider = createProvider(name, { apiKey: resolveApiKey(name, config) });
+			provider = createProvider(name, { apiKey: resolveApiKey(name, config), baseUrl: resolveBaseUrl(name, config) });
 		} catch {
 			continue; // unknown provider name in config — skip
 		}

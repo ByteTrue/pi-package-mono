@@ -56,7 +56,7 @@ export interface ProviderCredentials {
 // adding a provider means one entry here plus one provider file — the
 // orchestrator never changes.
 //
-//   envVar         — API-key env var (omit for keyless providers like DuckDuckGo)
+//   envVar         — API-key env var (omit for keyless providers like Exa MCP free / Bing)
 //   baseUrlEnvVar  — URL env var (set for self-hosted providers)
 //   defaultBaseUrl — fallback URL when neither env nor config supplies one
 //   roles          — declared capability; runtime dispatch still uses `"fetch" in provider`
