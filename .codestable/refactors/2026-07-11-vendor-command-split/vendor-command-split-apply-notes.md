@@ -54,3 +54,7 @@ refactor: 2026-07-11-vendor-command-split
 - 时间: 2026-07-11
 - 用户确认语录: 「继续」（步骤 3+4 合并放行）
 - 结果: 通过，进入 code-review / commit
+
+## code-review 补做
+- round-1: self-only（无效 gate），已在 commit 后承认
+- round-2: subagent+ocr 完成，见 vendor-command-split-review.md → passed（无 blocking 回归）

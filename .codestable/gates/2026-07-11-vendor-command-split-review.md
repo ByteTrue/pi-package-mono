@@ -1,7 +1,9 @@
 ---
 doc_type: code-review
 slug: 2026-07-11-vendor-command-split
-status: passed
+status: superseded
+superseded_by: .codestable/refactors/2026-07-11-vendor-command-split/vendor-command-split-review.md
+invalid_reason: self-only without independent Task agent / OCR
 reviewer: self
 source: .codestable/refactors/2026-07-11-vendor-command-split/
 ---
@@ -26,3 +28,6 @@ packages/pi-vendor 拆分 command.ts + model-list 测试 + codestable refactor �
 
 ## 结论
 **passed** — 可提交。
+
+
+> ⚠️ 无效 gate：仅 self review。权威报告见 refactor 目录 `vendor-command-split-review.md`（subagent+ocr）。
