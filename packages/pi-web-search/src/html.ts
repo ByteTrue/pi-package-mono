@@ -140,20 +140,44 @@ export function parseAndAssertHttpUrl(raw: string): URL {
 // HTTP fetch
 // ---------------------------------------------------------------------------
 
+const MAX_REDIRECTS = 5;
+
 export function buildFetchRequestInit(signal: AbortSignal | undefined): RequestInit {
 	return {
 		signal,
-		redirect: "follow",
+		// Manual redirects so each hop re-runs the SSRF host check.
+		redirect: "manual",
 		headers: { "User-Agent": BROWSER_USER_AGENT, Accept: FETCH_ACCEPT_HEADER },
 	};
 }
 
+function isRedirectStatus(status: number): boolean {
+	return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
 export async function fetchUrlOrThrow(url: string, signal: AbortSignal | undefined): Promise<Response> {
-	const res = await fetch(url, buildFetchRequestInit(signal));
-	if (!res.ok) {
-		throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
+	// Re-check the start URL (callers may skip parseAndAssertHttpUrl).
+	let current = parseAndAssertHttpUrl(url).toString();
+	for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+		const res = await fetch(current, buildFetchRequestInit(signal));
+		if (isRedirectStatus(res.status)) {
+			const location = res.headers.get("location");
+			if (!location) {
+				throw new Error(`HTTP ${res.status} redirect without Location for ${current}`);
+			}
+			if (hop === MAX_REDIRECTS) {
+				throw new Error(`Too many redirects (max ${MAX_REDIRECTS}) for ${url}`);
+			}
+			// Absolute or relative Location; still must be http(s) + non-private.
+			current = parseAndAssertHttpUrl(new URL(location, current).toString()).toString();
+			continue;
+		}
+		if (!res.ok) {
+			throw new Error(`HTTP ${res.status} ${res.statusText} for ${current}`);
+		}
+		return res;
 	}
-	return res;
+	throw new Error(`Too many redirects (max ${MAX_REDIRECTS}) for ${url}`);
 }
 
 async function extractBodyAsText(

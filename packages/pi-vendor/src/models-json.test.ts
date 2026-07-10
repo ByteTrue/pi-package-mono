@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -90,4 +90,12 @@ describe("upsertProvider", () => {
 		writeModelsJson({ providers: {} }, path);
 		expect(readFileSync(path, "utf8")).toBe("{\n  \"providers\": {}\n}\n");
 	});
+	it("writes models.json with mode 0o600", () => {
+		const path = join(makeTempDir(), "models.json");
+		writeModelsJson({ providers: {} }, path);
+		const mode = statSync(path).mode & 0o777;
+		expect(mode).toBe(0o600);
+		expect(readFileSync(path, "utf8")).toContain('"providers"');
+	});
 });
+

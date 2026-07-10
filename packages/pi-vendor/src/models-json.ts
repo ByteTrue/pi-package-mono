@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -107,7 +107,11 @@ export function readModelsJson(path = getModelsJsonPath()): ModelsJson {
 
 export function writeModelsJson(models: ModelsJson, path = getModelsJsonPath()): void {
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(models, null, 2)}\n`, "utf8");
+	const body = `${JSON.stringify(models, null, 2)}\n`;
+	const tmp = `${path}.${process.pid}.tmp`;
+	// Atomic replace; 0o600 because providers may store API keys / env refs in this file.
+	writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
+	renameSync(tmp, path);
 }
 
 export function upsertProvider(modelsJson: ModelsJson, draft: ProviderDraft, options: ProviderUpsertOptions = {}): ModelsJson {

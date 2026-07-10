@@ -15,7 +15,7 @@
  *   3. provider's defaultBaseUrl from registry
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Static, Type } from "typebox";
@@ -66,7 +66,11 @@ export function readConfig(): WebConfig {
 export function writeConfig(config: WebConfig): boolean {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-		writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+		const body = `${JSON.stringify(config, null, 2)}\n`;
+		const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
+		// mode 0o600: may contain API keys. Atomic rename avoids half-written JSON.
+		writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
+		renameSync(tmp, CONFIG_PATH);
 		return true;
 	} catch {
 		return false;

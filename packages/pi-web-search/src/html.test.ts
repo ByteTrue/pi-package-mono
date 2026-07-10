@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { extractTitle, htmlToText, parseAndAssertHttpUrl } from "./html.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { extractTitle, fetchUrlOrThrow, htmlToText, parseAndAssertHttpUrl } from "./html.js";
 
 describe("htmlToText", () => {
 	it("drops script/style and converts block tags to newlines", () => {
@@ -45,5 +45,44 @@ describe("parseAndAssertHttpUrl (SSRF guard)", () => {
 
 	it("rejects malformed URLs", () => {
 		expect(() => parseAndAssertHttpUrl("not a url")).toThrow(/Invalid URL/);
+	});
+});
+
+describe("fetchUrlOrThrow (redirect SSRF)", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("follows a public redirect and returns the final response", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(null, { status: 302, headers: { Location: "https://example.com/final" } }),
+			)
+			.mockResolvedValueOnce(new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const res = await fetchUrlOrThrow("https://example.com/start", undefined);
+		expect(await res.text()).toBe("ok");
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" });
+	});
+
+	it("rejects redirect into a private host", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(null, { status: 302, headers: { Location: "http://169.254.169.254/latest/meta-data" } }),
+			),
+		);
+		await expect(fetchUrlOrThrow("https://evil.example/open", undefined)).rejects.toThrow(/private\/loopback/);
+	});
+
+	it("rejects relative redirect that resolves to loopback", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(new Response(null, { status: 302, headers: { Location: "http://127.0.0.1/secret" } })),
+		);
+		await expect(fetchUrlOrThrow("https://public.example/x", undefined)).rejects.toThrow(/private\/loopback/);
 	});
 });
