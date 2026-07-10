@@ -1,0 +1,41 @@
+doc_type: refactor-checklist
+refactor: 2026-07-11-vendor-command-split
+status: done
+steps:
+  - id: 1
+    title: Extract model-list pure helpers + unit tests
+    methods: [M-L2-04, M-L1-04]
+    validation: AI
+    checks:
+      - model-list.ts exists and command imports it
+      - model-list.test.ts covers upsert/remove/replace
+      - npm --workspace @bytetrue/pi-vendor test passes
+    status: done
+  - id: 2
+    title: Extract vendor-ui wrappers
+    methods: [M-L2-04]
+    validation: AI
+    checks:
+      - vendor-ui.ts exports customSelect/customInput/prompt*
+      - no duplicate overlay wrappers in command
+      - typecheck + vendor tests pass
+    status: done
+  - id: 3
+    title: Extract models-menu.ts
+    methods: [M-L3-07, M-L2-04]
+    validation: HUMAN
+    checks:
+      - manageModels lives in models-menu.ts
+      - vendor tests + typecheck pass
+      - HUMAN: Manage models Add/Import/Edit/Remove/Back
+    status: done
+  - id: 4
+    title: Extract provider-menu.ts; thin command.ts
+    methods: [M-L3-07, M-L2-04]
+    validation: HUMAN
+    checks:
+      - chooseProviderDraft/editProviderDraft in provider-menu.ts
+      - command.ts only register+save orchestration
+      - vendor tests + typecheck pass
+      - HUMAN: edit provider fields, save, cancel, rename confirm
+    status: done

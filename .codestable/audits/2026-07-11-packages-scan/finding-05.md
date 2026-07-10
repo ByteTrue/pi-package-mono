@@ -6,7 +6,7 @@ nature: maintainability
 severity: P2
 confidence: high
 suggested_action: cs-refactor
-status: deferred
+status: fixed
 ---
 
 # Finding 05：command.ts 近 600 行单体交互流
@@ -30,3 +30,8 @@ status: deferred
 ## 建议动作
 
 `cs-refactor`：按 `provider-menu` / `model-menu` / `save-flow` 拆文件，保持现有行为。
+
+
+## 结果
+
+`cs-refactor` 完成：command.ts ~92 行；models-menu / provider-menu / vendor-ui / model-list。
