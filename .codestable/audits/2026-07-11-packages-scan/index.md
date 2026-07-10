@@ -61,8 +61,12 @@ note: arch-drift 跳过（.codestable/requirements/adrs/ 为空）
 
 | Finding | 状态 | Issue 目录 |
 |---|---|---|
-| 1 SSRF redirect | fixed | `.codestable/issues/2026-07-11-web-fetch-ssrf-redirect/` |
+| 1 SSRF redirect | fixed（rebase 后仍有效） | `.codestable/issues/2026-07-11-web-fetch-ssrf-redirect/` |
 | 2 key 文件权限 | fixed（0600；未禁明文） | `.codestable/issues/2026-07-11-web-config-key-perms/` |
 | 3 原子写 | fixed | `.codestable/issues/2026-07-11-atomic-config-write/` |
-| 4+6 默认 provider 注释 | fixed | `.codestable/issues/2026-07-11-default-provider-comments/` |
+| 4+6 默认 provider 注释 | **superseded** | 上游 0.1.1 默认改为 `exa-free`，删除 DDG；以 registry 为准 |
 | 5 command.ts 拆分 | deferred | 未做（P2 重构，另开 cs-refactor） |
+
+## 上游对齐说明
+
+审计在旧树完成（默认 Bing + DDG）。rebase 到 `origin/main`（pi-web-search 0.1.1）后：产品决策以上游为准；仅保留 SSRF / 原子写+0600 类补丁。
