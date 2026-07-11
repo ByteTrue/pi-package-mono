@@ -15,6 +15,14 @@ describe("htmlToText", () => {
 		expect(htmlToText("<p>A &amp; B &lt;c&gt;</p>").trim()).toBe("A & B <c>");
 		expect(htmlToText("<p>Today&#x27;s &#38; tomorrow&#39;s</p>").trim()).toBe("Today's & tomorrow's");
 	});
+
+	it("replaces invalid numeric entities instead of throwing", () => {
+		const html = "<p>&#0; &#55296; &#xD800; &#1114112; &#x110000; &#99999999;</p>";
+		expect(htmlToText(html).trim()).toBe("� � � � � �");
+		const max = htmlToText("<p>&#1114111;&#x10FFFF;</p>").trim();
+		expect([...max].map((char) => char.codePointAt(0))).toEqual([0x10ffff, 0x10ffff]);
+		expect(htmlToText(`<p>&#${"9".repeat(400)};</p>`).trim()).toBe("�");
+	});
 });
 
 describe("extractTitle", () => {

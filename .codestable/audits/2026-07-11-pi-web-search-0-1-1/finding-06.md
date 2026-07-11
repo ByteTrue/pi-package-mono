@@ -6,7 +6,7 @@ nature: bug
 severity: P2
 confidence: high
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 06：越界数字 HTML entity 会让整页提取抛 RangeError
@@ -33,3 +33,7 @@ status: open
 ## 建议动作
 
 `cs-issue`，一处 guard + 一条回归测试即可封口。
+
+## 修复结果
+
+`.codestable/issues/2026-07-11-html-entity-codepoint/` 增加统一 numeric entity scalar guard：zero、surrogate、越界与 Infinity 替换为 `�`，合法上界与 named entity 保持。最终 review：`subagent+ocr` passed。

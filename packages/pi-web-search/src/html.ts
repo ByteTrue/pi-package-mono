@@ -54,6 +54,14 @@ function convertBlockTagsToNewlines(text: string): string {
 	return text.replace(BLOCK_CLOSER_REGEX, "\n").replace(SELF_CLOSING_BR_REGEX, "\n");
 }
 
+function decodeNumericEntity(code: string, radix: number): string {
+	const value = Number.parseInt(code, radix);
+	if (!Number.isInteger(value) || value === 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
+		return "�";
+	}
+	return String.fromCodePoint(value);
+}
+
 function decodeHtmlEntities(text: string): string {
 	return text
 		.replace(/&amp;/g, "&")
@@ -66,8 +74,8 @@ function decodeHtmlEntities(text: string): string {
 		.replace(/&mdash;/g, "—")
 		.replace(/&ndash;/g, "–")
 		.replace(/&middot;/g, "·")
-		.replace(HEX_HTML_ENTITY_REGEX, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
-		.replace(NUMERIC_HTML_ENTITY_REGEX, (_, code) => String.fromCodePoint(Number(code)));
+		.replace(HEX_HTML_ENTITY_REGEX, (_, code) => decodeNumericEntity(code, 16))
+		.replace(NUMERIC_HTML_ENTITY_REGEX, (_, code) => decodeNumericEntity(code, 10));
 }
 
 function collapseWhitespace(text: string): string {
