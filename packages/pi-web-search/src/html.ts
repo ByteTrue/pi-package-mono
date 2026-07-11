@@ -13,6 +13,7 @@ import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch, ProxyAgent, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
 import type { FetchResponse } from "./providers/types.js";
 import { getInstalledProxyUrl } from "./proxy.js";
+import { readResponseText } from "./response-body.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -371,7 +372,7 @@ async function extractBodyAsText(
 	contentType: string,
 	raw: boolean,
 ): Promise<{ text: string; title?: string }> {
-	const body = await res.text();
+	const body = await readResponseText(res);
 	if (!raw && isHtmlContentType(contentType)) {
 		return { text: htmlToText(body), title: extractTitle(body) };
 	}

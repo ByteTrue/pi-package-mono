@@ -58,11 +58,11 @@ supersedes: 2026-07-11-packages-scan（仅 pi-web-search 部分）
 - config：同目录 temp + rename，目标 inode 为 `0600`
 - 默认 provider：`exa-free`；DDG 已删
 - SearXNG：无显式 URL 时不会进入普通 fallback 候选
-- 自动化：当前 `pi-web-search` **62 passed**、`9 skipped`；全仓 **106 passed**、`9 skipped`；两个 workspace typecheck 通过；最终 code review `subagent+ocr` passed
+- 自动化：当前 `pi-web-search` **73 passed**、`9 skipped`；全仓 **117 passed**、`9 skipped`；两个 workspace typecheck 通过；最终 code review `subagent+ocr` passed
 
 ## 下一步建议
 
-- **P1 继续依次开 `cs-issue`**：Finding 3 → 4（Finding 1 + 2 已 fixed）
+- **P1 继续开 `cs-issue`**：Finding 4（Finding 1–3 已 fixed）
 - **P2 下一批**：Finding 5 + 6 可做小修；Finding 7 + 8 一起做网络/输出预算；Finding 9 随 proxy 修复一起收口生命周期
 - 本 audit 只发现、不修代码；选中 finding 后在当前 run 路由到 `cs-issue` / `cs-refactor`
 
@@ -72,4 +72,5 @@ supersedes: 2026-07-11-packages-scan（仅 pi-web-search 部分）
 |---|---|---|
 | 1 SSRF host / DNS / rebind | fixed | `.codestable/issues/2026-07-11-web-fetch-ssrf-host-resolution/` |
 | 2 proxy precedence / ALL_PROXY | fixed（随 Finding 1 transport review-fix） | 同上 |
-| 3–9 | open | 按上方顺序后续处理 |
+| 3 web_fetch response budget | fixed | `.codestable/issues/2026-07-11-web-fetch-response-budget/` |
+| 4–9 | open | 按上方顺序后续处理 |

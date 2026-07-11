@@ -1,6 +1,7 @@
 /** Tavily — search + extract. API logic adapted from MIT rpiv-web-tools. */
 
 import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import { readResponseJson, readResponseText } from "../response-body.js";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
@@ -37,8 +38,8 @@ export class TavilyProvider implements FullProvider {
 			body: JSON.stringify({ query, max_results: maxResults }),
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await res.text()}`);
-		const raw = (await res.json()) as TavilySearchResponse;
+		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await readResponseText(res)}`);
+		const raw = await readResponseJson<TavilySearchResponse>(res);
 		const results: SearchResult[] = (raw.results ?? []).map((r) => ({
 			title: r.title ?? "",
 			url: r.url ?? "",
@@ -55,8 +56,8 @@ export class TavilyProvider implements FullProvider {
 			body: JSON.stringify({ urls: [url] }),
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} fetch error (${res.status}): ${await res.text()}`);
-		const data = (await res.json()) as TavilyExtractResponse;
+		if (!res.ok) throw new Error(`${this.label} fetch error (${res.status}): ${await readResponseText(res)}`);
+		const data = await readResponseJson<TavilyExtractResponse>(res);
 		const failed = data.failed_results?.[0];
 		if (failed) throw new Error(`${this.label} extraction failed for ${failed.url ?? url}: ${failed.error ?? "unknown"}`);
 		const result = data.results?.[0];

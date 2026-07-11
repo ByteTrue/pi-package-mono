@@ -6,7 +6,7 @@ nature: performance
 severity: P1
 confidence: high
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 03：web_fetch 在截断前完整缓冲响应，可被大响应拖垮进程
@@ -34,3 +34,7 @@ status: open
 ## 建议动作
 
 `cs-issue`，属于不可信输入导致的资源耗尽路径。
+
+## 修复结果
+
+`.codestable/issues/2026-07-11-web-fetch-response-budget/` 已建立固定 10 MiB 解压后预算：header 仅作 identity 预检，真实 stream bytes 为安全边界；越界 cancel；generic 与四个 native provider 的成功/错误 body 全部接入。最终 review：`subagent+ocr` passed。

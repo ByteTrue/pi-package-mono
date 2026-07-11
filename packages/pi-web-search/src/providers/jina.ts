@@ -1,6 +1,7 @@
 /** Jina — s.jina.ai search + r.jina.ai reader. Adapted from MIT rpiv-web-tools. */
 
 import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import { readResponseJson, readResponseText } from "../response-body.js";
 
 const JINA_SEARCH_URL = "https://s.jina.ai/";
 const JINA_READER_URL = "https://r.jina.ai/";
@@ -29,8 +30,8 @@ export class JinaProvider implements FullProvider {
 			headers: { Accept: "application/json", Authorization: `Bearer ${this.apiKey}` },
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await res.text()}`);
-		const raw = (await res.json()) as JinaSearchResponse;
+		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await readResponseText(res)}`);
+		const raw = await readResponseJson<JinaSearchResponse>(res);
 		const results: SearchResult[] = (raw.data?.results ?? [])
 			.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: r.description ?? "" }))
 			.slice(0, maxResults);
@@ -45,8 +46,8 @@ export class JinaProvider implements FullProvider {
 			headers: { Authorization: `Bearer ${this.apiKey}` },
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} fetch error (${res.status}): ${await res.text()}`);
-		const text = await res.text();
+		if (!res.ok) throw new Error(`${this.label} fetch error (${res.status}): ${await readResponseText(res)}`);
+		const text = await readResponseText(res);
 		if (!text.trim()) throw new Error(`${this.label}: no content returned for ${url}`);
 		return { text, contentType: "text/markdown" };
 	}

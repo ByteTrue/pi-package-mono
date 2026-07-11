@@ -211,6 +211,7 @@ const WEB_FETCH_GUIDELINES: string[] = [
 	"web_fetch complements web_search: search finds URLs, fetch reads them.",
 	'After answering using fetched content, include a "Sources:" section with a markdown link to the fetched URL.',
 	"Large responses are truncated and spilled to a temp file — the temp path is reported in the result details.",
+	"Decoded response bodies over 10 MiB are rejected before context truncation.",
 ];
 
 interface FetchDetails {

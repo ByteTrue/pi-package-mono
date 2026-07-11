@@ -1,6 +1,7 @@
 /** Exa — semantic search + contents. API logic adapted from MIT rpiv-web-tools. */
 
 import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import { readResponseJson, readResponseText } from "../response-body.js";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
@@ -35,8 +36,8 @@ export class ExaProvider implements FullProvider {
 			body: JSON.stringify({ query, numResults: maxResults, contents: { text: { maxCharacters: MAX_SNIPPET_CHARS } } }),
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await res.text()}`);
-		const raw = (await res.json()) as ExaResponse;
+		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await readResponseText(res)}`);
+		const raw = await readResponseJson<ExaResponse>(res);
 		const results: SearchResult[] = (raw.results ?? []).map((r) => ({
 			title: r.title ?? "",
 			url: r.url ?? "",
@@ -53,8 +54,8 @@ export class ExaProvider implements FullProvider {
 			body: JSON.stringify({ ids: [url], text: { maxCharacters: MAX_FETCH_CHARS } }),
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} fetch error (${res.status}): ${await res.text()}`);
-		const data = (await res.json()) as ExaResponse;
+		if (!res.ok) throw new Error(`${this.label} fetch error (${res.status}): ${await readResponseText(res)}`);
+		const data = await readResponseJson<ExaResponse>(res);
 		const result = data.results?.[0];
 		if (!result?.text) throw new Error(`${this.label}: no content returned for ${url}`);
 		return { text: result.text, title: result.title || undefined, contentType: "text/plain" };
