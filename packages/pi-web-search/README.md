@@ -77,7 +77,7 @@ Set an explicit proxy in the config — the most reliable option, independent of
 { "proxy": "http://127.0.0.1:7890" }
 ```
 
-On load the package routes all fetches through it via undici (`NO_PROXY` / localhost endpoints bypass it). If `proxy` is unset it falls back to the `HTTP(S)_PROXY` env vars. Set `BYTE_PI_WEB_NO_PROXY=1` to disable entirely.
+On load, provider/API fetches use undici and honor `NO_PROXY`. Generic `web_fetch` sends arbitrary public targets through the selected per-protocol proxy directly (it intentionally does not let `NO_PROXY` bypass the SSRF-safe transport). If config `proxy` is unset, `HTTP_PROXY`, `HTTPS_PROXY`, then `ALL_PROXY` are used. Set `BYTE_PI_WEB_NO_PROXY=1` to disable proxying entirely.
 
 ## Live provider tests
 

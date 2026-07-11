@@ -7,6 +7,9 @@ status: active
 total_findings: 6
 dimensions: [bug, security, performance, maintainability]
 note: arch-drift 跳过（.codestable/requirements/adrs/ 为空）
+superseded_for: packages/pi-web-search
+superseded_by: .codestable/audits/2026-07-11-pi-web-search-0-1-1/
+remaining_scope: packages/pi-vendor
 ---
 
 # packages-scan 审计报告
@@ -65,8 +68,12 @@ note: arch-drift 跳过（.codestable/requirements/adrs/ 为空）
 | 2 key 文件权限 | fixed（0600；未禁明文） | `.codestable/issues/2026-07-11-web-config-key-perms/` |
 | 3 原子写 | fixed | `.codestable/issues/2026-07-11-atomic-config-write/` |
 | 4+6 默认 provider 注释 | **superseded** | 上游 0.1.1 默认改为 `exa-free`，删除 DDG；以 registry 为准 |
-| 5 command.ts 拆分 | deferred | 未做（P2 重构，另开 cs-refactor） |
+| 5 command.ts 拆分 | fixed | `.codestable/refactors/2026-07-11-vendor-command-split/` |
 
 ## 上游对齐说明
 
 审计在旧树完成（默认 Bing + DDG）。rebase 到 `origin/main`（pi-web-search 0.1.1）后：产品决策以上游为准；仅保留 SSRF / 原子写+0600 类补丁。
+
+## 继任审计
+
+`packages/pi-web-search` 的结论已由 `.codestable/audits/2026-07-11-pi-web-search-0-1-1/` 按当前上游树重扫并取代；本 index 仅继续保留 `packages/pi-vendor` 的历史记录与已完成闭环。
