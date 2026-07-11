@@ -6,7 +6,7 @@ nature: bug
 severity: P2
 confidence: high
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 05：raw=true 在四个 native-fetch provider 上无效
@@ -33,3 +33,7 @@ status: open
 ## 建议动作
 
 `cs-issue`，这是稳定可复现的公开工具契约偏差。
+
+## 修复结果
+
+`.codestable/issues/2026-07-11-web-fetch-raw-routing/` 将 `raw=true` 固定路由到 generic SSRF-safe fetch；raw false/omitted 保持 native-first，native failure 保持 generic fallback。真实 tool execute 路由矩阵覆盖。最终 review：`subagent+ocr` passed。

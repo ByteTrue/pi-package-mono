@@ -284,11 +284,10 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 
 			const { provider } = instantiateActiveProvider(readConfig());
 
-			// Provider's native fetch (Tavily/Exa/Jina/Firecrawl) if present;
-			// otherwise the keyless generic HTML extractor. If the provider's
-			// fetch fails, fall back to the generic extractor automatically.
+			// Raw HTML must use the generic transport; native provider endpoints return
+			// extracted text/markdown. Non-raw fetch keeps native-first + fallback.
 			let response: FetchResponse;
-			if ("fetch" in provider) {
+			if (!raw && "fetch" in provider) {
 				try {
 					response = await provider.fetch(url, raw, signal);
 				} catch (err) {

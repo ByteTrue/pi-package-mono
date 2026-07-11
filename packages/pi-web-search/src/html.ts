@@ -4,8 +4,8 @@
  * Ported and trimmed from the MIT-licensed rpiv-web-tools fetch-helpers:
  *   - htmlToText / extractTitle  — tag-stripping HTML → readable text
  *   - SSRF guard                 — reject private / loopback / link-local hosts
- *   - fetchViaGenericHtml        — the keyless web_fetch path used when the
- *     active provider has no native fetch endpoint
+ *   - fetchViaGenericHtml        — the keyless web_fetch path used for raw HTML
+ *     or when the active provider has no usable native fetch endpoint
  */
 
 import { lookup } from "node:dns/promises";
@@ -380,7 +380,7 @@ async function extractBodyAsText(
 }
 
 // Keyless web_fetch path: fetch → content-type assert → body extraction →
-// FetchResponse envelope. Used when the active provider has no native fetch().
+// FetchResponse envelope. Used for raw HTML and native-fetch fallback.
 export async function fetchViaGenericHtml(url: string, raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
 	const res = await fetchUrlOrThrow(url, signal);
 	const contentType = res.headers.get("content-type") ?? "";

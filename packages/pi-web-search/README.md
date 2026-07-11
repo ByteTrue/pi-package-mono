@@ -59,7 +59,7 @@ Config lives at `~/.pi/byte-pi-web/config.json` (override the base dir with `PI_
 > [!NOTE]
 > `proxy` applies to **all** web fetches. Keep it when your selected provider or fetched URLs require a proxy; Bing often works without one in mainland China.
 
-When a key-backed provider with a native fetch endpoint is active (Tavily, Exa, Jina, Firecrawl), `web_fetch` uses it; otherwise it falls back to a built-in, keyless HTML→text fetcher.
+When a key-backed provider with a native fetch endpoint is active (Tavily, Exa, Jina, Firecrawl), non-raw `web_fetch` uses it; `raw: true` and native failures use the built-in SSRF-safe generic fetcher.
 
 ## Automatic fallback
 
