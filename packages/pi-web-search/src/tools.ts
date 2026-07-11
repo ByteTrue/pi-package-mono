@@ -85,6 +85,7 @@ const WEB_SEARCH_GUIDELINES: string[] = [
 	'Use the current year from "Current date:" in your context when searching for recent information.',
 	'After answering using search results, include a "Sources:" section listing the URLs as markdown links: [Title](URL).',
 	"If results look weak or off-topic, retry with a more specific query. The tool already fails over across search providers automatically, so do not tell the user to switch providers.",
+	"Each provider attempt has a 15-second deadline; normalized result fields are capped at 64 KiB total.",
 ];
 
 interface SearchDetails {

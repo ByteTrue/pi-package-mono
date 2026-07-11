@@ -6,7 +6,7 @@ nature: performance
 severity: P2
 confidence: high
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 08：多个 provider 的 snippet 无长度上限，search 输出总量不受控
@@ -33,3 +33,7 @@ status: open
 ## 建议动作
 
 `cs-issue`，应和 Finding 07 作为网络/输出预算一起实现与测试。
+
+## 修复结果
+
+`.codestable/issues/2026-07-11-web-search-budgets/` 在 winner 返回前统一做 UTF-8 规范化：title 512 B、URL 4096 B、snippet 2048 B、全部字段 64 KiB、attempted error 512 B；content/details/TUI 共用 normalized results。最终 review：`subagent+ocr` passed。

@@ -14,7 +14,7 @@
 
 | Tool | What it does |
 |---|---|
-| `web_search` | Search the web. Args: `query`, optional `max_results` (1–10, default 5). |
+| `web_search` | Search the web. Args: `query`, optional `max_results` (1–10, default 5). Each provider attempt has a 15-second deadline; normalized result fields are capped at 64 KiB total. |
 | `web_fetch` | Fetch a URL and return extracted text. Args: `url`, optional `raw`. Blocks private/loopback hosts; rejects decoded response bodies over 10 MiB; truncates large outputs within that budget to a temp file. |
 
 ## Install

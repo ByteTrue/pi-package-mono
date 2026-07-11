@@ -58,12 +58,12 @@ supersedes: 2026-07-11-packages-scan（仅 pi-web-search 部分）
 - config：同目录 temp + rename，目标 inode 为 `0600`
 - 默认 provider：`exa-free`；DDG 已删
 - SearXNG：无显式 URL 时不会进入普通 fallback 候选
-- 自动化：当前 `pi-web-search` **81 passed**、`9 skipped`；全仓 **125 passed**、`9 skipped`；两个 workspace typecheck 通过；最终 code review `subagent+ocr` passed
+- 自动化：当前 `pi-web-search` **86 passed**、`9 skipped`；全仓 **130 passed**、`9 skipped`；两个 workspace typecheck 通过；最终 code review `subagent+ocr` passed
 
 ## 下一步建议
 
-- **P1 已清零**；P2 Finding 5–6 已 fixed，下一步合并处理 Finding 7 + 8（网络/输出预算）
-- **P2 剩余**：Finding 7 + 8 一起做 provider attempt / search 输出预算；Finding 9 随 proxy 生命周期收口
+- **Finding 1–8 已 fixed**；仅剩 P2 Finding 9（proxy global dispatcher 生命周期）
+- **下一步**：Finding 9 走 `cs-refactor`，收口 global dispatcher ownership / restore / close
 - 本 audit 只发现、不修代码；选中 finding 后在当前 run 路由到 `cs-issue` / `cs-refactor`
 
 ## 修复进度
@@ -76,4 +76,6 @@ supersedes: 2026-07-11-packages-scan（仅 pi-web-search 部分）
 | 4 invalid config overwrite | fixed | `.codestable/issues/2026-07-11-web-config-invalid-preserve/` |
 | 5 raw=true routing | fixed | `.codestable/issues/2026-07-11-web-fetch-raw-routing/` |
 | 6 invalid numeric entity | fixed | `.codestable/issues/2026-07-11-html-entity-codepoint/` |
-| 7–9 | open | 按上方顺序后续处理 |
+| 7 provider attempt timeout | fixed | `.codestable/issues/2026-07-11-web-search-budgets/` |
+| 8 search output budget | fixed | 同上 |
+| 9 | open | 下一步 `cs-refactor` |
