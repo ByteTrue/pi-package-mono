@@ -7,6 +7,7 @@
  * Response follows the Bing WebSearch schema: data.webPages.value[].
  */
 
+import { fetchWithProxy as fetch } from "../proxy.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const BOCHA_SEARCH_URL = "https://api.bochaai.com/v1/web-search";

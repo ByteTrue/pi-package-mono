@@ -1,5 +1,6 @@
 /** Firecrawl — search + scrape. API logic adapted from MIT rpiv-web-tools. */
 
+import { fetchWithProxy as fetch } from "../proxy.js";
 import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
 import { readResponseJson, readResponseText } from "../response-body.js";
 

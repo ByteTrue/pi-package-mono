@@ -1,21 +1,20 @@
 /**
- * Proxy support.
+ * Package-scoped proxy support.
  *
- * Node's global `fetch` (undici) does NOT honor HTTP_PROXY/HTTPS_PROXY/ALL_PROXY
- * by default, and a TUN-mode / system proxy often sets no env var at all. The
- * result: hosts that are only reachable through the proxy fail, while directly
- * reachable hosts work — so web_search breaks while web_fetch of other sites
- * succeeds.
- *
- * Fix: route fetches through a proxy via undici. Resolution order:
- *   1. an explicit `proxy` in the package config (most reliable — independent
- *      of how pi was launched and of TUN mode)
+ * Resolution order:
+ *   1. explicit `proxy` in package config
  *   2. HTTP(S)_PROXY / ALL_PROXY environment variables
  *
- * Provider/API fetches honor NO_PROXY. Generic web_fetch uses the installed
- * per-protocol proxy directly after its SSRF literal guard, so arbitrary target
- * hosts cannot use NO_PROXY to fall back to an unguarded direct connection.
+ * Provider/API fetches use a package-owned EnvHttpProxyAgent and honor
+ * NO_PROXY. Generic web_fetch keeps its stricter SSRF transport in html.ts.
+ * This module never changes undici's process-global dispatcher.
  */
+
+import {
+	EnvHttpProxyAgent,
+	fetch as undiciFetch,
+	type RequestInit as UndiciRequestInit,
+} from "undici";
 
 interface InstalledProxyRoutes {
 	http?: string;
@@ -24,12 +23,11 @@ interface InstalledProxyRoutes {
 
 let installedProxyRoutes: InstalledProxyRoutes | undefined;
 let installedProxyKey: string | undefined;
-let installedGlobalDispatcher: { close?: () => Promise<unknown> } | undefined;
+let providerDispatcher: EnvHttpProxyAgent | undefined;
 
 export function getInstalledProxyUrl(protocol: "http:" | "https:" = "https:"): string | undefined {
 	return protocol === "http:" ? installedProxyRoutes?.http : installedProxyRoutes?.https;
 }
-
 
 function detectEnvProxyRoutes(): InstalledProxyRoutes {
 	const all = process.env.all_proxy?.trim() || process.env.ALL_PROXY?.trim();
@@ -38,8 +36,8 @@ function detectEnvProxyRoutes(): InstalledProxyRoutes {
 	return { ...(http ? { http } : {}), ...(https ? { https } : {}) };
 }
 
-function proxyKey(routes: InstalledProxyRoutes): string {
-	return `${routes.http ?? ""}\n${routes.https ?? ""}`;
+function proxyKey(routes: InstalledProxyRoutes, noProxy: string): string {
+	return `${routes.http ?? ""}\n${routes.https ?? ""}\n${noProxy}`;
 }
 
 function isValidProxyUrl(raw: string): boolean {
@@ -50,19 +48,21 @@ function isValidProxyUrl(raw: string): boolean {
 	}
 }
 
+async function clearProviderDispatcher(): Promise<void> {
+	const previous = providerDispatcher;
+	providerDispatcher = undefined;
+	installedProxyRoutes = undefined;
+	installedProxyKey = undefined;
+	if (previous) await previous.close().catch(() => {});
+}
+
 /**
- * Install the proxy dispatcher. `configuredProxy` (from config.json `proxy`)
- * wins over env vars. Idempotent and non-fatal. Returns the proxy URL applied,
- * or undefined if none/disabled/unavailable.
+ * Configure the package-scoped provider dispatcher. `configuredProxy` wins
+ * over env vars. Idempotent and non-fatal. Returns the selected proxy URL.
  */
 export async function installProxyDispatcher(configuredProxy?: string): Promise<string | undefined> {
 	if (process.env.BYTE_PI_WEB_NO_PROXY?.trim()) {
-		const undici = await loadUndici();
-		if (installedProxyRoutes && undici?.setGlobalDispatcher && undici?.Agent) {
-			setOwnedGlobalDispatcher(undici, new undici.Agent());
-		}
-		installedProxyRoutes = undefined;
-		installedProxyKey = undefined;
+		await clearProviderDispatcher();
 		return undefined;
 	}
 
@@ -74,70 +74,34 @@ export async function installProxyDispatcher(configuredProxy?: string): Promise<
 	if ([routes.http, routes.https].some((url) => url && !isValidProxyUrl(url))) {
 		return installedProxyRoutes?.https ?? installedProxyRoutes?.http;
 	}
-	const undici = await loadUndici();
 	if (!selected) {
-		if (installedProxyRoutes && undici?.setGlobalDispatcher && undici?.Agent) {
-			setOwnedGlobalDispatcher(undici, new undici.Agent());
-		}
-		installedProxyRoutes = undefined;
-		installedProxyKey = undefined;
+		await clearProviderDispatcher();
 		return undefined;
 	}
 
-	const nextKey = proxyKey(routes);
-	if (installedProxyKey === nextKey) return selected;
-	if (!undici?.setGlobalDispatcher || !undici?.EnvHttpProxyAgent) {
+	const noProxy = process.env.no_proxy ?? process.env.NO_PROXY ?? "localhost,127.0.0.1,::1";
+	const nextKey = proxyKey(routes, noProxy);
+	if (providerDispatcher && installedProxyKey === nextKey) return selected;
+
+	let next: EnvHttpProxyAgent;
+	try {
+		next = new EnvHttpProxyAgent({ httpProxy: routes.http, httpsProxy: routes.https, noProxy });
+	} catch {
 		return installedProxyRoutes?.https ?? installedProxyRoutes?.http;
 	}
-	try {
-		setOwnedGlobalDispatcher(
-			undici,
-			new undici.EnvHttpProxyAgent({
-				httpProxy: routes.http,
-				httpsProxy: routes.https,
-				noProxy: process.env.no_proxy ?? process.env.NO_PROXY ?? "localhost,127.0.0.1,::1",
-			}),
-		);
-		installedProxyRoutes = routes;
-		installedProxyKey = nextKey;
-		return selected;
-	} catch {
-		// The previous dispatcher is still active; keep and report its matching state.
-		return installedProxyRoutes?.https ?? installedProxyRoutes?.http;
-	}
+
+	const previous = providerDispatcher;
+	providerDispatcher = next;
+	installedProxyRoutes = routes;
+	installedProxyKey = nextKey;
+	if (previous) await previous.close().catch(() => {});
+	return selected;
 }
 
-interface UndiciProxyModule {
-	setGlobalDispatcher(dispatcher: unknown): void;
-	EnvHttpProxyAgent: new (options?: { httpProxy?: string; httpsProxy?: string; noProxy?: string }) => { close?: () => Promise<unknown> };
-	Agent: new () => { close?: () => Promise<unknown> };
-}
-
-function setOwnedGlobalDispatcher(undici: UndiciProxyModule, dispatcher: { close?: () => Promise<unknown> }): void {
-	const previous = installedGlobalDispatcher;
-	undici.setGlobalDispatcher(dispatcher);
-	installedGlobalDispatcher = dispatcher;
-	if (previous && previous !== dispatcher) void previous.close?.().catch(() => {});
-}
-
-// Resolve undici (it backs Node's global fetch; setGlobalDispatcher on any copy
-// sharing undici's global symbol affects the built-in fetch). Try a bare import
-// first, then resolve relative to a guaranteed-present pi core package.
-async function loadUndici(): Promise<UndiciProxyModule | undefined> {
-	try {
-		return (await import("undici")) as unknown as UndiciProxyModule;
-	} catch {
-		// fall through
-	}
-	try {
-		const { createRequire } = await import("node:module");
-		const anchor = (import.meta as { resolve?: (s: string) => string }).resolve?.(
-			"@earendil-works/pi-coding-agent",
-		);
-		if (!anchor) return undefined;
-		const require = createRequire(anchor);
-		return (await import(require.resolve("undici"))) as unknown as UndiciProxyModule;
-	} catch {
-		return undefined;
-	}
+export async function fetchWithProxy(input: string | URL, init?: RequestInit): Promise<Response> {
+	if (!providerDispatcher) return globalThis.fetch(input, init);
+	return (await undiciFetch(input, {
+		...(init as UndiciRequestInit | undefined),
+		dispatcher: providerDispatcher,
+	})) as unknown as Response;
 }

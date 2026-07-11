@@ -13,6 +13,7 @@
  * searches are infrequent. Could cache sessions if throughput ever matters.
  */
 
+import { fetchWithProxy as fetch } from "../proxy.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";

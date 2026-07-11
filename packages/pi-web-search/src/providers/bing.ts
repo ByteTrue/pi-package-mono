@@ -9,6 +9,7 @@
  */
 
 import { BROWSER_USER_AGENT, htmlToText } from "../html.js";
+import { fetchWithProxy as fetch } from "../proxy.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const BING_ENDPOINT = "https://www.bing.com/search";

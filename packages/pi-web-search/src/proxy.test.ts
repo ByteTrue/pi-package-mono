@@ -1,11 +1,15 @@
 import { createServer } from "node:http";
+import { getGlobalDispatcher } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchUrlOrThrow, fetchViaGenericHtml } from "./html.js";
-import { getInstalledProxyUrl, installProxyDispatcher } from "./proxy.js";
+import { fetchWithProxy, getInstalledProxyUrl, installProxyDispatcher } from "./proxy.js";
 
 const PROXY_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"];
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+	vi.unstubAllEnvs();
+	vi.unstubAllGlobals();
+});
 
 describe("installProxyDispatcher", () => {
 	it("is a no-op (returns undefined) when no proxy env var is set", async () => {
@@ -20,6 +24,20 @@ describe("installProxyDispatcher", () => {
 		vi.stubEnv("HTTPS_PROXY", "http://127.0.0.1:7890");
 		vi.stubEnv("BYTE_PI_WEB_NO_PROXY", "1");
 		await expect(installProxyDispatcher()).resolves.toBeUndefined();
+	});
+
+	it("never changes the process global dispatcher", async () => {
+		const globalDispatcher = getGlobalDispatcher();
+		vi.stubEnv("BYTE_PI_WEB_NO_PROXY", "");
+
+		await installProxyDispatcher("http://127.0.0.1:7890");
+		expect(getGlobalDispatcher()).toBe(globalDispatcher);
+		await installProxyDispatcher("http://127.0.0.1:7891");
+		expect(getGlobalDispatcher()).toBe(globalDispatcher);
+
+		vi.stubEnv("BYTE_PI_WEB_NO_PROXY", "1");
+		await installProxyDispatcher();
+		expect(getGlobalDispatcher()).toBe(globalDispatcher);
 	});
 
 	it("tracks HTTP and HTTPS proxy routes separately", async () => {
@@ -49,13 +67,25 @@ describe("installProxyDispatcher", () => {
 		expect(getInstalledProxyUrl()).toBeUndefined();
 	});
 
+	it("delegates package fetches to global fetch when no package proxy is active", async () => {
+		for (const v of PROXY_VARS) vi.stubEnv(v, "");
+		vi.stubEnv("BYTE_PI_WEB_NO_PROXY", "1");
+		await installProxyDispatcher();
+		const fetchMock = vi.fn(async () => new Response("direct"));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const response = await fetchWithProxy("https://example.com");
+		expect(await response.text()).toBe("direct");
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
 	it("routes generic fetch through the authenticated proxy even when NO_PROXY matches", async () => {
-		let connectTarget: string | undefined;
-		let proxyAuthorization: string | undefined;
+		const connectTargets: string[] = [];
+		const proxyAuthorizations: Array<string | undefined> = [];
 		const proxyServer = createServer();
 		proxyServer.on("connect", (request, socket) => {
-			connectTarget = request.url;
-			proxyAuthorization = request.headers["proxy-authorization"];
+			connectTargets.push(request.url ?? "");
+			proxyAuthorizations.push(request.headers["proxy-authorization"]);
 			socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
 			socket.once("data", (requestBytes) => {
 				const binary = requestBytes.toString().includes("/binary");
@@ -73,10 +103,16 @@ describe("installProxyDispatcher", () => {
 			const proxy = `http://user:pass@127.0.0.1:${address.port}`;
 			await installProxyDispatcher(proxy);
 
+			const providerResponse = await fetchWithProxy("http://provider.example/probe");
+			expect(await providerResponse.text()).toBe("ok");
+
 			const response = await fetchUrlOrThrow("http://public.example/probe", AbortSignal.timeout(5_000));
 			expect(await response.text()).toBe("ok");
-			expect(connectTarget).toBe("public.example:80");
-			expect(proxyAuthorization).toBe(`Basic ${Buffer.from("user:pass").toString("base64")}`);
+			expect(connectTargets).toEqual(["provider.example:80", "public.example:80"]);
+			expect(proxyAuthorizations).toEqual([
+				`Basic ${Buffer.from("user:pass").toString("base64")}`,
+				`Basic ${Buffer.from("user:pass").toString("base64")}`,
+			]);
 
 			const cancel = vi.spyOn(ReadableStream.prototype, "cancel");
 			await expect(fetchViaGenericHtml("http://public.example/binary", false, AbortSignal.timeout(5_000))).rejects.toThrow(/Unsupported content type/);

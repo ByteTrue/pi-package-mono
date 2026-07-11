@@ -1,5 +1,6 @@
 /** Brave Search — search only. API logic adapted from MIT rpiv-web-tools. */
 
+import { fetchWithProxy as fetch } from "../proxy.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";

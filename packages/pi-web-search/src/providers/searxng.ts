@@ -10,6 +10,7 @@
  * Docs: https://docs.searxng.org/dev/search_api.html
  */
 
+import { fetchWithProxy as fetch } from "../proxy.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";

@@ -3,7 +3,7 @@ doc_type: audit-index
 audit: 2026-07-11-pi-web-search-0-1-1
 scope: packages/pi-web-search 0.1.1 当前 origin/main（HEAD 0b2e19d）
 created: 2026-07-11
-status: active
+status: completed
 total_findings: 9
 dimensions: [bug, security, performance, maintainability]
 arch_drift: skipped-no-adrs
@@ -58,12 +58,12 @@ supersedes: 2026-07-11-packages-scan（仅 pi-web-search 部分）
 - config：同目录 temp + rename，目标 inode 为 `0600`
 - 默认 provider：`exa-free`；DDG 已删
 - SearXNG：无显式 URL 时不会进入普通 fallback 候选
-- 自动化：当前 `pi-web-search` **86 passed**、`9 skipped`；全仓 **130 passed**、`9 skipped`；两个 workspace typecheck 通过；最终 code review `subagent+ocr` passed
+- 自动化：当前 `pi-web-search` **88 passed**、`9 skipped`；全仓 **132 passed**、`9 skipped`；两个 workspace typecheck 通过；最终 code review `subagent+ocr` passed
 
 ## 下一步建议
 
-- **Finding 1–8 已 fixed**；仅剩 P2 Finding 9（proxy global dispatcher 生命周期）
-- **下一步**：Finding 9 走 `cs-refactor`，收口 global dispatcher ownership / restore / close
+- **Finding 1–9 全部 fixed**；本轮当前树 audit 已闭环
+- **下一步**：如准备发布，先决定是否 push 当前 7 个本地 commits，再按 release 流程处理
 - 本 audit 只发现、不修代码；选中 finding 后在当前 run 路由到 `cs-issue` / `cs-refactor`
 
 ## 修复进度
@@ -78,4 +78,4 @@ supersedes: 2026-07-11-packages-scan（仅 pi-web-search 部分）
 | 6 invalid numeric entity | fixed | `.codestable/issues/2026-07-11-html-entity-codepoint/` |
 | 7 provider attempt timeout | fixed | `.codestable/issues/2026-07-11-web-search-budgets/` |
 | 8 search output budget | fixed | 同上 |
-| 9 | open | 下一步 `cs-refactor` |
+| 9 package proxy ownership | fixed | `.codestable/issues/2026-07-11-web-proxy-global-side-effect/` |

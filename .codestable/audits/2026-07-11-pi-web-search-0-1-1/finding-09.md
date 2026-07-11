@@ -6,7 +6,7 @@ nature: maintainability
 severity: P2
 confidence: high
 suggested_action: cs-refactor
-status: open
+status: fixed
 ---
 
 # Finding 09：proxy 通过全局 dispatcher 改写整个 Pi 进程且无完整恢复/释放模型
@@ -34,3 +34,7 @@ status: open
 ## 建议动作
 
 `cs-refactor`；若与 Finding 02 同批，先由 issue 定义正确行为，再做最小生命周期收口。
+
+## 修复结果
+
+refactor 前置检查确认“移除 global side effect”属于行为修正，路由到 `.codestable/issues/2026-07-11-web-proxy-global-side-effect/`。现已改为 package-owned EnvHttpProxyAgent + `fetchWithProxy`，9 个 provider 全迁移；install/switch/opt-out 不改变 process global dispatcher identity。最终 review：`subagent+ocr` passed。

@@ -25,9 +25,8 @@ export { installProxyDispatcher } from "./proxy.js";
 export { registerWebCommand, registerWebFetchTool, registerWebSearchTool } from "./tools.js";
 
 export default async function registerWebTools(pi: ExtensionAPI): Promise<void> {
-	// Route fetches through a proxy so web tools reach hosts that are only
-	// reachable via the proxy. Uses the config `proxy` if set, else HTTP(S)_PROXY
-	// env. No-op when neither is present.
+	// Configure package-scoped proxy transport for this extension only. Uses
+	// config `proxy`, else HTTP(S)_PROXY / ALL_PROXY; no-op when unset.
 	await installProxyDispatcher(readConfig().proxy);
 	registerWebSearchTool(pi);
 	registerWebFetchTool(pi);
