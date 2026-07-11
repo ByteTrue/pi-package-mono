@@ -6,7 +6,7 @@ nature: bug
 severity: P1
 confidence: high
 suggested_action: cs-issue
-status: open
+status: fixed
 ---
 
 # Finding 04：无效 config 被读成空对象后，/web 会静默覆盖原文件
@@ -34,3 +34,7 @@ status: open
 ## 建议动作
 
 `cs-issue`，这是确定的数据损失路径，不应靠用户知道 fail-soft 内部语义规避。
+
+## 修复结果
+
+`.codestable/issues/2026-07-11-web-config-invalid-preserve/` 新增 missing / valid / invalid 三态读取：运行时保持 fail-soft，`/web` 对 invalid 在任何 UI/write 前 fail closed；malformed 原文件 byte-for-byte 保留，固定错误不泄漏 JSON/API key 片段。最终 review：`subagent+ocr` passed。

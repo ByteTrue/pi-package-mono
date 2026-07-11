@@ -40,6 +40,10 @@ export const WebConfigSchema = Type.Object(
 
 export type WebConfig = Static<typeof WebConfigSchema>;
 
+export type WebConfigReadResult =
+	| { status: "missing" | "valid"; config: WebConfig }
+	| { status: "invalid"; error: string };
+
 function configDir(): string {
 	// Live under pi's own config dir (~/.pi), overridable via PI_CONFIG_DIR.
 	const base = process.env.PI_CONFIG_DIR?.trim() || join(homedir(), ".pi");
@@ -52,15 +56,34 @@ export function getConfigPath(): string {
 	return CONFIG_PATH;
 }
 
-export function readConfig(): WebConfig {
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+export function readConfigResult(): WebConfigReadResult {
+	let text: string;
+	try {
+		text = readFileSync(CONFIG_PATH, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { status: "missing", config: {} as WebConfig };
+		return { status: "invalid", error: `Could not read ${CONFIG_PATH}: ${errorMessage(error)}` };
+	}
+
 	let raw: unknown;
 	try {
-		raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+		raw = JSON.parse(text);
 	} catch {
-		return {} as WebConfig;
+		return { status: "invalid", error: `Could not parse ${CONFIG_PATH}: invalid JSON` };
 	}
-	if (!Value.Check(WebConfigSchema, raw)) return {} as WebConfig;
-	return raw as WebConfig;
+	if (!Value.Check(WebConfigSchema, raw)) {
+		return { status: "invalid", error: `${CONFIG_PATH} does not match the expected config schema` };
+	}
+	return { status: "valid", config: raw as WebConfig };
+}
+
+export function readConfig(): WebConfig {
+	const result = readConfigResult();
+	return result.status === "invalid" ? ({} as WebConfig) : result.config;
 }
 
 export function writeConfig(config: WebConfig): boolean {

@@ -23,6 +23,7 @@ import {
 	getActiveProviderName,
 	getConfigPath,
 	readConfig,
+	readConfigResult,
 	resolveApiKey,
 	resolveBaseUrl,
 	type WebConfig,
@@ -440,7 +441,12 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(WEB_COMMAND_NAME, {
 		description: "Configure the web_search / web_fetch provider and API keys",
 		handler: async (args, ctx) => {
-			const config = readConfig();
+			const loaded = readConfigResult();
+			if (loaded.status === "invalid") {
+				ctx.ui?.notify?.(`${loaded.error}. Fix or remove the config file before using /${WEB_COMMAND_NAME}.`, "error");
+				return;
+			}
+			const config = loaded.config;
 
 			if (typeof args === "string" && args.includes(SHOW_FLAG)) {
 				ctx.ui?.notify?.(formatShowConfig(config), "info");
