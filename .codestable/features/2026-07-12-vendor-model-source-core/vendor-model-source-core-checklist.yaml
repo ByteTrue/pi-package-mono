@@ -1,0 +1,154 @@
+feature: 2026-07-12-vendor-model-source-core
+created: 2026-07-12
+
+dod:
+  commands:
+    - id: CMD-001
+      command: npm --workspace @bytetrue/pi-vendor test
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: npm --workspace @bytetrue/pi-vendor run typecheck
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: npm run typecheck --workspaces --if-present && npm test
+      core: false
+      failure_handling: fix-or-block
+  evidence_required: [command_output, serialization_scan, fetch_contract_tests, route_integration]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todos: forbidden
+    commented_code: forbidden
+    unused_imports: forbidden
+    secret_logging: forbidden
+
+steps:
+  - id: S1-MOVE-MODEL-SOURCE
+    action: 行为等价目录重组：移动 official catalog、enrich、templates、openai models 及 tests 到 model-source 子目录
+    covers: [scenario-1, structure-health]
+    depends_on: []
+    verification: move 前后 tests/typecheck + root export diff + old deep-path re-export stubs + TUI import review
+    exit_signal: 只有路径/import 变化，现有 tests 与 exports 行为一致
+    failure_policy: fix-or-block
+    status: done
+  - id: S2-CLOSED-DTO-SEARCH
+    action: DTO/search：实现 recursive closed mapper，保留 cost.tiers 与当前安全 compat fields；bounded flat catalog search
+    covers: [roadmap-4.3-dto, scenario-2, scenario-3]
+    depends_on: [S1-MOVE-MODEL-SOURCE]
+    verification: adversarial fixtures 含 tiers/zaiToolStream/supportsTemperature/allowEmptySignature + forbidden routing/credential + query byte/flat-limit/order
+    exit_signal: browser DTO 保留当前安全模型语义且无 routing/credential/unknown；search flat count/order稳定
+    failure_policy: fix-or-block
+    status: done
+  - id: S3-WEB-ENRICHMENT
+    action: Web enrichment：封装 raw official/template/default 结果并在返回前投影 closed DTO
+    covers: [scenario-4]
+    depends_on: [S2-CLOSED-DTO-SEARCH]
+    verification: single/multi official、template、default warning serialization tests
+    exit_signal: enrichModelForWeb 从不返回开放 ProviderModelConfig/OfficialModelConfig，official candidate 始终要求调用方选择
+    failure_policy: fix-or-block
+    status: done
+  - id: S4-CREDENTIAL-REQUEST
+    action: Credential/request：实现 exact Pi parser、structured paths、all-command preflight、auth precedence、typed errors、production runner 与 URL policy
+    covers: [scenario-5, scenario-6, scenario-7, scenario-8]
+    depends_on: [S1-MOVE-MODEL-SOURCE]
+    verification: mixed/greedy/malformed/whitespace/env fallback parser；mixed trusted+changed runner=0；real process runner normal/nonzero/64KiB/timeout/abort/stderr + auth/URL matrices
+    exit_signal: 任一 command 不可信则全请求零执行；typed safe errors only；production child budget真实生效
+    failure_policy: fix-or-block
+    status: done
+  - id: S5-BOUNDED-DISCOVERY
+    action: Bounded discovery：core-owned overall signal、stream reader、body/id/count explicit semantics、parse/dedupe/code-unit sort
+    covers: [scenario-5, scenario-9, scenario-10]
+    depends_on: [S4-CREDENTIAL-REQUEST]
+    verification: fake stream 覆盖 precedence/slow/2MiB/redirect/non2xx/UTF8/JSON；1024/1025、第10001、non-string/empty/duplicate/non-ASCII sort
+    exit_signal: caller abort > overall > local > fetch；invalid ids ignored、first-seen前10k、code-unit sort；body/child/listeners清理
+    failure_policy: fix-or-block
+    status: done
+  - id: S6-ROUTES-REGRESSION
+    action: Route/回归：接入 runtime non-consuming provider SecretRef hydration、request-disconnect abort 与 catalog/enrich/discover handlers
+    covers: [scenario-11, scenario-12, roadmap-4.4-model-routes]
+    depends_on: [S2-CLOSED-DTO-SEARCH, S3-WEB-ENRICHMENT, S5-BOUNDED-DISCOVERY]
+    verification: authenticated HTTP + exact ref hydrate/invalid ref零执行 + request disconnect cancellation + typed-error secret injection + session preservation + scope scan
+    exit_signal: routes 状态码/DTO符合 roadmap，失败只终止请求，Web session 保留，无 config write/refresh/UI 改动
+    failure_policy: fix-or-block
+    status: done
+
+checks:
+  - id: C1-MOVE-GREEN
+    item: Model source 移动行为等价，root exports/TUI不变且旧 published deep paths 保留 re-export stubs
+    covers: [scenario-1]
+    verification: tests/typecheck/export diff
+    source: design-2.5
+    status: passed
+  - id: C2-DTO-ALLOWLIST
+    item: Web DTO逐字段重建，保留tiers/当前安全compat并排除routing/credential/unknown
+    covers: [scenario-2]
+    verification: safe-field characterization + serialization shape + recursive forbidden scan
+    source: design-2.1
+    status: passed
+  - id: C3-CATALOG-BOUNDS
+    item: Catalog query UTF-8 <=512、limit default50/1-100、deterministic capped order
+    covers: [scenario-3]
+    verification: query boundary tests
+    source: design-1.4
+    status: passed
+  - id: C4-ENRICH-CLOSED
+    item: Official/template/default Web enrichment 返回封闭 DTO，warning 只回显 modelId
+    covers: [scenario-4]
+    verification: enrichment serialization tests
+    source: design-2.1
+    status: passed
+  - id: C4A-TUI-RAW-ENRICH
+    item: Node-only enrichModelForTui 保留 raw candidate 与 ambiguity，写入前使用 shared routing strip，不被 Web DTO projection截断
+    covers: [scenario-4]
+    verification: TUI raw candidate/strip characterization tests
+    source: design-2.1
+    status: passed
+  - id: C5-URL-REDIRECT
+    item: Discovery 仅 http/https /models 且 redirect error，不回显 URL query/body
+    covers: [scenario-5]
+    verification: captured fetch tests
+    source: design-1.4
+    status: passed
+  - id: C6-AUTH-COMBINATION
+    item: Headers 先解析，existing Authorization 优先，否则 apiKey Bearer；authHeader 语义稳定
+    covers: [scenario-6]
+    verification: request header matrix
+    source: design-1.4
+    status: passed
+  - id: C7-COMMAND-TRUST
+    item: 全部 apiKey/header command paths先preflight；任一 provider/path/raw变化则所有 runner/fetch调用0
+    covers: [scenario-7]
+    verification: structured path + mixed trusted/untrusted runner-not-called matrix
+    source: design-1.4
+    status: passed
+  - id: C8-COMMAND-BUDGET
+    item: Exact parser/uncached production command runner遵守remaining≤10s/64KiB/nonzero/abort且无output泄漏
+    covers: [scenario-8]
+    verification: parser characterization + fake orchestration + real process.execPath integration
+    source: design-1.4
+    status: passed
+  - id: C9-FETCH-BUDGET
+    item: Core-owned overall15s贯穿credential/fetch/read；caller abort优先，2MiB/redirect/non2xx cancel stream
+    covers: [scenario-9]
+    verification: fake ReadableStream tests
+    source: design-2.2
+    status: passed
+  - id: C10-ID-LIMITS
+    item: Trim后invalid/oversize忽略；first-seen前10k unique；最终code-unit sort
+    covers: [scenario-10]
+    verification: parser limit tests
+    source: design-2.2
+    status: passed
+  - id: C11-ROUTE-PRESERVES-SESSION
+    item: Runtime exact-ref hydrate + request disconnect abort；typed route失败只结束请求，draft/session可继续
+    covers: [scenario-11]
+    verification: HTTP/session/disconnect integration + arbitrary secret Error sanitization
+    source: design-2.2
+    status: passed
+  - id: C12-SCOPE-GUARD
+    item: 不写 config、不刷新 registry、不新增 Web model UI/TUI quick/其他协议
+    covers: [scenario-12]
+    verification: import/route/diff review
+    source: design-1.2
+    status: passed

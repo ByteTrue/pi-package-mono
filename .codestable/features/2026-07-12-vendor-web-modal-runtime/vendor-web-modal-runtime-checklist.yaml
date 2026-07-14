@@ -1,0 +1,170 @@
+feature: 2026-07-12-vendor-web-modal-runtime
+created: 2026-07-12
+
+dod:
+  commands:
+    - id: CMD-001
+      command: npm --workspace @bytetrue/pi-vendor run build:web
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: npm --workspace @bytetrue/pi-vendor test
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: npm --workspace @bytetrue/pi-vendor run typecheck
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: npm pack --workspace @bytetrue/pi-vendor --dry-run
+      core: false
+      failure_handling: fix-or-block
+  evidence_required: [command_output, http_contract_tests, browser_manual, asset_listing]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todos: forbidden
+    commented_code: forbidden
+    unused_imports: forbidden
+    remote_assets: forbidden
+
+steps:
+  - id: S1-STATIC-ASSETS
+    action: Static structure：建立 Web 子目录、browser source、esbuild 输出与 package asset resolver
+    covers: [scenario-10, scenario-11, scope-no-framework]
+    depends_on: []
+    verification: build:web + fixed asset-manifest resolver tests（known/MIME/unknown/traversal）+ pack dry-run listing + static remote-URL scan
+    exit_signal: minimal HTML/JS/CSS 可从 package layout 读取，CSP 无需 unsafe-inline，产物不依赖 node_modules/runtime CDN
+    failure_policy: fix-or-block
+    status: done
+  - id: S2-OPAQUE-DRAFT
+    action: Opaque draft：实现 known secret mask、slot map、commit hydration 与 package-internal non-consuming provider credential hydration
+    covers: [roadmap-4.4-secret, scenario-3, scenario-4]
+    depends_on: []
+    verification: mask/commit tests + provider credential hydration tests 覆盖 exact refs、non-consuming map/phase、RFC6901、moved/copied/unknown/cross-session/revision
+    exit_signal: browser state 无 known literal secret，只有合法原 path ref 可恢复，任何失败零 document write
+    failure_policy: fix-or-block
+    status: done
+  - id: S3-HTTP-RUNTIME
+    action: HTTP runtime：接入 state/config/cancel、Bearer、Origin/Host/method/content-type/body limit、CSP/no-store 与 Config core
+    covers: [roadmap-4.4-http, scenario-2, scenario-5, scenario-6]
+    depends_on: [S1-STATIC-ASSETS, S2-OPAQUE-DRAFT]
+    verification: real random-port integration tests 覆盖 auth/security/save/conflict/parse/SecretRef/error response；所有 recoverable error 重置 phase=open，terminal response-before-close
+    exit_signal: 只有合法同源 token 请求可读写，save/cancel 响应完成后 settle，409 不 settle 且 draft 保留
+    failure_policy: fix-or-block
+    status: done
+  - id: S4-SESSION-LIFECYCLE
+    action: Session lifecycle：接入 first-terminal-action-wins phase machine、random loopback port、browser opener、response-before-close、socket cleanup 和五种 shutdown reason
+    covers: [roadmap-4.5, scenario-1, scenario-7, scenario-8, scenario-9]
+    depends_on: [S3-HTTP-RUNTIME]
+    verification: race tests 覆盖 save-vs-cancel/Esc/shutdown、duplicate PUT/Cancel、recoverable save→open，以及 fake opener + active connection close + quit/reload/new/resume/fork
+    exit_signal: cancel-first 零写、save-first 恰好一次写且结果不被覆盖；所有 settle 路径最终无 listening/active sockets/listeners/secret map/orphan process
+    failure_policy: fix-or-block
+    status: done
+  - id: S5-COMMAND-ORCHESTRATION
+    action: Command orchestration：接入 /vendor web、cancellable waiting UI、single active session 和唯一 registry refresh
+    covers: [scenario-1, scenario-5, scenario-7, scenario-8, scenario-12]
+    depends_on: [S4-SESSION-LIFECYCLE]
+    verification: command/context mocks 断言 ctx.mode=tui、RPC/JSON/print、atomic active-slot claim/identity-aware clear、empty/web args、Esc/duplicate session，以及 refresh throw/getError 提示
+    exit_signal: web save 只 refresh 一次，cancel 零 refresh/零 write，refresh 异常不篡改 saved 结果，空 /vendor 保持且 command.ts 仍薄
+    failure_policy: fix-or-block
+    status: done
+  - id: S6-INTEGRATION-POLISH
+    action: Integration/polish：补齐 minimal baseUrl 页面状态、keyboard/focus、错误提示、真实 assets 与 package 回归证据
+    covers: [scenario-2, scenario-6, scenario-10, scenario-11, scenario-12]
+    depends_on: [S1-STATIC-ASSETS, S3-HTTP-RUNTIME, S5-COMMAND-ORCHESTRATION]
+    verification: client state tests + browser manual checklist + CMD-001/002/003/004
+    exit_signal: loading/empty/error/saved/cancel/conflict 状态可见且键盘可操作，所有命令通过，pack listing 含 runtime assets
+    failure_policy: fix-or-block
+    status: done
+
+checks:
+  - id: C1-LOOPBACK-CAPABILITY
+    item: /vendor web 仅监听 127.0.0.1 随机端口并生成 fragment token URL
+    covers: [scenario-1]
+    verification: session integration test
+    source: design-2.2
+    status: passed
+  - id: C2-HTTP-GATE
+    item: API 强制 Bearer 与 Host；PUT/POST exact Origin，GET absent/exact Origin；method/content-type/2MiB，响应 CSP/no-store 且无 CORS
+    covers: [scenario-2, scenario-10]
+    verification: HTTP contract matrix
+    source: design-2.2
+    status: passed
+  - id: C3-SECRET-MASK
+    item: Provider apiKey 与 provider/model/modelOverride known literal headers 被 unique SecretRef 替换；env/command 原文可见但不解析
+    covers: [scenario-3]
+    verification: opaque draft unit tests
+    source: design-1.4
+    status: passed
+  - id: C3A-STATE-IDEMPOTENT
+    item: 同一 session 重复 GET state 返回同一 snapshot/ref map，不轮换 SecretRef
+    covers: [scenario-3]
+    verification: repeated-state integration test
+    source: design-2.2
+    status: passed
+  - id: C4-SECRET-HYDRATION
+    item: 只有原 path/revision 单一 ref 可 hydrate；moved/copied/unknown/cross-session/ref 残留 fail closed，并提示撤销移动或重输/删除，不隐式 remap/reload
+    covers: [scenario-4]
+    verification: SecretRef adversarial matrix
+    source: design-2.2
+    status: passed
+  - id: C4A-PROVIDER-HYDRATION
+    item: Internal provider credential hydration只恢复apiKey/headers到ephemeral clone，不消费slot/改变phase/输出secret
+    covers: [scenario-4a]
+    verification: exact/invalid ref + state immutability + leak tests
+    source: design-2.2
+    status: passed
+  - id: C5-SAVE-ORDER
+    item: PUT success 先完成 HTTP response，再 settle/close；command 随后唯一 refresh 并检查 getError
+    covers: [scenario-5]
+    verification: HTTP/session/command ordering test
+    source: design-2.2
+    status: passed
+  - id: C6-CONFLICT-REMAINS-OPEN
+    item: Config changed 返回 409、不 settle、不写，页面保留 draft并提示关闭重开
+    covers: [scenario-6]
+    verification: integration + client state test
+    source: design-2.2
+    status: passed
+  - id: C6A-FIRST-TERMINAL-WINS
+    item: Save 与 Cancel/Esc/shutdown 交错 first claim wins；重复 intent不重复settle，旧session finally不能清新active slot
+    covers: [scenario-7a]
+    verification: deterministic terminal races + identity-aware active-slot replacement/clear tests
+    source: design-2.2
+    status: passed
+  - id: C7-CLEANUP
+    item: Cancel/Esc/browser failure/五种 shutdown reason 均幂等清理且零写，terminal 后清 token/secret map
+    covers: [scenario-7, scenario-8, scenario-9]
+    verification: lifecycle failure tests
+    source: design-2.2
+    status: passed
+  - id: C8-MINIMAL-ACCESSIBILITY
+    item: 页面只编辑已有 provider baseUrl；empty providers、loading/error/conflict/saved/cancel 可见，label/focus/keyboard 可用
+    covers: [scenario-5, scenario-10]
+    verification: client tests + browser manual
+    source: design-3.1
+    status: passed
+  - id: C9-ASSET-PACKAGE
+    item: Committed build output 可由 runtime resolver 读取且 npm pack dry-run 包含所需 assets
+    covers: [scenario-11]
+    verification: build + resolver + pack listing
+    source: design-2.3
+    status: passed
+  - id: C9A-ASSET-ALLOWLIST
+    item: Static asset fixed manifest 只服务 known routes/MIME，unknown/traversal 404且无任意文件读取
+    covers: [scenario-10]
+    verification: asset route adversarial tests
+    source: design-2.2
+    status: passed
+  - id: C9B-CONNECTION-CLOSE
+    item: Terminal response finish 后 server listening 与 idle/active connections 最终关闭
+    covers: [scenario-11a]
+    verification: real socket lifecycle test
+    source: design-2.2
+    status: passed
+  - id: C10-SCOPE-GUARD
+    item: 无 Raw JSON/provider CRUD/model routes/runtime framework/remote assets，空 /vendor 旧 TUI 保持
+    covers: [scenario-12, scope-no-framework]
+    verification: route/import/static scan + command regression
+    source: design-1.2
+    status: passed

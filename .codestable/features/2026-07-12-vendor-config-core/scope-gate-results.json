@@ -1,0 +1,30 @@
+{
+  "gate_id": "scope-gate",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "changed_files": [
+        "packages/pi-vendor/package.json",
+        "packages/pi-vendor/src/index.ts",
+        "packages/pi-vendor/src/models-json.ts",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-checklist.yaml",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-design-review.md",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-design.md",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-evidence.md",
+        "packages/pi-vendor/src/config-core.test.ts",
+        "packages/pi-vendor/src/config-core.ts",
+        "packages/pi-vendor/src/config-document.test.ts",
+        "packages/pi-vendor/src/config-document.ts"
+      ],
+      "ignored_machine_artifacts": [],
+      "allowed_prefixes": [
+        ".codestable/features/2026-07-12-vendor-config-core",
+        "packages/pi-vendor"
+      ]
+    }
+  ],
+  "providers": {}
+}

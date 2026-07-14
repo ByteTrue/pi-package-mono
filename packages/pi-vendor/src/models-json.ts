@@ -18,6 +18,19 @@ export type ProviderModelConfig = {
 	[key: string]: unknown;
 };
 
+export type ModelOverrideConfig = {
+	name?: string;
+	reasoning?: boolean;
+	thinkingLevelMap?: Record<string, string | null>;
+	input?: Array<"text" | "image">;
+	cost?: Record<string, number>;
+	contextWindow?: number;
+	maxTokens?: number;
+	headers?: Record<string, string>;
+	compat?: Record<string, unknown>;
+	[key: string]: unknown;
+};
+
 export type ProviderConfig = {
 	name?: string;
 	baseUrl?: string;
@@ -26,6 +39,7 @@ export type ProviderConfig = {
 	headers?: Record<string, string>;
 	authHeader?: boolean;
 	compat?: Record<string, unknown>;
+	modelOverrides?: Record<string, ModelOverrideConfig>;
 	models?: ProviderModelConfig[];
 	[key: string]: unknown;
 };
@@ -45,7 +59,7 @@ export type ProviderUpsertOptions = {
 	previousKey?: string;
 };
 
-function cloneJson<T>(value: T): T {
+export function cloneJson<T>(value: T): T {
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -84,7 +98,12 @@ export function createNewProviderDraft(key: string): ProviderDraft {
 export function readModelsJson(path = getModelsJsonPath()): ModelsJson {
 	let raw: unknown;
 	try {
-		raw = JSON.parse(readFileSync(path, "utf8"));
+		const rawText = readFileSync(path, "utf8");
+		// Reject UTF-8 BOM: Pi's strict JSON boundary disallows BOM-prefixed files.
+		if (rawText.charCodeAt(0) === 0xFEFF) {
+			throw new Error(`Invalid models.json at ${path}: file must not start with UTF-8 BOM`);
+		}
+		raw = JSON.parse(rawText);
 	} catch (error) {
 		if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") {
 			return { providers: {} };

@@ -1,0 +1,133 @@
+feature: 2026-07-12-vendor-config-core
+created: 2026-07-12
+
+dod:
+  commands:
+    - id: CMD-001
+      command: npm --workspace @bytetrue/pi-vendor test
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: npm --workspace @bytetrue/pi-vendor run typecheck
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: npm run typecheck --workspaces --if-present && npm test
+      core: false
+      failure_handling: fix-or-block
+  evidence_required: [command_output, diff_summary, contract_tests]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todos: forbidden
+    commented_code: forbidden
+    unused_imports: forbidden
+
+steps:
+  - id: S1-DOCUMENT-MUTATION
+    action: 纯文档契约：建立 typed known fields、field descriptors、config-value classifier 和 provider/model MutationResult
+    covers: [roadmap-4.2, scenario-5, scenario-6, scenario-7, scenario-12]
+    depends_on: []
+    verification: mutation contract tests 覆盖空值、not-found、exists、reject、overwrite-confirmed、input immutability 和 ordering matrix
+    exit_signal: 所有 mutation 只返回 typed result，新 caller 无法通过新 public API 触发隐式 upsert
+    failure_policy: fix-or-block
+    status: done
+  - id: S2-PI-ORACLE
+    action: Pi compatibility：接入 injected PiOracle 与限定的 local root/providers/duplicate 规则
+    covers: [roadmap-4.1-validation, scenario-2, scenario-4, scenario-10]
+    depends_on: [S1-DOCUMENT-MUTATION]
+    verification: oracle characterization tests 覆盖三层 unknown、built-in override、custom provider、missing/empty models、duplicate id、oracle error 和 oracle throw
+    exit_signal: pi_incompatible 与 validator_unavailable 可确定注入，均零写入并清理 oracle temp
+    failure_policy: fix-or-block
+    status: done
+  - id: S3-SNAPSHOT-REVISION
+    action: Snapshot：从 raw Buffer 计算 missing 或 exact-byte SHA-256，并执行 strict UTF-8/JSON 读取
+    covers: [roadmap-4.1-revision, scenario-1, scenario-3, scenario-8]
+    depends_on: [S1-DOCUMENT-MUTATION]
+    verification: filesystem tests 覆盖 missing 不落盘、malformed revision、non-UTF8/BOM/comments 拒绝、字段缺失保持和 64 lowercase hex
+    exit_signal: snapshot revision 与原始 Buffer 一致，read 只抛稳定 ConfigCoreError 且不改磁盘
+    failure_policy: fix-or-block
+    status: done
+  - id: S4-CONDITIONAL-COMMIT
+    action: Conditional commit：按错误优先级串联 revision validation、candidate validation、re-read compare、随机 0o600 temp 和 atomic rename
+    covers: [roadmap-4.1-commit, scenario-8, scenario-9, scenario-10]
+    depends_on: [S2-PI-ORACLE, S3-SNAPSHOT-REVISION]
+    verification: failure-injection tests 覆盖 stale、write failure、rename failure、oracle failure、temp uniqueness/permissions/cleanup 和 success canonical bytes
+    exit_signal: stale/invalid/任何基础设施失败零目标写入且无 temp 残留，success 返回落盘 Buffer 的新 revision
+    failure_policy: fix-or-block
+    status: done
+  - id: S5-PUBLIC-CONTRACT
+    action: 兼容收口：更新 public exports、coding-agent peer 下限、minimum-version fixture，并记录 legacy caller 暂未迁移
+    covers: [roadmap-4.1-fields, scenario-11, scenario-13, scope-guard]
+    depends_on: [S1-DOCUMENT-MUTATION, S2-PI-ORACLE, S3-SNAPSHOT-REVISION, S4-CONDITIONAL-COMMIT]
+    verification: src/index 和 package contract diff review + CMD-001/002/003 + Pi 0.79.10 oracle fixture
+    exit_signal: 新 core 可公开消费、coding-agent peer 为 >=0.79.10、pi-tui 下限不变、现有 command/menu 文件无语义重构
+    failure_policy: fix-or-block
+    status: done
+
+checks:
+  - id: C1-MISSING-SNAPSHOT
+    item: Missing path 只返回逻辑 providers 空对象和 missing revision，不创建文件
+    covers: [scenario-1]
+    verification: snapshot filesystem test
+    source: design-3.1
+    status: passed
+  - id: C2-UNKNOWN-MISSING-FIELDS
+    item: Root/provider/model unknown fields 与 provider 缺失 models 无损 round-trip
+    covers: [scenario-2, scenario-3]
+    verification: oracle + object equality + commit tests
+    source: design-2.1
+    status: passed
+  - id: C3-ORACLE-ERROR-MODES
+    item: Pi oracle 是最终真相源，error 与 throw 分别映射 pi_incompatible / validator_unavailable
+    covers: [scenario-4, scenario-10]
+    verification: injected PiOracle tests
+    source: design-1.4
+    status: passed
+  - id: C4-MUTATION-RESULT
+    item: MutationResult 稳定区分 invalid/not-found/exists，默认无隐式 upsert
+    covers: [scenario-5, scenario-7]
+    verification: table-driven mutation tests
+    source: design-2.1
+    status: passed
+  - id: C5-OVERWRITE-ORDERING
+    item: overwrite-confirmed 的 source-before/after-target ordering matrix 与 source=target 均符合契约
+    covers: [scenario-6]
+    verification: explicit four-model ordering assertions
+    source: design-2.2
+    status: passed
+  - id: C6-LOCAL-VALIDATION-BOUNDARY
+    item: Local validation 只处理 root/providers 与可识别 duplicate id，其余 shape 交 Pi oracle
+    covers: [scenario-4]
+    verification: ConfigIssue code/path assertions
+    source: design-2.2
+    status: passed
+  - id: C7-REVISION-ERRORS
+    item: Revision 只接受 missing 或 sha256 加 64 lowercase hex，malformed/stale 分别稳定报错
+    covers: [scenario-8]
+    verification: revision parser + stale tests
+    source: design-2.2
+    status: passed
+  - id: C8-ATOMIC-CLEANUP
+    item: Oracle/commit temp 随机唯一且全程 0o600，write/rename/oracle 失败后无残留
+    covers: [scenario-9, scenario-10]
+    verification: concurrent/failure-injection filesystem tests
+    source: design-2.2
+    status: passed
+  - id: C9-RAW-BYTES-CANONICAL-WRITE
+    item: Revision hash 原始 Buffer，strict JSON 读取；成功写 canonical JSON + newline
+    covers: [scenario-8, scenario-9]
+    verification: byte-level fixture assertions
+    source: design-2.2
+    status: passed
+  - id: C10-PUBLIC-PEER
+    item: Known typed modelOverrides/descriptors/classifier 导出且 coding-agent peer >=0.79.10
+    covers: [scenario-11, scenario-12]
+    verification: typecheck + minimum Pi fixture + package diff
+    source: design-2.3
+    status: passed
+  - id: C11-SCOPE-GUARD
+    item: 不新增 Web/TUI/network/private validator/lock，且本 feature 不迁移 legacy command/menu
+    covers: [scope-guard, scenario-13]
+    verification: import and diff review
+    source: design-1.2
+    status: passed

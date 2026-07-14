@@ -1,0 +1,156 @@
+roadmap: vendor-dual-ui-manager
+status: running
+baseline_ref: 3f6c641c25943511e5dbca3f3dbf4545a606cea0
+driver_kind: none
+driver_id: ""
+handoff_reason: ""
+handoff_next: ""
+current_feature_index: 6
+ledger:
+  - feature: vendor-config-core
+    event: feature-start
+    accepted_features: []
+    git_status: "untracked CodeStable planning/spec artifacts only"
+    baseline_diff: []
+  - feature: vendor-config-core
+    event: driver-retry
+    reason: "first driver worker exceeded turn budget; same-session resume aborted"
+    preserved_changes:
+      - packages/pi-vendor/src/models-json.ts
+  - feature: vendor-config-core
+    event: driver-retry
+    reason: "second driver stopped after review progress; same-session fix stream aborted"
+    preserved_changes:
+      - packages/pi-vendor/src/config-document.ts
+      - packages/pi-vendor/src/config-document.test.ts
+      - packages/pi-vendor/src/config-core.ts
+      - packages/pi-vendor/src/models-json.ts
+  - feature: vendor-web-modal-runtime
+    event: driver-handoff
+    reason: "driver completed features 1-2 and requested capacity handoff"
+    accepted_through_index: 1
+    next_feature_index: 2
+  - feature: vendor-tui-quick-workflows
+    event: driver-progress-handoff
+    reason: "driver accepted feature 3 and completed feature 4 steps S1-S3"
+    next_step: S4-ADD-PROVIDER
+    preserved_steps: [S1-TUI-MOVE, S2-ROOT-STATE, S3-ADD-MODEL]
+  - feature: vendor-tui-quick-workflows
+    event: feature-accepted-handoff
+    reason: "driver accepted feature 4 and returned before feature 5"
+    accepted_through_index: 3
+    next_feature_index: 4
+  - feature: vendor-web-provider-workflows
+    event: false-complete-invalidated
+    reason: "final audit failed: pack-smoke missing, goal consistency failed, manual browser evidence absent, feature 5-7 reviews were not independent"
+    required_recovery:
+      - independent review and QA for feature 5
+      - repair and test feature 6 against approved design
+      - implement feature 7 hardening and all gate artifacts
+      - rerun final consistency and aggregate commands
+  - feature: vendor-tui-quick-workflows
+    event: acceptance-invalidated
+    reason: "isolated quick-add-provider test OOMs due infinite input loop; independent review also identified add-another model data loss"
+    required_recovery:
+      - fix scripted existing-key test/input termination
+      - accumulate models across add-another
+      - rerun independent review, QA and acceptance
+  - feature: vendor-web-provider-workflows
+    event: independent-review-blocking
+    reviewer_agent: 9d53e801-4443-4774-90cb-73bfead483c8
+    blocking_count: 9
+    important_count: 5
+    reopened_dependencies:
+      - vendor-config-core
+      - vendor-web-modal-runtime
+  - feature: vendor-dual-ui-manager
+    event: false-complete-invalidated
+    reason: "second COMPLETE still omitted pack smoke, CI, browser/TUI evidence, model tests and gate artifacts"
+    repair_mode: focused-agents
+  - feature: vendor-config-core
+    event: feature-accepted
+    note: "BOM reopen + QA/acceptance restored after independent review"
+  - feature: vendor-web-modal-runtime
+    event: feature-accepted
+    note: "Round 7 independent review + QA/acceptance restored"
+    next_feature_index: 3
+  - feature: vendor-tui-quick-workflows
+    event: feature-accepted
+    note: "repair OOM + add-another accumulation re-reviewed and re-accepted; automated suite green"
+    next_feature_index: 4
+  - feature: vendor-web-provider-workflows
+    event: feature-accepted
+    note: "round 2 independent review + common-clear fix accepted; suite 257 green"
+    next_feature_index: 5
+  - feature: vendor-web-model-workflows
+    event: feature-accepted
+    note: "round 2 independent review after enrich abort + replace secret counts; suite 285 green"
+    next_feature_index: 6
+  - feature: vendor-dual-ui-hardening
+    event: hardening-partial
+    note: "pack-smoke/CI/README green; blocked on manual TUI/browser evidence + owner commit of generated assets"
+    next_feature_index: 6
+features:
+  - slug: vendor-config-core
+    roadmap_item: vendor-config-core
+    feature_dir: .codestable/features/2026-07-12-vendor-config-core
+    design: .codestable/features/2026-07-12-vendor-config-core/vendor-config-core-design.md
+    checklist: .codestable/features/2026-07-12-vendor-config-core/vendor-config-core-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-config-core/vendor-config-core-review.md
+    qa: .codestable/features/2026-07-12-vendor-config-core/vendor-config-core-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-config-core/vendor-config-core-acceptance.md
+    status: accepted
+  - slug: vendor-web-modal-runtime
+    roadmap_item: vendor-web-modal-runtime
+    feature_dir: .codestable/features/2026-07-12-vendor-web-modal-runtime
+    design: .codestable/features/2026-07-12-vendor-web-modal-runtime/vendor-web-modal-runtime-design.md
+    checklist: .codestable/features/2026-07-12-vendor-web-modal-runtime/vendor-web-modal-runtime-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-web-modal-runtime/vendor-web-modal-runtime-review.md
+    qa: .codestable/features/2026-07-12-vendor-web-modal-runtime/vendor-web-modal-runtime-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-web-modal-runtime/vendor-web-modal-runtime-acceptance.md
+    status: accepted
+  - slug: vendor-model-source-core
+    roadmap_item: vendor-model-source-core
+    feature_dir: .codestable/features/2026-07-12-vendor-model-source-core
+    design: .codestable/features/2026-07-12-vendor-model-source-core/vendor-model-source-core-design.md
+    checklist: .codestable/features/2026-07-12-vendor-model-source-core/vendor-model-source-core-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-model-source-core/vendor-model-source-core-review.md
+    qa: .codestable/features/2026-07-12-vendor-model-source-core/vendor-model-source-core-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-model-source-core/vendor-model-source-core-acceptance.md
+    status: accepted
+  - slug: vendor-tui-quick-workflows
+    roadmap_item: vendor-tui-quick-workflows
+    feature_dir: .codestable/features/2026-07-12-vendor-tui-quick-workflows
+    design: .codestable/features/2026-07-12-vendor-tui-quick-workflows/vendor-tui-quick-workflows-design.md
+    checklist: .codestable/features/2026-07-12-vendor-tui-quick-workflows/vendor-tui-quick-workflows-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-tui-quick-workflows/vendor-tui-quick-workflows-review.md
+    qa: .codestable/features/2026-07-12-vendor-tui-quick-workflows/vendor-tui-quick-workflows-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-tui-quick-workflows/vendor-tui-quick-workflows-acceptance.md
+    status: accepted
+  - slug: vendor-web-provider-workflows
+    roadmap_item: vendor-web-provider-workflows
+    feature_dir: .codestable/features/2026-07-12-vendor-web-provider-workflows
+    design: .codestable/features/2026-07-12-vendor-web-provider-workflows/vendor-web-provider-workflows-design.md
+    checklist: .codestable/features/2026-07-12-vendor-web-provider-workflows/vendor-web-provider-workflows-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-web-provider-workflows/vendor-web-provider-workflows-review.md
+    qa: .codestable/features/2026-07-12-vendor-web-provider-workflows/vendor-web-provider-workflows-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-web-provider-workflows/vendor-web-provider-workflows-acceptance.md
+    status: accepted
+  - slug: vendor-web-model-workflows
+    roadmap_item: vendor-web-model-workflows
+    feature_dir: .codestable/features/2026-07-12-vendor-web-model-workflows
+    design: .codestable/features/2026-07-12-vendor-web-model-workflows/vendor-web-model-workflows-design.md
+    checklist: .codestable/features/2026-07-12-vendor-web-model-workflows/vendor-web-model-workflows-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-web-model-workflows/vendor-web-model-workflows-review.md
+    qa: .codestable/features/2026-07-12-vendor-web-model-workflows/vendor-web-model-workflows-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-web-model-workflows/vendor-web-model-workflows-acceptance.md
+    status: accepted
+  - slug: vendor-dual-ui-hardening
+    roadmap_item: vendor-dual-ui-hardening
+    feature_dir: .codestable/features/2026-07-12-vendor-dual-ui-hardening
+    design: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-design.md
+    checklist: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-checklist.yaml
+    review: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-review.md
+    qa: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-qa.md
+    acceptance: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-acceptance.md
+    status: blocked

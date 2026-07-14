@@ -1,0 +1,211 @@
+feature: vendor-tui-quick-workflows
+created: 2026-07-12
+roadmap: vendor-dual-ui-manager
+roadmap_item: vendor-tui-quick-workflows
+
+scenarios:
+  - id: scenario-1
+    name: Root order and default
+    class: core
+  - id: scenario-2
+    name: Existing provider catalog/custom save
+    class: core
+  - id: scenario-3
+    name: Official ambiguity selection
+    class: core
+  - id: scenario-4
+    name: Safe default editor
+    class: core
+  - id: scenario-5
+    name: Bounded model import
+    class: core
+  - id: scenario-6
+    name: Explicit model replacement
+    class: core
+  - id: scenario-7
+    name: Add another single commit
+    class: core
+  - id: scenario-8
+    name: Minimal new provider
+    class: core
+  - id: scenario-9
+    name: Existing provider key rejected
+    class: core
+  - id: scenario-10
+    name: New command discovery rejected
+    class: core
+  - id: scenario-11
+    name: Esc and cancel zero write
+    class: core
+  - id: scenario-12
+    name: Config failure recovery
+    class: core
+  - id: scenario-13
+    name: Web manager handoff
+    class: supporting
+  - id: scenario-14
+    name: Non TUI mode rejected
+    class: core
+
+steps:
+  - id: S1-TUI-MOVE
+    action: Behavior-equivalent move only retained custom-select/vendor-ui modules/tests to src/tui; leave soon-deleted legacy menus in place
+    covers: []
+    depends_on: []
+    verification: package tests/typecheck before behavior changes
+    exit_signal: retained primitive move has no behavior change; no churn moving legacy menus that S6 deletes
+    failure_policy: fix-or-block
+    status: done
+  - id: S2-ROOT-STATE
+    action: Add VendorQuickUi production/scripted adapters and exact root/mode/navigation state machine
+    covers: [scenario-1, scenario-11, scenario-14]
+    depends_on: [S1-TUI-MOVE]
+    verification: scripted transition tests assert option order/default, every Esc level and non-TUI no UI call
+    exit_signal: root is task-oriented and all cancel/back outcomes are typed
+    failure_policy: fix-or-block
+    status: done
+  - id: S3-ADD-MODEL
+    action: Implement existing-provider catalog/custom/import/enrichment/conflict/summary flow
+    covers: [scenario-2, scenario-3, scenario-4, scenario-5, scenario-6, scenario-7]
+    depends_on: [S2-ROOT-STATE]
+    verification: deterministic model-source fakes + real Config mutations + scripted UI state tests
+    exit_signal: catalog is local, import uses source core, overwrite requires confirm, Add another never commits
+    failure_policy: fix-or-block
+    status: done
+  - id: S4-ADD-PROVIDER
+    action: Implement minimal provider key/baseUrl/api/apiKey/first-model flow with command restriction
+    covers: [scenario-8, scenario-9, scenario-10]
+    depends_on: [S3-ADD-MODEL]
+    verification: validation/provider-exists/new-command tests with source spies and real createProvider mutation
+    exit_signal: valid provider has all required fields and at least one model; no implicit overwrite/command execution
+    failure_policy: fix-or-block
+    status: done
+  - id: S5-COMMAND-COMMIT
+    action: Wire thin command to read once, run flow, commit once, refresh once or hand off to Web
+    covers: [scenario-7, scenario-11, scenario-12, scenario-13, scenario-14]
+    depends_on: [S4-ADD-PROVIDER]
+    verification: command spies assert exact read/commit/refresh/web counts and sanitized config errors
+    exit_signal: only Save commits once; cancel/back zero; Web uses existing active-session path
+    failure_policy: fix-or-block
+    status: done
+  - id: S6-REMOVE-LEGACY
+    action: Remove unreachable full provider/model editor and obsolete direct upsert/write helpers; finish docs/manual transcript
+    covers: [scenario-1, scenario-13]
+    depends_on: [S5-COMMAND-COMMIT]
+    verification: import/AST/menu scan + package tests/typecheck + manual TUI transcript
+    exit_signal: no reachable full editor or direct fetch/write; quick UX and Web handoff verified
+    failure_policy: fix-or-block
+    status: done
+
+checks:
+  - id: C1-ROOT
+    item: Root exact order Add model/Add provider/Open Web/Cancel with Add model default
+    covers: [scenario-1]
+    verification: scripted UI option assertion
+    source: roadmap-4.7
+    status: passed
+  - id: C2-CATALOG-CUSTOM
+    item: Catalog search stays local; custom/default model can be reviewed and added
+    covers: [scenario-2, scenario-4]
+    verification: source call spies + editor validation tests
+    source: design-2.4
+    status: passed
+  - id: C3-AMBIGUITY
+    item: Multi-official candidate requires explicit source；raw TUI enrich可含routing但final mutation model必须strip
+    covers: [scenario-3]
+    verification: raw-vs-Web type characterization + ambiguity transition + final forbidden routing field scan
+    source: design-2.4
+    status: passed
+  - id: C4-IMPORT-TRUST
+    item: Import uses bounded source core; unsaved command cannot execute and failure preserves draft
+    covers: [scenario-5, scenario-10]
+    verification: discover spies + credential_unresolved recovery transitions
+    source: design-2.4/design-2.5
+    status: passed
+  - id: C5-CONFLICT
+    item: model_exists only retries replaceModel with overwrite-confirmed after explicit confirmation
+    covers: [scenario-6]
+    verification: mutation/confirm call sequence test
+    source: roadmap-4.2
+    status: passed
+  - id: C6-SINGLE-COMMIT
+    item: Add another/Esc/Cancel zero commit; final Save exactly one commit and one refresh
+    covers: [scenario-7, scenario-11]
+    verification: command and scripted state count assertions
+    source: roadmap-4.7
+    status: passed
+  - id: C7-PROVIDER-VALID
+    item: New provider requires trimmed key, http/https no-userinfo URL, api, raw apiKey and model
+    covers: [scenario-8]
+    verification: field validation matrix
+    source: design-2.5
+    status: passed
+  - id: C8-PROVIDER-NO-OVERWRITE
+    item: Existing provider key rejected with no overwrite path
+    covers: [scenario-9]
+    verification: createProvider result/transition test
+    source: roadmap-4.7
+    status: passed
+  - id: C9-ERROR-MODE
+    item: Config errors are sanitized and recoverable; non-TUI never calls UI or writes
+    covers: [scenario-12, scenario-14]
+    verification: ConfigCoreError table + context mode spies
+    source: design-2.3/design-2.6
+    status: passed
+  - id: C10-WEB-HANDOFF
+    item: Open full manager exits quick UI and reuses the single active Web orchestration
+    covers: [scenario-13]
+    verification: web adapter call and duplicate-session test
+    source: design-2.3
+    status: passed
+  - id: C11-LEGACY-GUARD
+    item: No reachable full editor, old upsert/write or direct fetch/catalog import remains in TUI
+    covers: [scenario-1, scenario-13]
+    verification: menu/import/AST scan
+    source: design-3.2
+    status: passed
+
+acceptance_matrix:
+  - scenario: scenario-1
+    checks: [C1-ROOT, C11-LEGACY-GUARD]
+  - scenario: scenario-2
+    checks: [C2-CATALOG-CUSTOM]
+  - scenario: scenario-3
+    checks: [C3-AMBIGUITY]
+  - scenario: scenario-4
+    checks: [C2-CATALOG-CUSTOM]
+  - scenario: scenario-5
+    checks: [C4-IMPORT-TRUST]
+  - scenario: scenario-6
+    checks: [C5-CONFLICT]
+  - scenario: scenario-7
+    checks: [C6-SINGLE-COMMIT]
+  - scenario: scenario-8
+    checks: [C7-PROVIDER-VALID]
+  - scenario: scenario-9
+    checks: [C8-PROVIDER-NO-OVERWRITE]
+  - scenario: scenario-10
+    checks: [C4-IMPORT-TRUST]
+  - scenario: scenario-11
+    checks: [C6-SINGLE-COMMIT]
+  - scenario: scenario-12
+    checks: [C9-ERROR-MODE]
+  - scenario: scenario-13
+    checks: [C10-WEB-HANDOFF, C11-LEGACY-GUARD]
+  - scenario: scenario-14
+    checks: [C9-ERROR-MODE]
+
+dod_contract:
+  blocking:
+    - C1-ROOT
+    - C5-CONFLICT
+    - C6-SINGLE-COMMIT
+    - C7-PROVIDER-VALID
+    - C11-LEGACY-GUARD
+  validation_commands:
+    - npm --workspace @bytetrue/pi-vendor test
+    - npm --workspace @bytetrue/pi-vendor run typecheck
+  evidence_required:
+    - command_output
+    - scripted_transition_tests
+    - manual_tui_transcript

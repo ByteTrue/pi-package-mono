@@ -1,0 +1,173 @@
+feature: vendor-dual-ui-hardening
+created: 2026-07-12
+roadmap: vendor-dual-ui-manager
+roadmap_item: vendor-dual-ui-hardening
+
+scenarios:
+  - { id: scenario-1, name: Clean package and workspace suite, class: core }
+  - { id: scenario-2, name: Generated assets and tarball files, class: core }
+  - { id: scenario-3, name: Extracted tarball runtime smoke, class: core }
+  - { id: scenario-4, name: TUI quick happy paths, class: core }
+  - { id: scenario-5, name: TUI cancel and conflict, class: core }
+  - { id: scenario-6, name: Full Web provider model E2E, class: core }
+  - { id: scenario-7, name: Opaque secret and leak protection, class: core }
+  - { id: scenario-8, name: Error recovery matrix, class: core }
+  - { id: scenario-9, name: Session race and shutdown, class: core }
+  - { id: scenario-10, name: Browser opener and fallback, class: supporting }
+  - { id: scenario-11, name: Narrow TUI and Web, class: core }
+  - { id: scenario-12, name: Keyboard accessibility, class: core }
+  - { id: scenario-13, name: Ten thousand result interaction, class: supporting }
+  - { id: scenario-14, name: Existing config compatibility, class: core }
+  - { id: scenario-15, name: README walkthrough, class: core }
+
+steps:
+  - id: S1-BASELINE-MATRIX
+    action: Run and record full package/workspace and cross-surface baseline; create QA report with only real gaps
+    covers: [scenario-1, scenario-4, scenario-5, scenario-6, scenario-7, scenario-8, scenario-9, scenario-14]
+    depends_on: []
+    verification: command outputs and linked test cases in qa-report
+    exit_signal: every core scenario has evidence or explicit blocking gap; no speculative refactor list
+    failure_policy: fix-or-block
+    status: pending
+  - id: S2-PACK-CI
+    action: Add reproducible build guard, real npm tarball file/extract/runtime smoke and minimum Pi peer CI check
+    covers: [scenario-1, scenario-2, scenario-3]
+    depends_on: [S1-BASELINE-MATRIX]
+    verification: local pack-smoke + CI extracted-layout run + generated git-status clean (tracked and untracked)
+    exit_signal: actual published shape serves assets/API and cleans sockets independent of cwd
+    failure_policy: fix-or-block
+    status: pending
+  - id: S3-CROSS-SURFACE
+    action: Close only observed TUI/Web/config/model-source/error/race/compat regression gaps
+    covers: [scenario-4, scenario-5, scenario-6, scenario-7, scenario-8, scenario-9, scenario-14]
+    depends_on: [S2-PACK-CI]
+    verification: combo fixture tests + real HTTP + scripted TUI + leak scans
+    exit_signal: shared semantics/single write/security/error recovery hold across both UIs
+    failure_policy: fix-or-block
+    status: pending
+  - id: S4-UX-A11Y-PLATFORM
+    action: Execute browser/TUI narrow keyboard focus opener fallback and 10k measured matrices; fix acceptance failures only
+    covers: [scenario-10, scenario-11, scenario-12, scenario-13]
+    depends_on: [S3-CROSS-SURFACE]
+    verification: manual transcript/screenshots + injected platform tests + performance notes
+    exit_signal: all core controls reachable/recoverable and platform fallback documented
+    failure_policy: fix-or-block
+    status: pending
+  - id: S5-DOCS-CLEANUP
+    action: Update README and remove only epic-obsolete legacy imports/assets; run route/import/remote/secret scans
+    covers: [scenario-2, scenario-7, scenario-15]
+    depends_on: [S4-UX-A11Y-PLATFORM]
+    verification: README command walkthrough + AST/static scans + generated directory check
+    exit_signal: docs match UI and no legacy/direct/remote/stale artifact remains
+    failure_policy: fix-or-block
+    status: pending
+  - id: S6-FINAL-GATES
+    action: Run full tests, code review, QA and acceptance package without release/commit/push
+    covers: [scenario-1, scenario-15]
+    depends_on: [S5-DOCS-CLEANUP]
+    verification: command outputs + code review + qa/acceptance reports
+    exit_signal: zero blocking/important and owner-ready acceptance evidence
+    failure_policy: fix-or-block
+    status: pending
+
+checks:
+  - id: C1-FULL-SUITE
+    item: Package and workspace build/typecheck/test all green under declared Node/Pi baseline
+    covers: [scenario-1]
+    verification: CI/local command output
+    source: design-2.3
+    status: pending
+  - id: C2-GENERATED-PACK
+    item: build:web reproducible；tarball file allow/deny correct；generated path git status empty
+    covers: [scenario-2]
+    verification: npm pack JSON + git diff generated guard
+    source: design-2.2/design-2.3
+    status: pending
+  - id: C3-PACKED-RUNTIME
+    item: Extracted tarball starts runtime from packed path and passes asset/state/cancel/security/cleanup smoke
+    covers: [scenario-3]
+    verification: pack-smoke.mjs command output
+    source: design-2.2
+    status: pending
+  - id: C4-TUI-E2E
+    item: Both quick paths single commit/refresh; every Esc/Cancel/Add another zero; overwrite requires confirm
+    covers: [scenario-4, scenario-5]
+    verification: scripted counts + manual narrow transcript
+    source: tui-design
+    status: pending
+  - id: C5-WEB-E2E
+    item: Provider/model CRUD/catalog/custom/discover/bulk share one draft and one final PUT
+    covers: [scenario-6]
+    verification: state/HTTP/browser evidence
+    source: provider-model-designs
+    status: pending
+  - id: C6-SECRET-LEAK
+    item: Known API/header originals and resolved env/command/upstream body absent from browser/errors/log/evidence
+    covers: [scenario-7]
+    verification: recursive leak scan + adversarial manual
+    source: opaque/model-source contracts
+    status: pending
+  - id: C7-ERROR-RACE
+    item: Config/upstream/ref/conflict errors recover correctly; first-terminal race and five shutdown reasons clean
+    covers: [scenario-8, scenario-9]
+    verification: error table + deterministic race/socket tests
+    source: runtime/config/source contracts
+    status: pending
+  - id: C8-OPENER
+    item: macOS/Windows/WSL/Linux adapters deterministic; real current platform and fallback non-LLM UI verified
+    covers: [scenario-10]
+    verification: spawn fakes + manual opener/failure
+    source: runtime-design
+    status: pending
+  - id: C9-A11Y-NARROW
+    item: TUI/Web narrow and keyboard labels/focus/dialog/errors/live status pass
+    covers: [scenario-11, scenario-12]
+    verification: manual matrix/screenshots/static checks
+    source: design-2.5
+    status: pending
+  - id: C10-LARGE-RESULT
+    item: 10k discover filter/select cap100/import interaction measured acceptable without speculative dependency
+    covers: [scenario-13]
+    verification: large state tests + browser measurement
+    source: model-workflow-design
+    status: pending
+  - id: C11-COMPAT
+    item: Built-in override/custom/missing/unknown/secret-header round-trips；Pi-comment vs manager strict-JSON limitation有明确测试/文档
+    covers: [scenario-14]
+    verification: combined fixture characterization tests
+    source: config/runtime designs
+    status: pending
+  - id: C12-DOCS-SCOPE
+    item: README walkthrough/security/recovery/dev commands accurate; no new features/release/broad cleanup
+    covers: [scenario-15]
+    verification: fresh-user command walkthrough + diff scope review
+    source: design-2.6/design-3.2
+    status: pending
+
+acceptance_matrix:
+  - { scenario: scenario-1, checks: [C1-FULL-SUITE] }
+  - { scenario: scenario-2, checks: [C2-GENERATED-PACK] }
+  - { scenario: scenario-3, checks: [C3-PACKED-RUNTIME] }
+  - { scenario: scenario-4, checks: [C4-TUI-E2E] }
+  - { scenario: scenario-5, checks: [C4-TUI-E2E] }
+  - { scenario: scenario-6, checks: [C5-WEB-E2E] }
+  - { scenario: scenario-7, checks: [C6-SECRET-LEAK] }
+  - { scenario: scenario-8, checks: [C7-ERROR-RACE] }
+  - { scenario: scenario-9, checks: [C7-ERROR-RACE] }
+  - { scenario: scenario-10, checks: [C8-OPENER] }
+  - { scenario: scenario-11, checks: [C9-A11Y-NARROW] }
+  - { scenario: scenario-12, checks: [C9-A11Y-NARROW] }
+  - { scenario: scenario-13, checks: [C10-LARGE-RESULT] }
+  - { scenario: scenario-14, checks: [C11-COMPAT] }
+  - { scenario: scenario-15, checks: [C12-DOCS-SCOPE] }
+
+dod_contract:
+  blocking: [C1-FULL-SUITE, C2-GENERATED-PACK, C3-PACKED-RUNTIME, C4-TUI-E2E, C5-WEB-E2E, C6-SECRET-LEAK, C7-ERROR-RACE, C9-A11Y-NARROW, C11-COMPAT, C12-DOCS-SCOPE]
+  validation_commands:
+    - npm --workspace @bytetrue/pi-vendor run build:web
+    - npm --workspace @bytetrue/pi-vendor run typecheck
+    - npm --workspace @bytetrue/pi-vendor test
+    - npm run typecheck --workspaces --if-present
+    - npm test
+    - node packages/pi-vendor/scripts/pack-smoke.mjs
+  evidence_required: [command_output, ci_run, qa_report, acceptance_report, browser_manual, tui_transcript, screenshots]

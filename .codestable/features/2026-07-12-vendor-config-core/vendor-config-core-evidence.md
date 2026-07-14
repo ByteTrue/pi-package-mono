@@ -1,0 +1,119 @@
+---
+doc_type: feature-evidence-pack
+feature: .codestable/features/2026-07-12-vendor-config-core
+status: generated
+---
+
+# .codestable/features/2026-07-12-vendor-config-core evidence pack
+
+## 1. Scope
+
+- Design: `.codestable/features/2026-07-12-vendor-config-core/vendor-config-core-design.md`
+- Checklist: `.codestable/features/2026-07-12-vendor-config-core/vendor-config-core-checklist.yaml`
+
+## 2. DoD Results
+
+```json
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "command": "npm --workspace @bytetrue/pi-vendor test",
+      "exit_code": 0,
+      "stdout": "\n RUN  v3.2.6 /Users/byte/workspace/projects/pi-package-mono/packages/pi-vendor\n\n ✓ src/templates.test.ts (4 tests) 1ms\n ✓ src/model-list.test.ts (6 tests) 1ms\n ✓ src/fuzzy.test.ts (11 tests) 2ms\n ✓ src/official-catalog.test.ts (3 tests) 2ms\n ✓ src/models-json.test.ts (7 tests) 3ms\n ✓ src/enrich.test.ts (3 tests) 3ms\n ✓ src/config-document.test.ts (16 tests) 3ms\n ✓ src/openai-models.test.ts (6 tests) 7ms\n ✓ src/custom-select.test.ts (4 tests) 3ms\n ✓ src/config-core.test.ts (7 tests) 8ms\n\n Test Files  10 passed (10)\n      Tests  67 passed (67)\n   Start at  18:56:39\n   Duration  457ms (transform 335ms, setup 0ms, collect 769ms, tests 34ms, environment 1ms, prepare 309ms)\n\n",
+      "stderr": "npm notice run @bytetrue/pi-vendor@0.1.1 test\nnpm notice run vitest run\n",
+      "id": "CMD-001",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "npm --workspace @bytetrue/pi-vendor run typecheck",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "npm notice run @bytetrue/pi-vendor@0.1.1 typecheck\nnpm notice run tsc --noEmit\n",
+      "id": "CMD-002",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "npm run typecheck --workspaces --if-present && npm test",
+      "exit_code": 0,
+      "stdout": "\n RUN  v3.2.6 /Users/byte/workspace/projects/pi-package-mono/packages/pi-vendor\n\n ✓ src/model-list.test.ts (6 tests) 1ms\n ✓ src/templates.test.ts (4 tests) 1ms\n ✓ src/fuzzy.test.ts (11 tests) 2ms\n ✓ src/official-catalog.test.ts (3 tests) 2ms\n ✓ src/models-json.test.ts (7 tests) 4ms\n ✓ src/enrich.test.ts (3 tests) 2ms\n ✓ src/config-document.test.ts (16 tests) 3ms\n ✓ src/openai-models.test.ts (6 tests) 7ms\n ✓ src/custom-select.test.ts (4 tests) 4ms\n ✓ src/config-core.test.ts (7 tests) 8ms\n\n Test Files  10 passed (10)\n      Tests  67 passed (67)\n   Start at  18:56:42\n   Duration  459ms (transform 343ms, setup 0ms, collect 778ms, tests 36ms, environment 1ms, prepare 314ms)\n\n\n RUN  v3.2.6 /Users/byte/workspace/projects/pi-package-mono/packages/pi-web-search\n\n ↓ src/live.e2e.test.ts (9 tests | 9 skipped)\n ✓ src/response-body.test.ts (7 tests) 7ms\n ✓ src/providers/exa-free.test.ts (1 test) 4ms\n ✓ src/proxy.test.ts (8 tests) 25ms\n ✓ src/html.test.ts (32 tests) 24ms\n ✓ src/providers/body-budget.test.ts (4 tests) 4ms\n ✓ src/config.test.ts (10 tests) 1ms\n ✓ src/search-budget.test.ts (5 tests) 9ms\n ✓ src/config-file.test.ts (4 tests) 422ms\n ✓ src/web-fetch-routing.test.ts (3 tests) 6ms\n ✓ src/tools.test.ts (4 tests) 8ms\n ✓ src/providers/bing.test.ts (4 tests) 408ms\n   ✓ BingProvider > returns empty (no throw) when markup has no results  403ms\n ✓ src/search.test.ts (6 tests) 407ms\n   ✓ searchWithFallback > throws only when every provider fails  403ms\n\n Test Files  12 passed | 1 skipped (13)\n      Tests  88 passed | 9 skipped (97)\n   Start at  18:56:43\n   Duration  761ms (transform 479ms, setup 0ms, collect 2.09s, tests 1.33s, environment 1ms, prepare 474ms)\n\n",
+      "stderr": "npm notice run @bytetrue/pi-vendor@0.1.1 typecheck\nnpm notice run tsc --noEmit\nnpm notice run @bytetrue/pi-web-search@0.1.2 typecheck\nnpm notice run pi-package-mono@0.0.0 test\nnpm notice run npm run test --workspaces --if-present\nnpm notice run @bytetrue/pi-vendor@0.1.1 test\nnpm notice run vitest run\nnpm notice run @bytetrue/pi-web-search@0.1.2 test\n",
+      "id": "CMD-003",
+      "core": false,
+      "failure_handling": "fix-or-block"
+    }
+  ],
+  "providers": {}
+}
+```
+
+## 3. Validation Commands
+
+Extracted from checklist `dod.commands`; see DoD Results for command status.
+
+## 4. Scope And Cleanliness
+
+Design bytes: 14420
+Checklist bytes: 5955
+
+## 5. Residual Risks
+
+- none
+
+## 6. Provider Signals
+
+```json
+{
+  "archguard": {
+    "status": "skipped",
+    "reason": "archguard collection disabled",
+    "warnings": []
+  },
+  "meta_cc": {
+    "status": "skipped",
+    "reason": "meta-cc collection disabled",
+    "warnings": []
+  }
+}
+```
+
+## 7. Gate Results
+
+```json
+{
+  "gate_id": "scope-gate",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "changed_files": [
+        "packages/pi-vendor/package.json",
+        "packages/pi-vendor/src/index.ts",
+        "packages/pi-vendor/src/models-json.ts",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-checklist.yaml",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-design-review.md",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-design.md",
+        ".codestable/features/2026-07-12-vendor-config-core/vendor-config-core-evidence.md",
+        "packages/pi-vendor/src/config-core.test.ts",
+        "packages/pi-vendor/src/config-core.ts",
+        "packages/pi-vendor/src/config-document.test.ts",
+        "packages/pi-vendor/src/config-document.ts"
+      ],
+      "ignored_machine_artifacts": [],
+      "allowed_prefixes": [
+        ".codestable/features/2026-07-12-vendor-config-core",
+        "packages/pi-vendor"
+      ]
+    }
+  ],
+  "providers": {}
+}
+```

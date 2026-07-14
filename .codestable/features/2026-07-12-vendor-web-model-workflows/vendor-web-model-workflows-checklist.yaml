@@ -1,0 +1,174 @@
+feature: vendor-web-model-workflows
+created: 2026-07-12
+roadmap: vendor-dual-ui-manager
+roadmap_item: vendor-web-model-workflows
+
+scenarios:
+  - { id: scenario-1, name: Missing or empty models state, class: core }
+  - { id: scenario-2, name: Visual sort preserves document order, class: core }
+  - { id: scenario-3, name: Add official closed model, class: core }
+  - { id: scenario-4, name: Official ambiguity selection, class: core }
+  - { id: scenario-5, name: Custom template default editor, class: core }
+  - { id: scenario-6, name: Add conflict confirmation, class: core }
+  - { id: scenario-7, name: Edit and rename model, class: core }
+  - { id: scenario-8, name: Delete model, class: core }
+  - { id: scenario-9, name: SecretRef shift blocked, class: core }
+  - { id: scenario-10, name: No visual reorder mutation, class: core }
+  - { id: scenario-11, name: Discover credential hydration, class: core }
+  - { id: scenario-12, name: Ten thousand ids capped selection, class: core }
+  - { id: scenario-13, name: Mixed enrichment states, class: core }
+  - { id: scenario-14, name: Bulk existing conflict review, class: core }
+  - { id: scenario-15, name: Route error preserves modal, class: core }
+  - { id: scenario-16, name: Whole document save cancel, class: supporting }
+  - { id: scenario-17, name: Keyboard focus narrow layout, class: core }
+
+steps:
+  - id: S1-MODEL-TABLE
+    action: Add model state/table/empty/search/visual sort without document mutation
+    covers: [scenario-1, scenario-2, scenario-10]
+    depends_on: []
+    verification: pure state/render model tests with absent models and order snapshots
+    exit_signal: visual operations never add models array or reorder document
+    failure_policy: fix-or-block
+    status: done
+  - id: S2-MODEL-CRUD
+    action: Add model editor and shared add/replace/delete with conflict and SecretRef path simulation
+    covers: [scenario-6, scenario-7, scenario-8, scenario-9]
+    depends_on: [S1-MODEL-TABLE]
+    verification: mutation/order/ref-shift matrices and explicit confirmation tests
+    exit_signal: identity/order match Config core and no surviving ref moves
+    failure_policy: fix-or-block
+    status: done
+  - id: S3-CATALOG-CUSTOM
+    action: Add closed catalog search, candidate choice, custom enrichment/default editor and apply
+    covers: [scenario-3, scenario-4, scenario-5]
+    depends_on: [S2-MODEL-CRUD]
+    verification: API client fakes + closed DTO serialization + mutation tests
+    exit_signal: every applied model is closed allowlist and ambiguity/default requires user decision
+    failure_policy: fix-or-block
+    status: done
+  - id: S4-DISCOVER-SELECT
+    action: Add discover request, 10k searchable result state and selection cap 100
+    covers: [scenario-11, scenario-12, scenario-15]
+    depends_on: [S3-CATALOG-CUSTOM]
+    verification: route/client integration + large deterministic data + abort/error tests
+    exit_signal: credentials remain server-side, result responsive, route errors keep draft/session
+    failure_policy: fix-or-block
+    status: done
+  - id: S5-IMPORT-ENRICH
+    action: Add concurrency-8 enrichment tray, ambiguity/default/failure decisions, dedupe and bulk apply
+    covers: [scenario-13, scenario-14]
+    depends_on: [S4-DISCOVER-SELECT]
+    verification: mixed row-state scheduler tests + skip/replace/ref-preflight matrices
+    exit_signal: apply is deterministic browser mutation only; failed/unresolved rows never enter draft
+    failure_policy: fix-or-block
+    status: done
+  - id: S6-INTEGRATE-A11Y
+    action: Integrate single draft save/cancel/request abort plus table/dialog/live-region/narrow UI and docs
+    covers: [scenario-15, scenario-16, scenario-17]
+    depends_on: [S5-IMPORT-ENRICH]
+    verification: runtime integration + browser keyboard/narrow/10k manual + static security scans
+    exit_signal: whole document saves once, cancel aborts requests/zero writes, model workflow accessible
+    failure_policy: fix-or-block
+    status: done
+
+checks:
+  - id: C1-EMPTY-ORDER
+    item: Missing models stays missing until first add; empty state and document order stable
+    covers: [scenario-1]
+    verification: pure draft snapshots
+    source: design-2.1/design-2.2
+    status: passed
+  - id: C2-VISUAL-SORT
+    item: Search/sort only changes view; actions retain original index+previousId
+    covers: [scenario-2, scenario-10]
+    verification: visual/document order tests
+    source: design-1.4
+    status: passed
+  - id: C3-CLOSED-OFFICIAL
+    item: Official applied models are closed allowlist with no provider/baseUrl/apiKey/authHeader/unknown raw fields
+    covers: [scenario-3]
+    verification: serialized shape + recursive forbidden-key scan
+    source: model-source-contract
+    status: passed
+  - id: C4-CANDIDATE-DEFAULT
+    item: Ambiguous official requires choice; custom default warning/editor validates before mutation
+    covers: [scenario-4, scenario-5]
+    verification: flow state tests
+    source: design-2.4
+    status: passed
+  - id: C5-MODEL-MUTATION
+    item: Add/edit/rename/delete use shared mutation；overwrite/delete confirm affected model/known-secret counts
+    covers: [scenario-6, scenario-7, scenario-8]
+    verification: mutation call/order matrix
+    source: roadmap-4.2
+    status: passed
+  - id: C6-STALE-EDITOR
+    item: Editor handle index+previousId mismatch returns stale and never edits another row
+    covers: [scenario-7]
+    verification: open two editor states, mutate/delete/shift via first, then assert second index+previousId stale and cannot edit another row
+    source: design-2.1
+    status: passed
+  - id: C7-REF-SHIFT
+    item: Delete/overwrite/reindex moving surviving refs blocked；confirmed subtree removal reports known-secret counts
+    covers: [scenario-9, scenario-10]
+    verification: RFC6901 ref matrices + allowedRemovedPrefixes only from confirmed action；Raw JSON cannot self-authorize
+    source: opaque-keep-value
+    status: passed
+  - id: C8-DISCOVER-SECURE
+    item: Discover uses selected provider sanitized draft + exact server hydration; no credential in client response/error
+    covers: [scenario-11, scenario-15]
+    verification: route integration + recursive leak scan
+    source: design-2.5/design-2.6
+    status: passed
+  - id: C9-LARGE-SELECTION
+    item: 10k ids searchable; unique deterministic rows; max100 selection/apply per batch
+    covers: [scenario-12]
+    verification: large state performance/count tests + browser measurement
+    source: design-2.5
+    status: passed
+  - id: C10-IMPORT-PIPELINE
+    item: Concurrency8 pipeline preserves completed rows on cancel and requires ambiguity/default decisions
+    covers: [scenario-13]
+    verification: fake scheduler/abort/mixed-state tests
+    source: design-2.5
+    status: passed
+  - id: C11-BULK-CONFLICT
+    item: Existing models skip默认并显示skipped count；replace selected confirms model/secret counts + per-item preflight
+    covers: [scenario-14]
+    verification: bulk apply mutation sequence tests
+    source: design-2.5
+    status: passed
+  - id: C12-SAVE-A11Y
+    item: Model requests never settle modal; final Save one PUT; Cancel zero write/aborts; keyboard/focus/narrow works
+    covers: [scenario-15, scenario-16, scenario-17]
+    verification: HTTP call counts + browser manual/static checks
+    source: design-2.6/design-2.7
+    status: passed
+
+acceptance_matrix:
+  - { scenario: scenario-1, checks: [C1-EMPTY-ORDER] }
+  - { scenario: scenario-2, checks: [C2-VISUAL-SORT] }
+  - { scenario: scenario-3, checks: [C3-CLOSED-OFFICIAL] }
+  - { scenario: scenario-4, checks: [C4-CANDIDATE-DEFAULT] }
+  - { scenario: scenario-5, checks: [C4-CANDIDATE-DEFAULT] }
+  - { scenario: scenario-6, checks: [C5-MODEL-MUTATION] }
+  - { scenario: scenario-7, checks: [C5-MODEL-MUTATION, C6-STALE-EDITOR] }
+  - { scenario: scenario-8, checks: [C5-MODEL-MUTATION] }
+  - { scenario: scenario-9, checks: [C7-REF-SHIFT] }
+  - { scenario: scenario-10, checks: [C2-VISUAL-SORT, C7-REF-SHIFT] }
+  - { scenario: scenario-11, checks: [C8-DISCOVER-SECURE] }
+  - { scenario: scenario-12, checks: [C9-LARGE-SELECTION] }
+  - { scenario: scenario-13, checks: [C10-IMPORT-PIPELINE] }
+  - { scenario: scenario-14, checks: [C11-BULK-CONFLICT] }
+  - { scenario: scenario-15, checks: [C8-DISCOVER-SECURE, C12-SAVE-A11Y] }
+  - { scenario: scenario-16, checks: [C12-SAVE-A11Y] }
+  - { scenario: scenario-17, checks: [C12-SAVE-A11Y] }
+
+dod_contract:
+  blocking: [C1-EMPTY-ORDER, C3-CLOSED-OFFICIAL, C5-MODEL-MUTATION, C7-REF-SHIFT, C8-DISCOVER-SECURE, C10-IMPORT-PIPELINE, C12-SAVE-A11Y]
+  validation_commands:
+    - npm --workspace @bytetrue/pi-vendor run build:web
+    - npm --workspace @bytetrue/pi-vendor test
+    - npm --workspace @bytetrue/pi-vendor run typecheck
+  evidence_required: [command_output, state_tests, route_integration, browser_manual, screenshots]

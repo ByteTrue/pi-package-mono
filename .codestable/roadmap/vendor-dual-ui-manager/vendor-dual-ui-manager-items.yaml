@@ -1,0 +1,59 @@
+roadmap: vendor-dual-ui-manager
+created: 2026-07-12
+
+items:
+  - slug: vendor-config-core
+    description: 建立配置快照、Pi compatibility oracle、条件提交、字段描述和 provider/model 共享纯变更
+    depends_on: []
+    status: done
+    feature: 2026-07-12-vendor-config-core
+    minimal_loop: false
+    notes: design 分 A) document/mutation 与 B) snapshot/oracle/revision/commit 两个验收块；覆盖字段缺失、三层未知字段、duplicate id、MutationResult、atomic 0o600 与当前 Pi oracle；同步 coding-agent peer >=0.79.10，不抬 pi-tui 下限
+
+  - slug: vendor-web-modal-runtime
+    description: 交付一次性 loopback server、静态最小管理页、浏览器启动和安全 Save/Cancel 闭环
+    depends_on: [vendor-config-core]
+    status: done
+    feature: 2026-07-12-vendor-web-modal-runtime
+    minimal_loop: true
+    notes: 最小 routes 仅含 state/config/cancel；页面加载 opaque-sanitized draft、只编辑已有 provider baseUrl 并 Save/Cancel，不建临时 CRUD/descriptor UI；本项确定 assets/build/package files，并完成 token/CSP/opaque hydration/accessibility/cleanup
+
+  - slug: vendor-model-source-core
+    description: 建立安全 official DTO、enrichment 和有 deadline/body/count/redirect/command 信任边界的 /models 发现
+    depends_on: [vendor-config-core, vendor-web-modal-runtime]
+    status: done
+    feature: 2026-07-12-vendor-model-source-core
+    minimal_loop: false
+    notes: runtime 提供 route table/initial snapshot/SecretRef hydration；本项增量加入 catalog/enrich/discover；覆盖 exact Pi template、all-command preflight、typed errors、overall deadline、production runner、stream limits 和无 secret/unknown DTO leak
+
+  - slug: vendor-tui-quick-workflows
+    description: 按 roadmap 4.7 固定步骤交付快速添加模型、快速添加供应商和 Web 直达入口
+    depends_on: [vendor-config-core, vendor-model-source-core, vendor-web-modal-runtime]
+    status: done
+    feature: 2026-07-12-vendor-tui-quick-workflows
+    minimal_loop: false
+    notes: 完整 provider 设置编辑移出 TUI；状态转移 tests 断言默认选项、每层 Esc、Cancel/Add another 零 commit、Save 恰好一次 commit、碰撞确认和新 command 不触发 discovery
+
+  - slug: vendor-web-provider-workflows
+    description: 完成 Web provider 新增、重命名、删除、字段显隐、Add setting、Raw JSON 和变更预览
+    depends_on: [vendor-config-core, vendor-web-modal-runtime]
+    status: done
+    feature: 2026-07-12-vendor-web-provider-workflows
+    minimal_loop: false
+    notes: 表单与 Raw JSON 共用单一 draft；删除和覆盖显式确认；未知字段与字段缺失无损 round-trip；新增控件同步满足基础可访问性
+
+  - slug: vendor-web-model-workflows
+    description: 完成 Web model 表格 CRUD、官方 catalog enrichment、custom id 和 OpenAI-compatible /models 导入
+    depends_on: [vendor-model-source-core, vendor-web-provider-workflows]
+    status: done
+    feature: 2026-07-12-vendor-web-model-workflows
+    minimal_loop: false
+    notes: official ambiguity显式选择；closed DTO保留current-safe fidelity；批量≤100、dedupe/partial recovery；model mutation/ref shift用confirmed allowedRemovedPrefixes；不带routing/credential/unknown
+
+  - slug: vendor-dual-ui-hardening
+    description: 收口双界面的错误与空状态、冲突恢复、可访问性、跨平台启动、发布资产、回归证据和文档
+    depends_on: [vendor-tui-quick-workflows, vendor-web-model-workflows]
+    status: in-progress
+    feature: 2026-07-12-vendor-dual-ui-hardening
+    minimal_loop: false
+    notes: 前六项传递完成；evidence-first收口，CI build+generated status+真实tarball解包runtime smoke，cross-surface errors/races/secrets/a11y/platform/docs；不加新feature/发布/broad cleanup

@@ -1,0 +1,178 @@
+feature: vendor-web-provider-workflows
+created: 2026-07-12
+roadmap: vendor-dual-ui-manager
+roadmap_item: vendor-web-provider-workflows
+
+scenarios:
+  - { id: scenario-1, name: Provider load and field visibility, class: core }
+  - { id: scenario-2, name: Add and remove optional setting, class: core }
+  - { id: scenario-3, name: Missing common field remains missing, class: core }
+  - { id: scenario-4, name: Create provider, class: core }
+  - { id: scenario-5, name: Rename provider, class: core }
+  - { id: scenario-6, name: Rename overwrite confirmation, class: core }
+  - { id: scenario-7, name: Rename blocked by opaque refs, class: core }
+  - { id: scenario-8, name: Delete provider, class: core }
+  - { id: scenario-9, name: Secret field unchanged replace remove, class: core }
+  - { id: scenario-10, name: Raw JSON single store, class: core }
+  - { id: scenario-11, name: Invalid moved or forged ref, class: core }
+  - { id: scenario-12, name: Sanitized before after preview, class: supporting }
+  - { id: scenario-13, name: Save error and conflict, class: core }
+  - { id: scenario-14, name: Dirty cancel confirmation, class: core }
+  - { id: scenario-15, name: Keyboard focus and narrow layout, class: core }
+
+steps:
+  - id: S1-STATE-BASE
+    action: Build single baseline/current provider store, typed actions and state load on existing runtime
+    covers: [scenario-1, scenario-3]
+    depends_on: []
+    verification: pure state tests + minimal runtime regression
+    exit_signal: one draft is source of truth and absent fields stay absent
+    failure_policy: fix-or-block
+    status: done
+  - id: S2-FIELDS
+    action: Build provider sidebar, common fields, Object.hasOwn optional fields and Add setting/remove
+    covers: [scenario-1, scenario-2, scenario-3, scenario-9]
+    depends_on: [S1-STATE-BASE]
+    verification: reducer/descriptor tests + browser field matrix
+    exit_signal: field strategy matches owner choice and SecretRef is never put into secret input value
+    failure_policy: fix-or-block
+    status: done
+  - id: S3-PROVIDER-CRUD
+    action: Implement create/rename/delete using shared mutation and explicit confirmation
+    covers: [scenario-4, scenario-5, scenario-6, scenario-7, scenario-8]
+    depends_on: [S2-FIELDS]
+    verification: mutation/result/selection tests + overwrite/delete model/secret count confirmation
+    exit_signal: no implicit overwrite; rename with opaque refs blocked; delete removes subtree only after confirm
+    failure_policy: fix-or-block
+    status: done
+  - id: S4-RAW-SECRET
+    action: Add whole-document Raw JSON apply gate and client SecretRef exact-location preflight
+    covers: [scenario-7, scenario-9, scenario-10, scenario-11]
+    depends_on: [S3-PROVIDER-CRUD]
+    verification: raw parse/state/ref adversarial table + missing-ref secret-removal confirmation tests
+    exit_signal: structured and Raw share store; invalid moved/copied/forged refs never reach successful save
+    failure_policy: fix-or-block
+    status: done
+  - id: S5-PREVIEW
+    action: Add provider change summary and sanitized Before/After preview without diff dependency
+    covers: [scenario-12]
+    depends_on: [S4-RAW-SECRET]
+    verification: deterministic serialization/summary/no-secret tests
+    exit_signal: preview explains change without original secret or remote/dependency code
+    failure_policy: fix-or-block
+    status: done
+  - id: S6-SAVE-ERRORS
+    action: Wire Save/Cancel, field/global errors, conflict and terminal states to existing HTTP protocol
+    covers: [scenario-13, scenario-14]
+    depends_on: [S5-PREVIEW]
+    verification: API client/state tests + real runtime integration
+    exit_signal: success terminal; failures preserve draft; dirty cancel confirms; zero autosave
+    failure_policy: fix-or-block
+    status: done
+  - id: S7-A11Y-POLISH
+    action: Finish keyboard/focus/dialog/narrow layout/static security scans and docs
+    covers: [scenario-15]
+    depends_on: [S6-SAVE-ERRORS]
+    verification: browser manual matrix + static DOM/remote URL/route scans + package suite
+    exit_signal: provider workflow accessible and scope excludes structured model features
+    failure_policy: fix-or-block
+    status: done
+
+checks:
+  - id: C1-FIELD-VISIBILITY
+    item: Common fields visible without insertion；api text+datalist allows custom；optional only hasOwn/Add setting
+    covers: [scenario-1, scenario-3]
+    verification: state/render field matrix
+    source: design-2.2
+    status: passed
+  - id: C2-SETTING
+    item: Add setting lists only missing keys，all-added state disabled；remove deletes exact key
+    covers: [scenario-2]
+    verification: descriptor/reducer tests
+    source: design-2.2
+    status: passed
+  - id: C3-CREATE-RENAME
+    item: Create/rename use Config MutationResult; conflict default reject and overwrite requires confirmation
+    covers: [scenario-4, scenario-5, scenario-6]
+    verification: mutation call sequence tests
+    source: roadmap-4.2
+    status: passed
+  - id: C4-DELETE
+    item: Delete confirms counts and selects sorted next/else previous/else null without document reorder
+    covers: [scenario-8]
+    verification: reducer/dialog tests
+    source: design-2.3
+    status: passed
+  - id: C5-RENAME-SECRET
+    item: Provider rename cannot move any unresolved SecretRef in provider subtree; no remap API
+    covers: [scenario-7]
+    verification: provider/model/modelOverride secret-slot prefix tests
+    source: opaque-keep-value
+    status: passed
+  - id: C6-SECRET-EDIT
+    item: SecretRef displays unchanged with opaque help；replace/remove never reveal original
+    covers: [scenario-9]
+    verification: secret state/render tests
+    source: design-2.2/design-2.3
+    status: passed
+  - id: C7-RAW-SINGLE-STORE
+    item: Valid Raw replaces same draft; invalid parse stays isolated; structured switch has Apply/Discard/Stay
+    covers: [scenario-10]
+    verification: raw action tests
+    source: design-2.4
+    status: passed
+  - id: C8-REF-ADVERSARIAL
+    item: Moved/copied/unknown/duplicate refs fail；missing refs require explicit secret-removal confirmation；server authoritative
+    covers: [scenario-11]
+    verification: adversarial ref table + removal count/category dialog + HTTP integration
+    source: design-2.3/design-2.5
+    status: passed
+  - id: C9-PREVIEW
+    item: Preview is sanitized deterministic Before/After plus provider summary, no custom diff dependency
+    covers: [scenario-12]
+    verification: serialization/no-secret tests
+    source: design-2.4
+    status: passed
+  - id: C10-SAVE-ERROR
+    item: Save uses original revision; issues map when possible; 409 preserves copyable draft and prompts reopen
+    covers: [scenario-13]
+    verification: HTTP integration/error mapping tests
+    source: design-2.5
+    status: passed
+  - id: C11-CANCEL
+    item: Dirty cancel confirms; clean cancel immediate; both zero write
+    covers: [scenario-14]
+    verification: state/API call count tests
+    source: design-2.5
+    status: passed
+  - id: C12-A11Y-SCOPE
+    item: Keyboard/labels/focus/dialog/narrow work; no structured model routes/UI/framework/remote assets
+    covers: [scenario-15]
+    verification: browser manual + static scans
+    source: design-2.6/design-3.2
+    status: passed
+
+acceptance_matrix:
+  - { scenario: scenario-1, checks: [C1-FIELD-VISIBILITY] }
+  - { scenario: scenario-2, checks: [C2-SETTING] }
+  - { scenario: scenario-3, checks: [C1-FIELD-VISIBILITY] }
+  - { scenario: scenario-4, checks: [C3-CREATE-RENAME] }
+  - { scenario: scenario-5, checks: [C3-CREATE-RENAME] }
+  - { scenario: scenario-6, checks: [C3-CREATE-RENAME] }
+  - { scenario: scenario-7, checks: [C5-RENAME-SECRET] }
+  - { scenario: scenario-8, checks: [C4-DELETE] }
+  - { scenario: scenario-9, checks: [C6-SECRET-EDIT] }
+  - { scenario: scenario-10, checks: [C7-RAW-SINGLE-STORE] }
+  - { scenario: scenario-11, checks: [C8-REF-ADVERSARIAL] }
+  - { scenario: scenario-12, checks: [C9-PREVIEW] }
+  - { scenario: scenario-13, checks: [C10-SAVE-ERROR] }
+  - { scenario: scenario-14, checks: [C11-CANCEL] }
+  - { scenario: scenario-15, checks: [C12-A11Y-SCOPE] }
+
+dod_contract:
+  blocking: [C1-FIELD-VISIBILITY, C3-CREATE-RENAME, C5-RENAME-SECRET, C7-RAW-SINGLE-STORE, C8-REF-ADVERSARIAL, C10-SAVE-ERROR, C12-A11Y-SCOPE]
+  validation_commands:
+    - npm --workspace @bytetrue/pi-vendor run build:web
+    - npm --workspace @bytetrue/pi-vendor test
+    - npm --workspace @bytetrue/pi-vendor run typecheck
+  evidence_required: [command_output, state_tests, http_integration, browser_manual, screenshots]

@@ -1,0 +1,46 @@
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "command": "npm --workspace @bytetrue/pi-vendor run build:web",
+      "exit_code": 0,
+      "stdout": "web assets built → /Users/byte/workspace/projects/pi-package-mono/packages/pi-vendor/src/web/assets/app.js (1 outputs)\n",
+      "stderr": "npm notice run @bytetrue/pi-vendor@0.1.1 build:web\nnpm notice run node src/web/build.mjs\n",
+      "id": "CMD-001",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "npm --workspace @bytetrue/pi-vendor test",
+      "exit_code": 0,
+      "stdout": "\n RUN  v3.2.6 /Users/byte/workspace/projects/pi-package-mono/packages/pi-vendor\n\n ✓ src/model-list.test.ts (6 tests) 1ms\n ✓ src/templates.test.ts (4 tests) 1ms\n ✓ src/fuzzy.test.ts (11 tests) 2ms\n ✓ src/official-catalog.test.ts (3 tests) 2ms\n ✓ src/models-json.test.ts (7 tests) 4ms\n ✓ src/enrich.test.ts (3 tests) 3ms\n ✓ src/config-document.test.ts (16 tests) 3ms\n ✓ src/web/server/mask.test.ts (9 tests) 3ms\n ✓ src/openai-models.test.ts (6 tests) 8ms\n ✓ src/custom-select.test.ts (4 tests) 4ms\n ✓ src/config-core.test.ts (7 tests) 9ms\n\n Test Files  11 passed (11)\n      Tests  76 passed (76)\n   Start at  19:19:07\n   Duration  447ms (transform 381ms, setup 0ms, collect 820ms, tests 40ms, environment 1ms, prepare 344ms)\n\n",
+      "stderr": "npm notice run @bytetrue/pi-vendor@0.1.1 test\nnpm notice run vitest run\n",
+      "id": "CMD-002",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "npm --workspace @bytetrue/pi-vendor run typecheck",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "npm notice run @bytetrue/pi-vendor@0.1.1 typecheck\nnpm notice run tsc --noEmit\n",
+      "id": "CMD-003",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "npm pack --workspace @bytetrue/pi-vendor --dry-run",
+      "exit_code": 0,
+      "stdout": "bytetrue-pi-vendor-0.1.1.tgz\n",
+      "stderr": "npm notice\nnpm notice 📦  @bytetrue/pi-vendor@0.1.1\nnpm notice Tarball Contents\nnpm notice 2.1kB README.md\nnpm notice 1.1kB package.json\nnpm notice 5.3kB src/command.ts\nnpm notice 8.3kB src/config-core.ts\nnpm notice 9.5kB src/config-document.ts\nnpm notice 6.7kB src/custom-select.ts\nnpm notice 1.7kB src/enrich.ts\nnpm notice 3.3kB src/fuzzy.ts\nnpm notice 2.1kB src/index.ts\nnpm notice 1.1kB src/model-list.ts\nnpm notice 4.1kB src/models-json.ts\nnpm notice 10.3kB src/models-menu.ts\nnpm notice 6.0kB src/official-catalog.ts\nnpm notice 2.7kB src/openai-models.ts\nnpm notice 6.0kB src/provider-menu.ts\nnpm notice 3.1kB src/templates.ts\nnpm notice 2.4kB src/vendor-ui.ts\nnpm notice 4.0kB src/web/assets/app.js\nnpm notice 620B src/web/build.mjs\nnpm notice 6.5kB src/web/client/app.ts\nnpm notice 311B src/web/client/index.html\nnpm notice 1.3kB src/web/client/style.css\nnpm notice 1.4kB src/web/server/assets.ts\nnpm notice 6.6kB src/web/server/mask.ts\nnpm notice 6.9kB src/web/server/server.ts\nnpm notice 3.7kB src/web/server/session.ts\nnpm notice Tarball Details\nnpm notice name: @bytetrue/pi-vendor\nnpm notice version: 0.1.1\nnpm notice filename: bytetrue-pi-vendor-0.1.1.tgz\nnpm notice package size: 28.3 kB\nnpm notice unpacked size: 107.3 kB\nnpm notice shasum: 8ad54c9d75508d113732892b7c0bbf6bbefd3398\nnpm notice integrity: sha512-zsNUXDqsS+4Ow[...]v2XGnfrdKb3PA==\nnpm notice total files: 26\nnpm notice\n",
+      "id": "CMD-004",
+      "core": false,
+      "failure_handling": "fix-or-block"
+    }
+  ],
+  "providers": {}
+}

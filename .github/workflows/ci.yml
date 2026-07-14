@@ -15,7 +15,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Web assets must be built and committed/generated clean before pack smoke.
+      - run: npm --workspace @bytetrue/pi-vendor run build:web
+      - name: Generated web assets clean
+        run: |
+          if [ -n "$(git status --porcelain -- packages/pi-vendor/src/web/assets)" ]; then
+            echo "Generated web assets dirty after build:web:"
+            git status --porcelain -- packages/pi-vendor/src/web/assets
+            exit 1
+          fi
       # Type-check any workspace that defines a `typecheck` script.
       - run: npm run typecheck --workspaces --if-present
       # Run every workspace's test suite (vitest).
       - run: npm test
+      # Real tarball extraction + loopback server smoke (no browser, no user config).
+      - run: node packages/pi-vendor/scripts/pack-smoke.mjs
