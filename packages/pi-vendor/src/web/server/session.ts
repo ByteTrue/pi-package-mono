@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createVendorWebServer, type VendorWebListen, type WebSessionState, type VendorWebResult, type VendorWebSession } from "./server.js";
 import type { WebModelsDraft, SecretRef, SecretSlot } from "./mask.js";
 import { maskSnapshot, hydrateCommitDraft } from "./mask.js";
@@ -10,6 +12,9 @@ import { listModelFields, listProviderFields } from "../../config-document.js";
 import { searchOfficialModels } from "../../model-source/catalog-search.js";
 import { enrichModelForWeb } from "../../model-source/web-enrich.js";
 import { ModelSourceError } from "../../model-source/model-source-error.js";
+
+/** Default asset root next to this module (`src/web/assets`). Override when bundled (dev:web). */
+const DEFAULT_ASSET_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../assets");
 
 // Module-scoped active-session slot
 let activeSession: VendorWebSession | null = null;
@@ -62,6 +67,8 @@ export async function startVendorWebSession(options?: {
 	modelsPath?: string;
 	openBrowser?: (url: string) => Promise<boolean>;
 	listen?: VendorWebListen;
+	/** Absolute path to `src/web/assets` when `import.meta.url` is not under `src/web/server`. */
+	assetRoot?: string;
 }): Promise<VendorWebSession> {
 	// Synchronous active-session claim before any await
 	if (activeSession) {
@@ -178,6 +185,7 @@ export async function startVendorWebSession(options?: {
 				settle({ kind: "saved", snapshot: saved });
 			},
 			listen: options?.listen,
+			assetRoot: options?.assetRoot ?? DEFAULT_ASSET_ROOT,
 		});
 
 		if (placeholder.cancelled) {

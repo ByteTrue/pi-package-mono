@@ -333,9 +333,9 @@ export function createVendorWebServer(options: CreateVendorWebServerOptions): Pr
 				return;
 			}
 
-			// Serve static assets for non-API routes
-			const pathname = req.url === "/" ? "/" : (req.url ?? "/");
-		const asset = getAsset(pathname, options.assetRoot);
+			// Serve static assets for non-API routes (strip query string)
+			const assetPath = url.pathname || "/";
+			const asset = getAsset(assetPath, options.assetRoot);
 			if (asset) {
 				res.writeHead(200, {
 					"Content-Type": asset.contentType,

@@ -123,6 +123,8 @@ async function main() {
 	const session = await sessionMod.startVendorWebSession({
 		modelsPath,
 		openBrowser: noBrowser ? async () => false : openBrowserUrl,
+		// Bundle rewrites import.meta.url — point assets at real src/web/assets
+		assetRoot: outdir,
 	});
 
 	console.log("");
