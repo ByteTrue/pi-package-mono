@@ -1,8 +1,27 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-
-import { collectOfficialCandidates, formatOfficialCandidate, groupOfficialModelsById, stripOfficialRoutingFields } from "./official-catalog.js";
+import { collectOfficialCandidates, findOfficialCatalogPath, formatOfficialCandidate, groupOfficialModelsById, stripOfficialRoutingFields } from "./official-catalog.js";
 
 describe("official catalog helpers", () => {
+
+	it("uses the first active Pi root's generated catalog", () => {
+		const firstRoot = mkdtempSync(join(tmpdir(), "pi-vendor-catalog-first-"));
+		const secondRoot = mkdtempSync(join(tmpdir(), "pi-vendor-catalog-second-"));
+		const catalogPath = join(firstRoot, "node_modules/@earendil-works/pi-ai/dist/models.generated.js");
+		try {
+			mkdirSync(join(firstRoot, "node_modules/@earendil-works/pi-ai/dist"), { recursive: true });
+			mkdirSync(join(secondRoot, "node_modules/@earendil-works/pi-ai/dist"), { recursive: true });
+			writeFileSync(catalogPath, "export const MODELS = {};\n");
+			writeFileSync(join(secondRoot, "node_modules/@earendil-works/pi-ai/dist/models.generated.js"), "export const MODELS = {};\n");
+
+			expect(findOfficialCatalogPath([firstRoot, secondRoot])).toBe(catalogPath);
+		} finally {
+			rmSync(firstRoot, { recursive: true, force: true });
+			rmSync(secondRoot, { recursive: true, force: true });
+		}
+	});
 	it("returns every exact model-id candidate across providers", () => {
 		const catalog = {
 			openai: {

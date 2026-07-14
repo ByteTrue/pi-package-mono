@@ -12,12 +12,11 @@
  *   PI_VENDOR_NO_BROWSER=1 npm --workspace @bytetrue/pi-vendor run dev:web
  */
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { copyFileSync, mkdirSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
-import { pathToFileURL as toFileUrl } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "..");
@@ -26,6 +25,40 @@ const clientDir = join(webDir, "client");
 const outdir = join(webDir, "assets");
 const sessionBundle = join(__dirname, ".dev-session.mjs");
 const sessionEntry = join(packageRoot, "src/web/server/session.ts");
+
+const repoRoot = resolve(packageRoot, "../..");
+
+function piPackageRoot(entry) {
+	if (!entry || !existsSync(entry)) return undefined;
+	try {
+		let current = dirname(realpathSync(entry));
+		for (;;) {
+			try {
+				if (JSON.parse(readFileSync(join(current, "package.json"), "utf8")).name === "@earendil-works/pi-coding-agent") return current;
+			} catch {
+				// Walk to the next parent.
+			}
+			const parent = dirname(current);
+			if (parent === current) return undefined;
+			current = parent;
+		}
+	} catch {
+		return undefined;
+	}
+}
+
+function activePiRoot() {
+	if (process.env.PI_VENDOR_PI_ROOT) return process.env.PI_VENDOR_PI_ROOT;
+	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+		const root = piPackageRoot(join(dir, process.platform === "win32" ? "pi.cmd" : "pi"));
+		if (!root) continue;
+		const pathFromRepo = relative(repoRoot, root);
+		// npm puts workspace node_modules/.bin first. For dev, emulate the installed
+		// Pi binary rather than the repository's peer-dependency fixture.
+		if (pathFromRepo === ".." || pathFromRepo.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) return root;
+	}
+	return undefined;
+}
 
 function defaultModelsPath() {
 	if (process.env.PI_VENDOR_MODELS) return resolve(process.env.PI_VENDOR_MODELS);
@@ -77,6 +110,14 @@ async function buildSessionBundle() {
 }
 
 async function main() {
+	const piRoot = activePiRoot();
+	if (piRoot) {
+		process.env.PI_VENDOR_PI_ROOT = piRoot;
+		console.log(`[dev-web] Pi catalog: ${piRoot}`);
+	} else {
+		console.warn("[dev-web] Could not locate installed Pi; using workspace catalog");
+	}
+
 	const modelsPath = defaultModelsPath();
 	if (!existsSync(modelsPath)) {
 		mkdirSync(dirname(modelsPath), { recursive: true });

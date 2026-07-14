@@ -2,7 +2,7 @@
 kind: issue
 title: "Web 模型编辑器：按 id 官方填充"
 type: feature
-status: open
+status: closed
 created: 2026-07-14
 epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 ---
@@ -168,6 +168,7 @@ epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 - `npm --workspace @bytetrue/pi-vendor test` — 全绿（含 applyOfficialTemplate 与 session catalog/enrich 接线）
 - `npm --workspace @bytetrue/pi-vendor run typecheck` — 通过
 - `npm --workspace @bytetrue/pi-vendor run build:web` — 通过
+- `npm --workspace @bytetrue/pi-vendor run dev:web` + Playwright — `5.6` 返回 18 条 current Pi catalog candidates；选择 `openai/gpt-5.6-luna` 后填入 `GPT-5.6 Luna`、`openai-responses`、272000 context、128000 max tokens。
 - 手动：重新打开 `/vendor web` 后在编辑器使用 **Fill from official**
 
 ## 执行记录
@@ -179,13 +180,17 @@ epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 - follow-up：editor 每键入一次 re-render 以前会丢焦点；现在保留输入焦点与光标位置。ID 输入会在 250ms 防抖后即时做 catalog 子串搜索，只有显式点击 Fill 才 fallback enrich。
 - 浏览器验收（Playwright MCP）：连续输入 `gpt` 与 `5.5` 时 active element 始终为 `#editor-id`；分别出现 catalog candidates（`5.5` 14 项）；选择官方条目、确认后显示 filled 状态。
 - 偏差：未接 `handleDiscover`（Import 仍可能死）；fill 点击未挂 AbortSignal
+- 回归修复：`dev:web` 是由 workspace 的 npm 环境启动，旧 resolver 先取到 peer fixture `pi 0.79.10`（catalog 无 `gpt-5.6-*`），而当前 Pi 是 `0.80.6`（18 条 `5.6`）。resolver 现在按 active Pi root（真实 Pi `argv[1]`；dev 从 PATH 找到安装的 `pi`）优先；worktree catalog 只作 fallback。
 
 ## 关闭回写
 
-- epic：本 issue 实现完成，待 Close 时勾选
-- project spec：Web 编辑器官方填充能力
-- 约束：session 必须接线 catalog/enrich，`catalogAvailable` 不得空头
+- epic：`.cs/epics/2026/07/14/vendor-web-productization/spec.md`（issue 1 完成事实、active Pi catalog 约束、下一步）
+- note：`.cs/notes/active-pi-catalog.md`（运行时 / `dev:web` catalog 选择规则）
+- project spec：不提前毕业；Web 产品化仍在 epic 中，待 epic 关闭时统一合并
 
 ## 关闭结论
 
-- （实现完成；owner 确认后 Close 改 status）
+- **关闭判断**：Add/Edit editor 内的官方填充闭环已完成；新增可 catalog 搜索并手选，编辑在覆盖前确认，headers/SecretRef 不覆盖。
+- **验证摘要**：290 个 vendor tests、typecheck、build:web 通过；Playwright 用 active Pi `0.80.6` 搜索 `5.6` 得 18 个候选，选择 `openai/gpt-5.6-luna` 后填入官方字段；连续输入仍保持 ID 焦点。
+- **回写位置**：epic 当前推进与 `active-pi-catalog` note。
+- **遗留事项**：Add model 三源主路径（含 discover 接线）继续由 `.cs/issues/2026/07/14/open-web-add-model-main-path.md` 承担。

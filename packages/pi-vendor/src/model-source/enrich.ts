@@ -34,7 +34,7 @@ export type EnrichOptions = {
 };
 
 export async function enrichModelId(modelId: string, options: EnrichOptions = {}): Promise<ModelEnrichmentResult> {
-	const catalog = options.catalog ?? (await loadOfficialCatalog());
+	const catalog = Object.hasOwn(options, "catalog") ? options.catalog : await loadOfficialCatalog();
 	const officialCandidates = collectOfficialCandidates(catalog, modelId);
 
 	// Always require user confirmation when we have official candidates (even just 1)

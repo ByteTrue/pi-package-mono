@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { ProviderModelConfig } from "../models-json.js";
@@ -50,28 +50,51 @@ function resolvePackageRoot(startDir: string): string | null {
 	}
 }
 
+function piRootFromEntry(entry: string | undefined): string | null {
+	if (!entry || !existsSync(entry)) return null;
+	try {
+		return resolvePackageRoot(dirname(realpathSync(entry)));
+	} catch {
+		return null;
+	}
+}
+
+function piRootFromPath(): string | null {
+	const names = process.platform === "win32" ? ["pi.cmd", "pi.exe", "pi"] : ["pi"];
+	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+		for (const name of names) {
+			const root = piRootFromEntry(join(dir, name));
+			if (root) return root;
+		}
+	}
+	return null;
+}
+
 function resolveCandidateRoots(): string[] {
 	const roots = new Set<string>();
+	const add = (root: string | null) => {
+		if (root) roots.add(root);
+	};
+
+	// Pi sessions use argv[1]. `dev:web` resolves the Pi executable from PATH.
+	add(resolvePackageRoot(process.env.PI_VENDOR_PI_ROOT ?? ""));
+	add(piRootFromEntry(process.argv[1]));
+	add(piRootFromPath());
 
 	try {
 		const resolvedUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
-		if (resolvedUrl.startsWith("file://")) {
-			const root = resolvePackageRoot(dirname(fileURLToPath(resolvedUrl)));
-			if (root) roots.add(root);
-		}
+		if (resolvedUrl.startsWith("file://")) add(resolvePackageRoot(dirname(fileURLToPath(resolvedUrl))));
 	} catch {
 		// ignore
 	}
 
-	const localRoot = resolvePackageRoot(dirname(fileURLToPath(import.meta.url)));
-	if (localRoot) roots.add(localRoot);
-
+	add(resolvePackageRoot(dirname(fileURLToPath(import.meta.url))));
 	return [...roots];
 }
 
-function candidateCatalogPaths(): string[] {
+function candidateCatalogPaths(roots: readonly string[]): string[] {
 	const paths = new Set<string>();
-	for (const root of resolveCandidateRoots()) {
+	for (const root of roots) {
 		paths.add(join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
 
 		let current = root;
@@ -90,8 +113,8 @@ function candidateCatalogPaths(): string[] {
 let cachedCatalogPath: string | null = null;
 let cachedCatalog: OfficialModelsCatalog | null = null;
 
-export function findOfficialCatalogPath(): string | null {
-	for (const candidate of candidateCatalogPaths()) {
+export function findOfficialCatalogPath(roots = resolveCandidateRoots()): string | null {
+	for (const candidate of candidateCatalogPaths(roots)) {
 		if (existsSync(candidate)) return candidate;
 	}
 	return null;
