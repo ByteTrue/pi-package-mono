@@ -176,6 +176,8 @@ epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 - `models/state.ts`：`applyOfficialTemplate` + `model-apply-template`；headers 永不覆盖
 - `model-view.ts`：编辑器内 Fill；catalog 命中需手动 Select；无命中再 enrich；编辑已有二次确认
 - `app.ts` / `style.css` / `build:web` 资产更新
+- follow-up：editor 每键入一次 re-render 以前会丢焦点；现在保留输入焦点与光标位置。ID 输入会在 250ms 防抖后即时做 catalog 子串搜索，只有显式点击 Fill 才 fallback enrich。
+- 浏览器验收（Playwright MCP）：连续输入 `gpt` 与 `5.5` 时 active element 始终为 `#editor-id`；分别出现 catalog candidates（`5.5` 14 项）；选择官方条目、确认后显示 filled 状态。
 - 偏差：未接 `handleDiscover`（Import 仍可能死）；fill 点击未挂 AbortSignal
 
 ## 关闭回写

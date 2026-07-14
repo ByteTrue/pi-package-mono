@@ -14,7 +14,7 @@ import {
 	listModelRows,
 	importRowsFromIds,
 	countImportReplaceTargets,
-	type ApiClient as ModelApiClient,
+	type ApiClient,
 } from "./state.js";
 import type { FieldDescriptor } from "../state.js";
 import { esc } from "../provider-view.js";
@@ -55,6 +55,87 @@ export type ModelViewCallbacks = {
 	onImportChooseCandidate(id: string, choice: OfficialModelChoice): void;
 	onImportConfirmDefault(id: string): void;
 };
+
+// Track editor focus across full re-renders (each keystroke currently re-renders the app).
+let lastEditorFocus: { id: string; start: number | null; end: number | null } | null = null;
+let editorSearchTimer: ReturnType<typeof setTimeout> | undefined;
+let editorSearchSeq = 0;
+
+function scheduleLiveCatalogSearch(
+	rawQuery: string,
+	callbacks: ModelViewCallbacks,
+	modelApi: ApiClient,
+): void {
+	if (editorSearchTimer) clearTimeout(editorSearchTimer);
+	// Invalidate both a pending debounce and an in-flight response for the old ID.
+	editorSearchSeq++;
+	const query = rawQuery.trim();
+	if (query.length < 2) {
+		callbacks.onSetFillStatus("", { candidates: [] });
+		return;
+	}
+	editorSearchTimer = setTimeout(() => {
+		void runOfficialFill(query, callbacks, modelApi);
+	}, 250);
+}
+
+async function runOfficialFill(
+	query: string,
+	callbacks: ModelViewCallbacks,
+	modelApi: ApiClient,
+	applyWithConfirm?: (official: Record<string, unknown>, warning?: string) => Promise<void>,
+): Promise<void> {
+	const seq = ++editorSearchSeq;
+	const q = query.trim();
+	if (!q) {
+		callbacks.onSetFillStatus("Enter a model id first", { error: true, candidates: [] });
+		return;
+	}
+	callbacks.onSetFillStatus("Searching official catalog…", { candidates: [] });
+	try {
+		const entries = await modelApi.fetchCatalog(q, 25);
+		if (seq !== editorSearchSeq) return;
+		if (entries.length > 0) {
+			const candidates = entries.map((e) => ({
+				provider: e.provider,
+				modelId: e.modelId,
+				model: e.model as Record<string, unknown>,
+			}));
+			callbacks.onSetFillStatus(
+				entries.length === 1
+					? "One catalog match — select to fill (required even for a single hit)."
+					: `${entries.length} catalog matches — select one.`,
+				{ candidates },
+			);
+			return;
+		}
+		// Live typing only shows catalog hits; enrich is for explicit Fill button.
+		if (!applyWithConfirm) {
+			callbacks.onSetFillStatus("No catalog matches", { candidates: [] });
+			return;
+		}
+		callbacks.onSetFillStatus("No catalog hits — enriching…", { candidates: [] });
+		const result = await modelApi.fetchEnrich(q);
+		if (result.kind === "ready" && result.model) {
+			await applyWithConfirm(result.model as Record<string, unknown>, result.warning);
+			return;
+		}
+		if (result.kind === "official-candidates" && result.candidates?.length) {
+			const candidates = result.candidates.map((c) => ({
+				provider: c.provider,
+				modelId: c.modelId,
+				model: c.model as Record<string, unknown>,
+			}));
+			callbacks.onSetFillStatus("Multiple official candidates — select one.", { candidates });
+			return;
+		}
+		callbacks.onSetFillStatus("Could not enrich model", { error: true, candidates: [] });
+	} catch (err) {
+		if (seq !== editorSearchSeq) return;
+		const msg = err instanceof Error ? err.message : "Catalog/enrich failed";
+		callbacks.onSetFillStatus(msg, { error: true, candidates: [] });
+	}
+}
 
 // ── Model Table ────────────────────────────────────────────────────
 
@@ -305,7 +386,7 @@ export function renderImportTray(state: ModelManagerState): string {
 export function bindModelEvents(
 	state: ModelManagerState,
 	callbacks: ModelViewCallbacks,
-	modelApi?: ModelApiClient,
+	modelApi?: ApiClient,
 ): void {
 	// Search
 	$id("model-search")?.addEventListener("input", (e) => {
@@ -345,30 +426,76 @@ export function bindModelEvents(
 
 	// Editor
 	if (state.editor) {
+		const rememberEditorFocus = (el: HTMLElement) => {
+			const id = el.id;
+			if (!id) return;
+			const input = el as HTMLInputElement | HTMLTextAreaElement;
+			const start = typeof input.selectionStart === "number" ? input.selectionStart : null;
+			const end = typeof input.selectionEnd === "number" ? input.selectionEnd : null;
+			lastEditorFocus = { id, start, end };
+		};
+
 		const bindEditorField = (id: string, field: string) => {
 			const el = $id(id);
 			if (!el) return;
+			el.addEventListener("focus", () => rememberEditorFocus(el));
+			el.addEventListener("click", () => rememberEditorFocus(el));
+			el.addEventListener("keyup", () => rememberEditorFocus(el));
 			if (el instanceof HTMLInputElement && el.type === "checkbox") {
-				el.addEventListener("change", () => callbacks.onUpdateEditor(field, el.checked));
+				el.addEventListener("change", () => {
+					rememberEditorFocus(el);
+					callbacks.onUpdateEditor(field, el.checked);
+				});
 			} else if (el instanceof HTMLTextAreaElement) {
 				el.addEventListener("input", () => {
-					const val = el.value.trim();
-					if (!val) callbacks.onUpdateEditor(field, undefined);
-					else {
-						try {
-							callbacks.onUpdateEditor(field, JSON.parse(val));
-						} catch {
-							/* invalid JSON */
-						}
+					rememberEditorFocus(el);
+					const text = el.value;
+					if (text.trim() === "") {
+						callbacks.onUpdateEditor(field, undefined);
+						return;
 					}
+					try {
+						callbacks.onUpdateEditor(field, JSON.parse(text));
+					} catch {
+						/* keep typing invalid JSON */
+					}
+				});
+			} else if (field === "contextWindow" || field === "maxTokens") {
+				el.addEventListener("input", () => {
+					rememberEditorFocus(el);
+					const val = (el as HTMLInputElement).value;
+					callbacks.onUpdateEditor(field, val === "" ? undefined : Number(val));
 				});
 			} else {
 				el.addEventListener("input", () => {
+					rememberEditorFocus(el);
 					const val = (el as HTMLInputElement).value;
 					callbacks.onUpdateEditor(field, val || undefined);
+					if (field === "id" && modelApi) {
+						scheduleLiveCatalogSearch(val, callbacks, modelApi);
+					}
 				});
 			}
 		};
+
+		// Restore focus after full dialog re-create.
+		if (lastEditorFocus) {
+			const el = $id(lastEditorFocus.id) as HTMLInputElement | HTMLTextAreaElement | null;
+			if (el) {
+				el.focus();
+				if (
+					lastEditorFocus.start != null &&
+					lastEditorFocus.end != null &&
+					typeof el.setSelectionRange === "function"
+				) {
+					try {
+						el.setSelectionRange(lastEditorFocus.start, lastEditorFocus.end);
+					} catch {
+						/* ignore non-text controls */
+					}
+				}
+			}
+		}
 
 		bindEditorField("editor-id", "id");
 		bindEditorField("editor-name", "name");
@@ -386,9 +513,13 @@ export function bindModelEvents(
 			}
 		});
 
-		listen("btn-editor-cancel", "click", () => callbacks.onCloseEditor());
+		listen("btn-editor-cancel", "click", () => {
+			lastEditorFocus = null;
+			if (editorSearchTimer) clearTimeout(editorSearchTimer);
+			callbacks.onCloseEditor();
+		});
 
-		// Official fill: catalog first, then enrich. State holds status/candidates so re-render keeps feedback.
+		// Official fill: catalog first, then enrich. Live typing reuses catalog search only.
 		if (modelApi) {
 			const applyWithConfirm = async (official: Record<string, unknown>, warning?: string) => {
 				if (state.editor?.handle) {
@@ -406,52 +537,9 @@ export function bindModelEvents(
 			};
 
 			listen("btn-editor-fill", "click", () => {
-				void (async () => {
-					const idInput = $id("editor-id") as HTMLInputElement | null;
-					const query = (idInput?.value ?? String(state.editor?.value.id ?? "")).trim();
-					if (!query) {
-						callbacks.onSetFillStatus("Enter a model id first", { error: true, candidates: [] });
-						return;
-					}
-					callbacks.onSetFillStatus("Searching official catalog…", { candidates: [] });
-					try {
-						const entries = await modelApi.fetchCatalog(query, 25);
-						if (entries.length > 0) {
-							const candidates = entries.map((e) => ({
-								provider: e.provider,
-								modelId: e.modelId,
-								model: e.model as Record<string, unknown>,
-							}));
-							callbacks.onSetFillStatus(
-								entries.length === 1
-									? "One catalog match — select to fill (required even for a single hit)."
-									: `${entries.length} catalog matches — select one.`,
-								{ candidates },
-							);
-							return;
-						}
-
-						callbacks.onSetFillStatus("No catalog hits — enriching…", { candidates: [] });
-						const result = await modelApi.fetchEnrich(query);
-						if (result.kind === "ready" && result.model) {
-							await applyWithConfirm(result.model as Record<string, unknown>, result.warning);
-							return;
-						}
-						if (result.kind === "official-candidates" && result.candidates?.length) {
-							const candidates = result.candidates.map((c) => ({
-								provider: c.provider,
-								modelId: c.modelId,
-								model: c.model as Record<string, unknown>,
-							}));
-							callbacks.onSetFillStatus("Multiple official candidates — select one.", { candidates });
-							return;
-						}
-						callbacks.onSetFillStatus("Could not enrich model", { error: true, candidates: [] });
-					} catch (err) {
-						const msg = err instanceof Error ? err.message : "Catalog/enrich failed";
-						callbacks.onSetFillStatus(msg, { error: true, candidates: [] });
-					}
-				})();
+				const idInput = $id("editor-id") as HTMLInputElement | null;
+				const query = (idInput?.value ?? String(state.editor?.value.id ?? "")).trim();
+				void runOfficialFill(query, callbacks, modelApi, applyWithConfirm);
 			});
 
 			document.querySelectorAll("[data-fill-pick]").forEach((btn) => {
