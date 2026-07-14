@@ -25,12 +25,12 @@ audited: 2026-07-14
 - pi-web-search tests: **88**
 - pack-smoke: **passed**
 - typecheck: **clean**
-- local commit: **`dfcfdd9`** (not pushed)
+- local commit: **`local main tip (ahead of origin, not pushed)`** (not pushed)
 
 ## Owner actions remaining
 
-1. ~~Review cumulative unstaged/untracked diff~~ — local commit `dfcfdd9`
-2. ~~Commit generated assets~~ — included in `dfcfdd9` (not pushed)
+1. ~~Review cumulative unstaged/untracked diff~~ — local commit `local main tip (ahead of origin, not pushed)`
+2. ~~Commit generated assets~~ — included in `local main tip (ahead of origin, not pushed)` (not pushed)
 3. Run minimal manual QA: `.codestable/features/2026-07-12-vendor-dual-ui-hardening/manual-qa-checklist.md` (or explicit waiver)
 4. Then mark hardening accepted / goal complete; push only when you want
 

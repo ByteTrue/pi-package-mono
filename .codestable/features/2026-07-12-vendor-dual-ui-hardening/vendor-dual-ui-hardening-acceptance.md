@@ -10,9 +10,9 @@ accepted: null
 
 ## Verdict: BLOCKED (honest)
 
-Automated pack/CI/docs are implemented and green. Local commit `dfcfdd9` includes generated assets. Full feature DoD still requires:
+Automated pack/CI/docs are implemented and green. Local commit `local main tip (ahead of origin, not pushed)` includes generated assets. Full feature DoD still requires:
 
-1. ~~Owner commit of generated assets~~ — local commit `dfcfdd9` (not pushed)
+1. ~~Owner commit of generated assets~~ — local commit `local main tip (ahead of origin, not pushed)` (not pushed)
 2. Manual TUI/browser evidence via `manual-qa-checklist.md` (or explicit owner waiver)
 
 ## What is ready for owner review
