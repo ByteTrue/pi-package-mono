@@ -7,6 +7,9 @@ import { readModelsSnapshot, commitModelsSnapshot } from "../../config-core.js";
 import type { ModelsSnapshot } from "../../config-core.js";
 import { getModelsJsonPath } from "../../models-json.js";
 import { listModelFields, listProviderFields } from "../../config-document.js";
+import { searchOfficialModels } from "../../model-source/catalog-search.js";
+import { enrichModelForWeb } from "../../model-source/web-enrich.js";
+import { ModelSourceError } from "../../model-source/model-source-error.js";
 
 // Module-scoped active-session slot
 let activeSession: VendorWebSession | null = null;
@@ -138,6 +141,27 @@ export async function startVendorWebSession(options?: {
 		settle({ kind: "cancelled" });
 	};
 
+	const handleCatalog = async (query: string, limit: number) => {
+		try {
+			return await searchOfficialModels(query, limit);
+		} catch (err) {
+			if (err instanceof ModelSourceError) {
+				throw Object.assign(new Error(err.message), { code: err.code });
+			}
+			throw err;
+		}
+	};
+
+	const handleEnrich = async (body: { modelId: string }) => {
+		try {
+			return await enrichModelForWeb(body.modelId);
+		} catch (err) {
+			if (err instanceof ModelSourceError) {
+				throw Object.assign(new Error(err.message), { code: err.code });
+			}
+			throw err;
+		}
+	};
 
 	// Create server + open browser, with identity-aware cleanup on any failure
 	let serverResult: Awaited<ReturnType<typeof createVendorWebServer>>;
@@ -148,6 +172,8 @@ export async function startVendorWebSession(options?: {
 			handleState,
 			prepareConfig,
 			handleCancel,
+			handleCatalog,
+			handleEnrich,
 			onSaved: (saved) => {
 				settle({ kind: "saved", snapshot: saved });
 			},

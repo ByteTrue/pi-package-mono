@@ -1317,4 +1317,41 @@ describe("Keep-alive / active socket cleanup", () => {
 			if (existsSync(tempPath)) unlinkSync(tempPath);
 		}
 	});
+
+	it("wires catalog and enrich handlers for real session", async () => {
+		const tempPath = makeTempConfig({ providers: {} });
+		try {
+			const session = await startVendorWebSession({
+				modelsPath: tempPath,
+				openBrowser: async () => true,
+			});
+			const port = Number(new URL(session.url).port);
+			const token = extractTokenFromSessionUrl(session.url);
+			const headers = {
+				Authorization: `Bearer ${token}`,
+				Host: `127.0.0.1:${port}`,
+				Origin: `http://127.0.0.1:${port}`,
+			};
+
+			const cat = await fetchOnce(port, "/api/catalog?q=gpt&limit=5", { headers });
+			expect(cat.status).toBe(200);
+			const catBody = (await cat.json()) as { entries: Array<{ modelId: string }> };
+			expect(Array.isArray(catBody.entries)).toBe(true);
+
+			const enrich = await fetchOnce(port, "/api/enrich", {
+				method: "POST",
+				headers: { ...headers, "Content-Type": "application/json" },
+				body: JSON.stringify({ modelId: "mystery-model-xyz" }),
+			});
+			expect(enrich.status).toBe(200);
+			const enrichBody = (await enrich.json()) as { kind: string; model?: { id: string } };
+			expect(enrichBody.kind).toBe("ready");
+			expect(enrichBody.model?.id).toBe("mystery-model-xyz");
+
+			session.stop();
+			await session.waitForResult();
+		} finally {
+			if (existsSync(tempPath)) unlinkSync(tempPath);
+		}
+	});
 });

@@ -116,6 +116,43 @@ export function closedModelFromUnknown(raw: Record<string, unknown>): ProviderMo
 	return clone(closed) as ProviderModelConfig;
 }
 
+/** Official template fields written by fill; never includes headers/secrets. */
+export const OFFICIAL_TEMPLATE_KEYS = [
+	"id",
+	"name",
+	"api",
+	"reasoning",
+	"thinkingLevelMap",
+	"input",
+	"cost",
+	"contextWindow",
+	"maxTokens",
+	"compat",
+] as const;
+
+/**
+ * Merge closed official model into editor value.
+ * Replaces whitelist template fields; always preserves current headers.
+ */
+export function applyOfficialTemplate(
+	current: ProviderModelConfig,
+	official: WebModelConfig | ProviderModelConfig | Record<string, unknown>,
+): ProviderModelConfig {
+	const projected =
+		closedModelFromUnknown(official as Record<string, unknown>) ??
+		({ id: String((official as { id?: unknown }).id ?? "") } as ProviderModelConfig);
+	const next: Record<string, unknown> = { ...current };
+	const headers = current.headers;
+	for (const key of OFFICIAL_TEMPLATE_KEYS) {
+		const value = (projected as Record<string, unknown>)[key];
+		if (value === undefined) delete next[key];
+		else next[key] = clone(value);
+	}
+	if (headers !== undefined) next.headers = headers;
+	else delete next.headers;
+	return next as ProviderModelConfig;
+}
+
 // ── Model Actions ──────────────────────────────────────────────────
 
 export type ModelAction =
@@ -123,6 +160,10 @@ export type ModelAction =
 	| { type: "model-sort"; sort: VisualSort }
 	| { type: "model-open-editor"; handle: ModelRowHandle | null; value?: ProviderModelConfig }
 	| { type: "model-update-editor"; field: string; value: unknown }
+	| {
+			type: "model-apply-template";
+			official: WebModelConfig | ProviderModelConfig | Record<string, unknown>;
+	  }
 	| { type: "model-close-editor" }
 	| { type: "model-add"; providerKey: string; model: ProviderModelConfig }
 	| {
@@ -339,6 +380,12 @@ export function reduceModelAction(
 				(value as Record<string, unknown>)[action.field] = action.value;
 			}
 			return ok({ ...next, editor: { ...next.editor, value } });
+		}
+
+		case "model-apply-template": {
+			if (!next.editor) return fail("No editor open");
+			const value = applyOfficialTemplate(next.editor.value, action.official);
+			return ok({ ...next, editor: { ...next.editor, value, issues: [] } });
 		}
 
 		case "model-close-editor":

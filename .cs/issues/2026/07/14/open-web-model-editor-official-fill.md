@@ -165,18 +165,25 @@ epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 
 ## 验证
 
-- vitest：template merge + session/API 接线相关  
-- 手动：`/vendor web` 编辑器内完成上表路径  
-- `npm --workspace @bytetrue/pi-vendor test` 与 `build:web`  
+- `npm --workspace @bytetrue/pi-vendor test` — 全绿（含 applyOfficialTemplate 与 session catalog/enrich 接线）
+- `npm --workspace @bytetrue/pi-vendor run typecheck` — 通过
+- `npm --workspace @bytetrue/pi-vendor run build:web` — 通过
+- 手动：重新打开 `/vendor web` 后在编辑器使用 **Fill from official**
 
 ## 执行记录
 
-- （未开始；设计已写）
+- `session.ts`：`handleCatalog` → `searchOfficialModels`，`handleEnrich` → `enrichModelForWeb`
+- `models/state.ts`：`applyOfficialTemplate` + `model-apply-template`；headers 永不覆盖
+- `model-view.ts`：编辑器内 Fill；catalog 命中需手动 Select；无命中再 enrich；编辑已有二次确认
+- `app.ts` / `style.css` / `build:web` 资产更新
+- 偏差：未接 `handleDiscover`（Import 仍可能死）；fill 点击未挂 AbortSignal
 
 ## 关闭回写
 
-- epic / project spec：（关闭时填）
+- epic：本 issue 实现完成，待 Close 时勾选
+- project spec：Web 编辑器官方填充能力
+- 约束：session 必须接线 catalog/enrich，`catalogAvailable` 不得空头
 
 ## 关闭结论
 
-- （关闭时填）
+- （实现完成；owner 确认后 Close 改 status）

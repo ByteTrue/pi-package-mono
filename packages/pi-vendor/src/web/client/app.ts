@@ -369,6 +369,8 @@ function render(): void {
 					dispatchModel({ type: "model-open-editor", handle, value }),
 				onUpdateEditor: (field, value) =>
 					dispatchModel({ type: "model-update-editor", field, value }),
+				onApplyTemplate: (official) =>
+					dispatchModel({ type: "model-apply-template", official }),
 				onCloseEditor: () => dispatchModel({ type: "model-close-editor" }),
 				onAdd: (pk) => {
 					if (!appState.editor) return;

@@ -10,6 +10,7 @@ import {
 	importRowsFromIds,
 	countSelectedImport,
 	countImportReplaceTargets,
+	applyOfficialTemplate,
 	type ModelManagerState,
 	type ImportRow,
 	type ApiClient,
@@ -61,6 +62,74 @@ function closedImportModel(id: string, name?: string) {
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	};
 }
+
+describe("applyOfficialTemplate", () => {
+	it("replaces whitelist fields and preserves headers", () => {
+		const current = {
+			id: "old-id",
+			name: "Old",
+			api: "openai-completions",
+			headers: { "X-Key": "pi-vendor-secret:keep" },
+			contextWindow: 100,
+		};
+		const official = {
+			id: "gpt-4o",
+			name: "GPT-4o",
+			api: "openai-responses",
+			reasoning: true,
+			contextWindow: 128000,
+			maxTokens: 16384,
+			input: ["text", "image"],
+			headers: { Authorization: "should-not-apply" },
+			baseUrl: "https://evil.example",
+		};
+		const next = applyOfficialTemplate(current, official);
+		expect(next.id).toBe("gpt-4o");
+		expect(next.name).toBe("GPT-4o");
+		expect(next.api).toBe("openai-responses");
+		expect(next.reasoning).toBe(true);
+		expect(next.contextWindow).toBe(128000);
+		expect(next.maxTokens).toBe(16384);
+		expect(next.input).toEqual(["text", "image"]);
+		expect(next.headers).toEqual({ "X-Key": "pi-vendor-secret:keep" });
+		expect((next as Record<string, unknown>).baseUrl).toBeUndefined();
+	});
+
+	it("drops template fields missing from official projection", () => {
+		const current = {
+			id: "x",
+			api: "anthropic-messages",
+			reasoning: true,
+			headers: { H: "1" },
+		};
+		const next = applyOfficialTemplate(current, { id: "y", name: "Y" });
+		expect(next.id).toBe("y");
+		expect(next.name).toBe("Y");
+		expect(next.api).toBeUndefined();
+		expect(next.reasoning).toBeUndefined();
+		expect(next.headers).toEqual({ H: "1" });
+	});
+
+	it("model-apply-template reducer updates open editor only", () => {
+		const s = stateWithModels("p", [{ id: "a", name: "A", headers: { K: "v" } }]);
+		const opened = reduceModelAction(s, {
+			type: "model-open-editor",
+			handle: { providerKey: "p", index: 0, previousId: "a" },
+		});
+		expect(opened.ok).toBe(true);
+		if (!opened.ok) return;
+		const applied = reduceModelAction(opened.value, {
+			type: "model-apply-template",
+			official: { id: "b", name: "B", api: "openai-completions", contextWindow: 9 },
+		});
+		expect(applied.ok).toBe(true);
+		if (!applied.ok) return;
+		expect(applied.value.editor?.value.id).toBe("b");
+		expect(applied.value.editor?.value.name).toBe("B");
+		expect(applied.value.editor?.value.headers).toEqual({ K: "v" });
+		expect(getModels(applied.value.draft, "p")[0]?.id).toBe("a");
+	});
+});
 
 describe("ModelRowHandle stale detection", () => {
 	it("opens editor when index+previousId still match", () => {
