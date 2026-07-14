@@ -1,11 +1,11 @@
 roadmap: vendor-dual-ui-manager
-status: running
+status: complete
 baseline_ref: 3f6c641c25943511e5dbca3f3dbf4545a606cea0
 driver_kind: none
 driver_id: ""
 handoff_reason: ""
 handoff_next: ""
-current_feature_index: 6
+current_feature_index: 7
 ledger:
   - feature: vendor-config-core
     event: feature-start
@@ -153,4 +153,10 @@ features:
     review: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-review.md
     qa: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-qa.md
     acceptance: .codestable/features/2026-07-12-vendor-dual-ui-hardening/vendor-dual-ui-hardening-acceptance.md
-    status: blocked
+    status: accepted
+  - feature: vendor-dual-ui-hardening
+    event: feature-accepted
+    note: "owner waived polish residuals; automated pack/CI green; roadmap closed without npm release"
+  - feature: vendor-dual-ui-manager
+    event: goal-complete
+    note: "all 7 features accepted; residual UX polish deferred outside this roadmap"

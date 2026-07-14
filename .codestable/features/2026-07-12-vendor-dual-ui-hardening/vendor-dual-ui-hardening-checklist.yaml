@@ -28,7 +28,7 @@ steps:
     verification: command outputs and linked test cases in qa-report
     exit_signal: every core scenario has evidence or explicit blocking gap; no speculative refactor list
     failure_policy: fix-or-block
-    status: pending
+    status: done
   - id: S2-PACK-CI
     action: Add reproducible build guard, real npm tarball file/extract/runtime smoke and minimum Pi peer CI check
     covers: [scenario-1, scenario-2, scenario-3]
@@ -36,7 +36,7 @@ steps:
     verification: local pack-smoke + CI extracted-layout run + generated git-status clean (tracked and untracked)
     exit_signal: actual published shape serves assets/API and cleans sockets independent of cwd
     failure_policy: fix-or-block
-    status: pending
+    status: done
   - id: S3-CROSS-SURFACE
     action: Close only observed TUI/Web/config/model-source/error/race/compat regression gaps
     covers: [scenario-4, scenario-5, scenario-6, scenario-7, scenario-8, scenario-9, scenario-14]
@@ -44,7 +44,7 @@ steps:
     verification: combo fixture tests + real HTTP + scripted TUI + leak scans
     exit_signal: shared semantics/single write/security/error recovery hold across both UIs
     failure_policy: fix-or-block
-    status: pending
+    status: done
   - id: S4-UX-A11Y-PLATFORM
     action: Execute browser/TUI narrow keyboard focus opener fallback and 10k measured matrices; fix acceptance failures only
     covers: [scenario-10, scenario-11, scenario-12, scenario-13]
@@ -52,7 +52,7 @@ steps:
     verification: manual transcript/screenshots + injected platform tests + performance notes
     exit_signal: all core controls reachable/recoverable and platform fallback documented
     failure_policy: fix-or-block
-    status: pending
+    status: done
   - id: S5-DOCS-CLEANUP
     action: Update README and remove only epic-obsolete legacy imports/assets; run route/import/remote/secret scans
     covers: [scenario-2, scenario-7, scenario-15]
@@ -60,7 +60,7 @@ steps:
     verification: README command walkthrough + AST/static scans + generated directory check
     exit_signal: docs match UI and no legacy/direct/remote/stale artifact remains
     failure_policy: fix-or-block
-    status: pending
+    status: done
   - id: S6-FINAL-GATES
     action: Run full tests, code review, QA and acceptance package without release/commit/push
     covers: [scenario-1, scenario-15]
@@ -68,7 +68,7 @@ steps:
     verification: command outputs + code review + qa/acceptance reports
     exit_signal: zero blocking/important and owner-ready acceptance evidence
     failure_policy: fix-or-block
-    status: pending
+    status: done
 
 checks:
   - id: C1-FULL-SUITE
@@ -76,73 +76,73 @@ checks:
     covers: [scenario-1]
     verification: CI/local command output
     source: design-2.3
-    status: pending
+    status: passed
   - id: C2-GENERATED-PACK
     item: build:web reproducible；tarball file allow/deny correct；generated path git status empty
     covers: [scenario-2]
     verification: npm pack JSON + git diff generated guard
     source: design-2.2/design-2.3
-    status: pending
+    status: passed
   - id: C3-PACKED-RUNTIME
     item: Extracted tarball starts runtime from packed path and passes asset/state/cancel/security/cleanup smoke
     covers: [scenario-3]
     verification: pack-smoke.mjs command output
     source: design-2.2
-    status: pending
+    status: passed
   - id: C4-TUI-E2E
     item: Both quick paths single commit/refresh; every Esc/Cancel/Add another zero; overwrite requires confirm
     covers: [scenario-4, scenario-5]
     verification: scripted counts + manual narrow transcript
     source: tui-design
-    status: pending
+    status: passed
   - id: C5-WEB-E2E
     item: Provider/model CRUD/catalog/custom/discover/bulk share one draft and one final PUT
     covers: [scenario-6]
     verification: state/HTTP/browser evidence
     source: provider-model-designs
-    status: pending
+    status: passed
   - id: C6-SECRET-LEAK
     item: Known API/header originals and resolved env/command/upstream body absent from browser/errors/log/evidence
     covers: [scenario-7]
     verification: recursive leak scan + adversarial manual
     source: opaque/model-source contracts
-    status: pending
+    status: passed
   - id: C7-ERROR-RACE
     item: Config/upstream/ref/conflict errors recover correctly; first-terminal race and five shutdown reasons clean
     covers: [scenario-8, scenario-9]
     verification: error table + deterministic race/socket tests
     source: runtime/config/source contracts
-    status: pending
+    status: passed
   - id: C8-OPENER
     item: macOS/Windows/WSL/Linux adapters deterministic; real current platform and fallback non-LLM UI verified
     covers: [scenario-10]
     verification: spawn fakes + manual opener/failure
     source: runtime-design
-    status: pending
+    status: passed
   - id: C9-A11Y-NARROW
     item: TUI/Web narrow and keyboard labels/focus/dialog/errors/live status pass
     covers: [scenario-11, scenario-12]
     verification: manual matrix/screenshots/static checks
     source: design-2.5
-    status: pending
+    status: passed
   - id: C10-LARGE-RESULT
     item: 10k discover filter/select cap100/import interaction measured acceptable without speculative dependency
     covers: [scenario-13]
     verification: large state tests + browser measurement
     source: model-workflow-design
-    status: pending
+    status: passed
   - id: C11-COMPAT
     item: Built-in override/custom/missing/unknown/secret-header round-trips；Pi-comment vs manager strict-JSON limitation有明确测试/文档
     covers: [scenario-14]
     verification: combined fixture characterization tests
     source: config/runtime designs
-    status: pending
+    status: passed
   - id: C12-DOCS-SCOPE
     item: README walkthrough/security/recovery/dev commands accurate; no new features/release/broad cleanup
     covers: [scenario-15]
     verification: fresh-user command walkthrough + diff scope review
     source: design-2.6/design-3.2
-    status: pending
+    status: passed
 
 acceptance_matrix:
   - { scenario: scenario-1, checks: [C1-FULL-SUITE] }

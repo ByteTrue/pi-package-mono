@@ -53,7 +53,7 @@ items:
   - slug: vendor-dual-ui-hardening
     description: 收口双界面的错误与空状态、冲突恢复、可访问性、跨平台启动、发布资产、回归证据和文档
     depends_on: [vendor-tui-quick-workflows, vendor-web-model-workflows]
-    status: in-progress
+    status: done
     feature: 2026-07-12-vendor-dual-ui-hardening
     minimal_loop: false
     notes: 前六项传递完成；evidence-first收口，CI build+generated status+真实tarball解包runtime smoke，cross-surface errors/races/secrets/a11y/platform/docs；不加新feature/发布/broad cleanup

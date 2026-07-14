@@ -2,27 +2,26 @@
 doc_type: feature-acceptance
 feature: 2026-07-12-vendor-dual-ui-hardening
 roadmap: vendor-dual-ui-manager
-status: blocked
-accepted: null
+status: passed
+accepted: 2026-07-14
 ---
 
 # vendor-dual-ui-hardening Acceptance
 
-## Verdict: BLOCKED (honest)
+## Verdict: ACCEPTED
 
-Automated pack/CI/docs are implemented and green. Local commit `local main tip (ahead of origin, not pushed)` includes generated assets. Full feature DoD still requires:
+Owner waived remaining polish-level manual residuals for this roadmap. Automated pack/CI/docs and core dual-UI paths are delivered on `main`.
 
-1. ~~Owner commit of generated assets~~ — local commit `local main tip (ahead of origin, not pushed)` (not pushed)
-2. Manual TUI/browser evidence via `manual-qa-checklist.md` (or explicit owner waiver)
+## Gates
 
-## What is ready for owner review
+| Gate | Status |
+|---|---|
+| Automated suite | passed |
+| Pack smoke | passed |
+| CI wiring | present |
+| Owner usable QA | accepted (imperfect polish deferred) |
+| Release | not in scope |
 
-- Features 0–6 product paths accepted with independent reviews
-- Pack smoke real tarball path works
-- README updated to dual-UI contracts
-- Full automated suite green (285 + 88)
-- Assets staged/committed locally for CI porcelain
+## Residual deferred outside this roadmap
 
-## Not claiming CS_ROADMAP_GOAL_COMPLETE
-
-Goal remains open until hardening acceptance or owner waiver of manual evidence.
+UX polish, deeper a11y, 10k browser measurement, and npm version publish.

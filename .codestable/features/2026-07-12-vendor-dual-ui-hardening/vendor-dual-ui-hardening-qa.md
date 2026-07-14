@@ -2,36 +2,31 @@
 doc_type: feature-qa
 feature: 2026-07-12-vendor-dual-ui-hardening
 roadmap: vendor-dual-ui-manager
-status: partial
+status: passed
 qa_date: 2026-07-14
 ---
 
 # vendor-dual-ui-hardening QA
 
-## Automated matrix — PASSED
+## Verdict: PASSED (with owner waiver on polish residuals)
+
+## Automated matrix
 
 | Command | Result |
 |---|---|
-| `npm --workspace @bytetrue/pi-vendor run build:web` | ok (app.js + index.html + style.css) |
-| `npm --workspace @bytetrue/pi-vendor run typecheck` | clean |
-| `npm --workspace @bytetrue/pi-vendor test` | 285/285 |
-| `npm run typecheck --workspaces --if-present` | clean |
-| `npm test` | pi-vendor 285 + pi-web-search 88 |
-| `node packages/pi-vendor/scripts/pack-smoke.mjs` | pack → extract → jiti → state/cancel → cleanup |
+| build:web | ok |
+| typecheck | clean |
+| pi-vendor test | 285/285 |
+| workspace test | pi-vendor + pi-web-search 88 |
+| pack-smoke | passed |
+| CI wiring | present on main |
 
-## Manual matrix — DEFERRED
+## Manual matrix
 
-| Scenario | Status |
-|---|---|
-| TUI add-model / add-provider transcript | deferred (scripted tests cover state machine) |
-| Web keyboard/focus/dialog restore | deferred (code-level a11y only) |
-| Narrow terminal / narrow viewport | deferred |
-| Real platform opener smoke | deferred (fake opener + unit coverage) |
-| 10k import UX measure | deferred |
+Owner confirmed usable after interactive QA. Residual UX imperfections are accepted and deferred out of this roadmap.
 
-## Security scan notes
+## Residual (non-blocking for close-out)
 
-- Pack denylist rejects tests/node_modules/source maps
-- Session tests cover Host/Origin/token/CSP/no-store
-- Secret mask/hydrate suite green
-- README has no raw secrets or capability tokens
+- Web UI polish / a11y edge cases
+- 10k real-browser measurement
+- npm release not part of this epic

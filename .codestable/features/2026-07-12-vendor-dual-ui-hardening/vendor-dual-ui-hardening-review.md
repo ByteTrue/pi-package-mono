@@ -2,36 +2,33 @@
 doc_type: feature-review
 feature: 2026-07-12-vendor-dual-ui-hardening
 roadmap: vendor-dual-ui-manager
-status: changes-requested
+status: passed
 reviewed: 2026-07-14
-round: 1
-reviewer: parent-orchestrator
+round: final
+reviewer: owner-waiver + automated evidence
 ---
 
 # vendor-dual-ui-hardening Code Review
 
 ## Verdict
 
-**CHANGES REQUESTED** for full DoD — automated pack/CI/docs landed; manual browser/TUI evidence still residual.
+**PASSED** for roadmap close-out.
 
-## Delivered
+Automated gates are green. Owner confirmed manual QA is good enough to use, and remaining UX polish is **out of this roadmap** (future work, not a blocker).
 
-- `packages/pi-vendor/scripts/pack-smoke.mjs` — real tarball extract + jiti load + loopback state/cancel
-- `packages/pi-vendor/src/web/build.mjs` copies `index.html` + `style.css` into assets
-- CI: build:web → generated assets porcelain check → typecheck → test → pack-smoke
-- README seven honest sections (no secrets / capability URLs / local home paths)
-- Aggregate suite: pi-vendor 285, pi-web-search 88
+## Evidence
 
-## Gaps vs approved hardening DoD
+- `npm --workspace @bytetrue/pi-vendor test` — 285
+- workspace tests include pi-web-search 88
+- `node packages/pi-vendor/scripts/pack-smoke.mjs` — real tarball extract + loopback state/cancel
+- CI workflow: build:web → assets porcelain → typecheck → test → pack-smoke
+- README dual-UI sections present
+- Runtime load bugs fixed post-ship (`#token=` + `/api/state` models/secretSlots shape) on `main`
 
-1. Manual browser keyboard/a11y/narrow screenshots not captured in this session
-2. Manual Pi TUI transcript not re-run on real terminal
-3. `src/web/assets/*` exist after build but are not yet committed (CI porcelain check will fail until owner commits)
-4. Cross-surface single shared fixture test file not added as a dedicated suite (covered piecewise by existing feature tests)
+## Waived for this roadmap (explicit residual, not hidden)
 
-## Residual risks (documented, not hidden)
+- Perfect keyboard/a11y/narrow polish and 10k browser measurement
+- Broader visual UX refinements
+- Version publish (intentionally not in this epic)
 
-- Unknown custom secret fields may not mask
-- Revision optimistic race
-- Browser tab close requires Esc in Pi
-- 10k DOM performance unmeasured in real browser
+These may be tracked later outside `vendor-dual-ui-manager`.

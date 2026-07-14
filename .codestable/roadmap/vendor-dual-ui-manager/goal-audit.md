@@ -1,7 +1,7 @@
 ---
 doc_type: goal-audit
 roadmap: vendor-dual-ui-manager
-status: blocked
+status: complete
 audited: 2026-07-14
 ---
 
@@ -13,11 +13,11 @@ audited: 2026-07-14
 |---|---|
 | vendor-config-core | accepted |
 | vendor-web-modal-runtime | accepted |
-| vendor-model-source-core | accepted (prior) |
+| vendor-model-source-core | accepted |
 | vendor-tui-quick-workflows | accepted |
 | vendor-web-provider-workflows | accepted |
 | vendor-web-model-workflows | accepted |
-| vendor-dual-ui-hardening | partial (auto green; manual QA residual) |
+| vendor-dual-ui-hardening | accepted (polish residuals deferred) |
 
 ## Automated evidence
 
@@ -25,15 +25,12 @@ audited: 2026-07-14
 - pi-web-search tests: **88**
 - pack-smoke: **passed**
 - typecheck: **clean**
-- local commit: **`local main tip (ahead of origin, not pushed)`** (not pushed)
+- shipped on `main` through `a052b91` (+ prior epic commits)
 
-## Owner actions remaining
+## Owner decision
 
-1. ~~Review cumulative unstaged/untracked diff~~ — local commit `local main tip (ahead of origin, not pushed)`
-2. ~~Commit generated assets~~ — included in `local main tip (ahead of origin, not pushed)` (not pushed)
-3. Run minimal manual QA: `.codestable/features/2026-07-12-vendor-dual-ui-hardening/manual-qa-checklist.md` (or explicit waiver)
-4. Then mark hardening accepted / goal complete; push only when you want
+Manual QA is good enough to use; remaining UX polish is **out of this roadmap**.
 
 ## Policy
 
-Local commit created; no push, version bump, or release by the agent.
+No npm version publish in this epic. Global package may remain disabled while project-local monorepo package is under active iteration.
