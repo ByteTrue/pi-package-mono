@@ -64,7 +64,7 @@ Config core ──► TUI quick workflows
 - **Pi 作兼容 oracle**：不复制完整 schema；未知字段 round-trip。
 - **严格 JSON 提交**：canonical `JSON.stringify(..., null, 2)` + newline；不保留注释/BOM。
 - **安全默认**：127.0.0.1、随机端口与 bearer、CSP、no-store、0o600 原子写。
-- **关闭后的 polish**：部分 UX/手工证据 owner 已接受“可用即关”；未做 npm 发版不算本能力缺口。
+- **关闭后的 polish**：第一版 dual-UI owner 曾接受「可用即关」；现已另开 epic **Web 产品化升级**（`.cs/epics/2026/07/14/vendor-web-productization/`）补能力缺口与体验，不在此重复当已完成。
 
 ## 当前边界
 

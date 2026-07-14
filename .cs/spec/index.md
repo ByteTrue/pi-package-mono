@@ -11,9 +11,9 @@
 
 ## 当前方向
 
-- 双界面 `pi-vendor` 主线已交付并关闭；剩余 UX polish 不在当前主线内。
+- 双界面 `pi-vendor` 骨架已交付并关闭；**Web 产品化升级**进行中（epic draft：日常可用、官方填充、主路径与密度）。
 - `pi-web-search` 已完成安全与预算类 hardening（SSRF、body 预算、proxy 隔离、无效配置保护等）。
-- 近期优先：按需发版、修回归、补文档；不为“流程完整”重开已毕业能力。
+- 近期优先：vendor Web 产品化分批 issue；按需发版与回归。
 
 ## 能力地图
 
