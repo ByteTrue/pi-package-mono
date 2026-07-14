@@ -251,7 +251,8 @@ async function main() {
 		ok(`session url=${session.url.replace(/#.*$/, "#<redacted>")}`);
 
 		const base = session.url.split("#")[0].replace(/\/$/, "");
-		const token = session.url.includes("#") ? session.url.split("#")[1] : "";
+		const hash = session.url.includes("#") ? session.url.split("#")[1] : "";
+		const token = hash.startsWith("token=") ? hash.slice("token=".length) : hash;
 		if (!token) throw new Error("capability token missing from session url");
 
 		// Known asset

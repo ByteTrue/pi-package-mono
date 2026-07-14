@@ -6,6 +6,7 @@ import { maskSnapshot, hydrateCommitDraft } from "./mask.js";
 import { readModelsSnapshot, commitModelsSnapshot } from "../../config-core.js";
 import type { ModelsSnapshot } from "../../config-core.js";
 import { getModelsJsonPath } from "../../models-json.js";
+import { listModelFields, listProviderFields } from "../../config-document.js";
 
 // Module-scoped active-session slot
 let activeSession: VendorWebSession | null = null;
@@ -105,14 +106,18 @@ export async function startVendorWebSession(options?: {
 	});
 
 	const handleState = (): Record<string, unknown> => {
-		const entries: Array<{ ref: SecretRef; slot: SecretSlot }> = [];
-		for (const [ref, slot] of state.secrets) {
-			entries.push({ ref, slot: { ref: slot.ref, path: slot.path } });
+		// Client ApiState contract: models + secretSlots + field descriptors.
+		const secretSlots: SecretSlot[] = [];
+		for (const [, slot] of state.secrets) {
+			secretSlots.push({ ref: slot.ref, path: slot.path });
 		}
 		return {
-			draft: state.draft,
+			models: state.draft,
 			revision: state.snapshot.revision,
-			slots: entries,
+			secretSlots,
+			providerFields: listProviderFields(),
+			modelFields: listModelFields(),
+			catalogAvailable: true,
 		};
 	};
 
@@ -174,7 +179,7 @@ export async function startVendorWebSession(options?: {
 		throw new Error("Server failed to bind");
 	}
 	const port = addr.port;
-	const url = `http://127.0.0.1:${port}/#${token}`;
+	const url = `http://127.0.0.1:${port}/#token=${token}`;
 
 	let stopped = false;
 	const stop = (): void => {

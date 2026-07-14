@@ -485,8 +485,44 @@ export function createApiClient(token: string): ApiClient {
 	return {
 		async fetchState(): Promise<ApiState> {
 			const res = await fetch("/api/state", { headers: headers() });
-			if (!res.ok) throw new Error(`Server error: ${res.status}`);
-			return res.json() as Promise<ApiState>;
+			const text = await res.text();
+			if (!res.ok) {
+				let message = `Server error: ${res.status}`;
+				try {
+					const body = JSON.parse(text) as { error?: { message?: string } };
+					if (body.error?.message) message = body.error.message;
+				} catch {
+					if (text.trim()) message = text.slice(0, 200);
+				}
+				throw new Error(message);
+			}
+			if (!text.trim()) throw new Error("Empty state response from server");
+			const raw = JSON.parse(text) as Record<string, unknown>;
+			// Accept both current contract and legacy draft/slots shapes.
+			const models = (raw.models ?? raw.draft) as WebModelsDraft | undefined;
+			if (!models || typeof models !== "object") {
+				throw new Error("Invalid state payload: missing models");
+			}
+			const secretSlotsRaw = (raw.secretSlots ?? raw.slots) as unknown;
+			const secretSlots: SecretSlot[] = Array.isArray(secretSlotsRaw)
+				? secretSlotsRaw.map((entry) => {
+						if (entry && typeof entry === "object" && "path" in entry && "ref" in entry) {
+							return { ref: String((entry as SecretSlot).ref), path: String((entry as SecretSlot).path) };
+						}
+						if (entry && typeof entry === "object" && "slot" in entry) {
+							const nested = (entry as { slot?: SecretSlot }).slot;
+							if (nested?.ref && nested?.path) return { ref: String(nested.ref), path: String(nested.path) };
+						}
+						throw new Error("Invalid secret slot in state payload");
+				  })
+				: [];
+			return {
+				models,
+				revision: raw.revision as ConfigRevision,
+				secretSlots,
+				providerFields: Array.isArray(raw.providerFields) ? (raw.providerFields as FieldDescriptor[]) : [],
+				modelFields: Array.isArray(raw.modelFields) ? (raw.modelFields as FieldDescriptor[]) : [],
+			};
 		},
 
 		async saveConfig(draft: WebModelsDraft, revision: ConfigRevision): Promise<ConfigRevision> {

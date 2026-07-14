@@ -13,6 +13,11 @@ import { runWebSession } from "../../command.js";
 import registerVendor from "../../index.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+function extractTokenFromSessionUrl(url: string): string {
+	const hash = url.includes("#") ? url.split("#")[1]! : "";
+	return hash.startsWith("token=") ? hash.slice("token=".length) : hash;
+}
+
 const dummySnapshot: ModelsSnapshot = {
 	models: { providers: {} },
 	revision: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
@@ -855,7 +860,7 @@ describe("startVendorWebSession concurrent claim", () => {
 		try {
 			const session1 = await startVendorWebSession({ modelsPath: tempPath, openBrowser: async () => true });
 			const port = new URL(session1.url).port;
-			const token = session1.url.split("#")[1]!;
+			const token = extractTokenFromSessionUrl(session1.url);
 			await fetchOnce(Number(port), "/api/cancel", {
 				method: "POST",
 				headers: {
@@ -1121,7 +1126,7 @@ describe("Command-level: Esc and session shutdown", () => {
 		try {
 			const session = await startVendorWebSession({ modelsPath: tempPath, openBrowser: async () => true });
 			const port = new URL(session.url).port;
-			const token = session.url.split("#")[1]!;
+			const token = extractTokenFromSessionUrl(session.url);
 
 			// Get actual revision from state endpoint
 			const stateRes = await fetchOnce(Number(port), "/api/state", {
@@ -1218,7 +1223,7 @@ describe("Keep-alive / active socket cleanup", () => {
 				},
 			});
 			const port = Number(new URL(session.url).port);
-			const token = session.url.split("#")[1]!;
+			const token = extractTokenFromSessionUrl(session.url);
 
 			await new Promise<void>((resolve, reject) => {
 				const req = httpRequest({
@@ -1274,7 +1279,7 @@ describe("Keep-alive / active socket cleanup", () => {
 				},
 			});
 			const port = Number(new URL(session.url).port);
-			const token = session.url.split("#")[1]!;
+			const token = extractTokenFromSessionUrl(session.url);
 			const stateRes = await fetchOnce(port, "/api/state", {
 				headers: { Authorization: `Bearer ${token}`, Host: `127.0.0.1:${port}`, Origin: `http://127.0.0.1:${port}` },
 			});
