@@ -359,6 +359,9 @@ function render(): void {
 				modelSection2.insertAdjacentHTML("beforeend", importHtml);
 			}
 
+			// Model editor is appended to body (not #app). Remove prior instances so re-render
+			// does not stack multiple open dialogs (fill status would appear only on the last one).
+			document.querySelectorAll("#model-editor").forEach((el) => el.remove());
 			const editorHtml = renderModelEditor(appState as ModelManagerState, fieldDescs, {} as ModelViewCallbacks);
 			if (editorHtml) {
 				document.body.insertAdjacentHTML("beforeend", editorHtml);

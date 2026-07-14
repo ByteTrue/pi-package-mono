@@ -2465,6 +2465,7 @@ function render() {
         const importHtml = renderImportTray(appState);
         modelSection2.insertAdjacentHTML("beforeend", importHtml);
       }
+      document.querySelectorAll("#model-editor").forEach((el) => el.remove());
       const editorHtml = renderModelEditor(appState, fieldDescs, {});
       if (editorHtml) {
         document.body.insertAdjacentHTML("beforeend", editorHtml);
