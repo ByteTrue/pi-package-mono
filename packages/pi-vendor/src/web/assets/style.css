@@ -580,8 +580,10 @@ dialog input:focus { outline: none; border-color: #6a8; }
 .model-editor .field textarea { font-family: ui-monospace, monospace; resize: vertical; }
 .editor-fill-controls { display: flex; gap: 0.5rem; align-items: center; }
 .editor-fill-controls input[type="text"] { flex: 1; }
-.editor-fill-status { font-size: 0.75rem; color: #9a9; margin-top: 0.25rem; min-height: 1em; }
+.editor-fill-status { font-size: 0.75rem; color: #9a9; margin-top: 0.25rem; min-height: 1.2em; }
+.editor-fill-status.error-msg { color: #e66; }
 .editor-fill-results { max-height: 160px; overflow-y: auto; margin-top: 0.35rem; }
+.editor-fill-results .catalog-entry { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 0.35rem; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid #333; font-size: 0.75rem; }
 
 /* ── Catalog Search ───────────────────────────────────────────────── */
 

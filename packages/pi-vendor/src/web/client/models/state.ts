@@ -35,10 +35,20 @@ export type ProviderModelConfig = CoreModelConfig & Record<string, unknown>;
 
 export type { OfficialModelChoice, WebModelConfig, WebModelEnrichmentResult };
 
+export type OfficialFillCandidate = {
+	provider: string;
+	modelId: string;
+	model: Record<string, unknown>;
+};
+
 export type ModelEditorState = {
 	handle: ModelRowHandle | null;
 	value: ProviderModelConfig;
 	issues: UiIssue[];
+	/** Ephemeral UI feedback for official fill (survives re-render). */
+	fillStatus?: string;
+	fillError?: boolean;
+	fillCandidates?: OfficialFillCandidate[];
 };
 
 export type ImportRow = {
@@ -163,6 +173,13 @@ export type ModelAction =
 	| {
 			type: "model-apply-template";
 			official: WebModelConfig | ProviderModelConfig | Record<string, unknown>;
+			status?: string;
+	  }
+	| {
+			type: "model-set-fill-status";
+			status: string;
+			error?: boolean;
+			candidates?: OfficialFillCandidate[];
 	  }
 	| { type: "model-close-editor" }
 	| { type: "model-add"; providerKey: string; model: ProviderModelConfig }
@@ -385,7 +402,30 @@ export function reduceModelAction(
 		case "model-apply-template": {
 			if (!next.editor) return fail("No editor open");
 			const value = applyOfficialTemplate(next.editor.value, action.official);
-			return ok({ ...next, editor: { ...next.editor, value, issues: [] } });
+			return ok({
+				...next,
+				editor: {
+					...next.editor,
+					value,
+					issues: [],
+					fillStatus: action.status ?? "Filled template fields from official source.",
+					fillError: false,
+					fillCandidates: [],
+				},
+			});
+		}
+
+		case "model-set-fill-status": {
+			if (!next.editor) return fail("No editor open");
+			return ok({
+				...next,
+				editor: {
+					...next.editor,
+					fillStatus: action.status,
+					fillError: Boolean(action.error),
+					fillCandidates: action.candidates ?? next.editor.fillCandidates,
+				},
+			});
 		}
 
 		case "model-close-editor":

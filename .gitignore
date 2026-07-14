@@ -9,5 +9,6 @@ coverage/
 .pi-subagents/
 .playwright-mcp/
 vendor-web-*.png
+packages/pi-vendor/scripts/.dev-session.mjs
 
 packages/pi-web-search/live.e2e.local.json

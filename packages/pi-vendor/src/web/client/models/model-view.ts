@@ -39,7 +39,8 @@ function listen(id: string, event: string, fn: (e: Event) => void): void {
 export type ModelViewCallbacks = {
 	onOpenEditor(handle: ModelRowHandle | null, value?: ProviderModelConfig): void;
 	onUpdateEditor(field: string, value: unknown): void;
-	onApplyTemplate(official: ProviderModelConfig | OfficialModelChoice["model"] | Record<string, unknown>): void;
+	onApplyTemplate(official: ProviderModelConfig | OfficialModelChoice["model"] | Record<string, unknown>, status?: string): void;
+	onSetFillStatus(status: string, opts?: { error?: boolean; candidates?: Array<{ provider: string; modelId: string; model: Record<string, unknown> }> }): void;
 	onCloseEditor(): void;
 	onAdd(providerKey: string): void;
 	onReplace(providerKey: string, previousId: string, conflict: "reject" | "overwrite-confirmed"): void;
@@ -149,8 +150,22 @@ export function renderModelEditor(
 	html += `<input type="text" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="model id">`;
 	html += '<button type="button" class="btn-save btn-sm" id="btn-editor-fill">Fill from official</button>';
 	html += "</div>";
-	html += '<div id="editor-fill-status" class="editor-fill-status" aria-live="polite"></div>';
-	html += '<div id="editor-fill-results" class="editor-fill-results"></div>';
+	const fillStatus = state.editor.fillStatus ?? "";
+	const fillErr = state.editor.fillError ? " error-msg" : "";
+	html += `<div id="editor-fill-status" class="editor-fill-status${fillErr}" aria-live="polite">${esc(fillStatus)}</div>`;
+	html += '<div id="editor-fill-results" class="editor-fill-results">';
+	const candidates = state.editor.fillCandidates ?? [];
+	for (let i = 0; i < candidates.length; i++) {
+		const e = candidates[i]!;
+		const name = String(e.model?.name ?? e.modelId);
+		html += `<div class="catalog-entry">`;
+		html += `<span class="catalog-id"><code>${esc(e.modelId)}</code></span>`;
+		html += `<span class="catalog-name">${esc(name)}</span>`;
+		html += `<span class="catalog-provider">${esc(e.provider)}</span>`;
+		html += `<button type="button" class="btn-save btn-sm" data-fill-pick="${i}">Select</button>`;
+		html += "</div>";
+	}
+	html += "</div>";
 	html += "</div>";
 
 	const nameVal = String(state.editor.value.name ?? "");
@@ -373,105 +388,83 @@ export function bindModelEvents(
 
 		listen("btn-editor-cancel", "click", () => callbacks.onCloseEditor());
 
-		// Official fill: catalog first, then enrich; never auto-pick ambiguous candidates.
+		// Official fill: catalog first, then enrich. State holds status/candidates so re-render keeps feedback.
 		if (modelApi) {
-			listen("btn-editor-fill", "click", async () => {
-				const idInput = $id("editor-id") as HTMLInputElement | null;
-				const query = (idInput?.value ?? String(state.editor?.value.id ?? "")).trim();
-				const statusEl = $id("editor-fill-status");
-				const resultsEl = $id("editor-fill-results");
-				if (!query) {
-					if (statusEl) statusEl.innerHTML = '<span class="error-msg">Enter a model id first</span>';
-					return;
+			const applyWithConfirm = async (official: Record<string, unknown>, warning?: string) => {
+				if (state.editor?.handle) {
+					const ok = await showConfirmDialog(
+						"Fill from official",
+						"Replace template fields (name, api, context, …) with the official catalog values? Headers and secrets stay unchanged.",
+						"Fill",
+					);
+					if (!ok) return;
 				}
-				if (statusEl) statusEl.textContent = "Searching official catalog…";
-				if (resultsEl) resultsEl.innerHTML = "";
+				callbacks.onApplyTemplate(
+					official,
+					warning ?? "Filled template fields from official source.",
+				);
+			};
 
-				const applyWithConfirm = async (official: Record<string, unknown>, warning?: string) => {
-					if (state.editor?.handle) {
-						const ok = await showConfirmDialog(
-							"Fill from official",
-							"Replace template fields (name, api, context, …) with the official catalog values? Headers and secrets stay unchanged.",
-							"Fill",
-						);
-						if (!ok) return;
+			listen("btn-editor-fill", "click", () => {
+				void (async () => {
+					const idInput = $id("editor-id") as HTMLInputElement | null;
+					const query = (idInput?.value ?? String(state.editor?.value.id ?? "")).trim();
+					if (!query) {
+						callbacks.onSetFillStatus("Enter a model id first", { error: true, candidates: [] });
+						return;
 					}
-					callbacks.onApplyTemplate(official);
-					if (statusEl) {
-						statusEl.textContent = warning
-							? warning
-							: "Filled template fields from official source.";
-					}
-					if (resultsEl) resultsEl.innerHTML = "";
-				};
-
-				const renderChoices = (
-					entries: Array<{ provider: string; modelId: string; model: Record<string, unknown> }>,
-				) => {
-					if (!resultsEl) return;
-					let html = "";
-					for (let i = 0; i < entries.length; i++) {
-						const e = entries[i]!;
-						const name = String(e.model?.name ?? e.modelId);
-						html += `<div class="catalog-entry">`;
-						html += `<span class="catalog-id"><code>${esc(e.modelId)}</code></span>`;
-						html += `<span class="catalog-name">${esc(name)}</span>`;
-						html += `<span class="catalog-provider">${esc(e.provider)}</span>`;
-						html += `<button type="button" class="btn-save btn-sm" data-fill-pick="${i}">Select</button>`;
-						html += "</div>";
-					}
-					resultsEl.innerHTML = html || '<div class="catalog-empty">No results</div>';
-					resultsEl.querySelectorAll("[data-fill-pick]").forEach((btn) => {
-						btn.addEventListener("click", () => {
-							const idx = Number((btn as HTMLElement).getAttribute("data-fill-pick"));
-							const entry = entries[idx];
-							if (!entry) return;
-							void applyWithConfirm({ ...entry.model, id: entry.modelId });
-						});
-					});
-				};
-
-				try {
-					const entries = await modelApi.fetchCatalog(query, 25);
-					if (entries.length > 0) {
-						if (statusEl) {
-							statusEl.textContent =
-								entries.length === 1
-									? "One catalog match — select to fill (required even for a single hit)."
-									: `${entries.length} catalog matches — select one.`;
-						}
-						renderChoices(
-							entries.map((e) => ({
+					callbacks.onSetFillStatus("Searching official catalog…", { candidates: [] });
+					try {
+						const entries = await modelApi.fetchCatalog(query, 25);
+						if (entries.length > 0) {
+							const candidates = entries.map((e) => ({
 								provider: e.provider,
 								modelId: e.modelId,
 								model: e.model as Record<string, unknown>,
-							})),
-						);
-						return;
-					}
+							}));
+							callbacks.onSetFillStatus(
+								entries.length === 1
+									? "One catalog match — select to fill (required even for a single hit)."
+									: `${entries.length} catalog matches — select one.`,
+								{ candidates },
+							);
+							return;
+						}
 
-					if (statusEl) statusEl.textContent = "No catalog hits — enriching…";
-					const result = await modelApi.fetchEnrich(query);
-					if (result.kind === "ready" && result.model) {
-						await applyWithConfirm(result.model as Record<string, unknown>, result.warning);
-						return;
-					}
-					if (result.kind === "official-candidates" && result.candidates?.length) {
-						if (statusEl) statusEl.textContent = "Multiple official candidates — select one.";
-						renderChoices(
-							result.candidates.map((c) => ({
+						callbacks.onSetFillStatus("No catalog hits — enriching…", { candidates: [] });
+						const result = await modelApi.fetchEnrich(query);
+						if (result.kind === "ready" && result.model) {
+							await applyWithConfirm(result.model as Record<string, unknown>, result.warning);
+							return;
+						}
+						if (result.kind === "official-candidates" && result.candidates?.length) {
+							const candidates = result.candidates.map((c) => ({
 								provider: c.provider,
 								modelId: c.modelId,
 								model: c.model as Record<string, unknown>,
-							})),
-						);
-						return;
+							}));
+							callbacks.onSetFillStatus("Multiple official candidates — select one.", { candidates });
+							return;
+						}
+						callbacks.onSetFillStatus("Could not enrich model", { error: true, candidates: [] });
+					} catch (err) {
+						const msg = err instanceof Error ? err.message : "Catalog/enrich failed";
+						callbacks.onSetFillStatus(msg, { error: true, candidates: [] });
 					}
-					if (statusEl) statusEl.innerHTML = '<span class="error-msg">Could not enrich model</span>';
-				} catch (err) {
-					const msg = err instanceof Error ? err.message : "Catalog/enrich failed";
-					if (statusEl) statusEl.innerHTML = `<span class="error-msg">${esc(msg)}</span>`;
-				}
+				})();
+			});
+
+			document.querySelectorAll("[data-fill-pick]").forEach((btn) => {
+				btn.addEventListener("click", () => {
+					const idx = Number((btn as HTMLElement).getAttribute("data-fill-pick"));
+					const entry = (state.editor?.fillCandidates ?? [])[idx];
+					if (!entry) return;
+					void applyWithConfirm({ ...entry.model, id: entry.modelId });
+				});
+			});
+		} else {
+			listen("btn-editor-fill", "click", () => {
+				callbacks.onSetFillStatus("Catalog API client not ready", { error: true, candidates: [] });
 			});
 		}
 	}
