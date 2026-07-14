@@ -7,5 +7,7 @@ coverage/
 .claude
 .pi
 .pi-subagents/
+.playwright-mcp/
+vendor-web-*.png
 
 packages/pi-web-search/live.e2e.local.json
