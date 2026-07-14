@@ -10,5 +10,6 @@ coverage/
 .playwright-mcp/
 vendor-web-*.png
 packages/pi-vendor/scripts/.dev-session.mjs
+packages/pi-vendor/src/web/assets/*.map
 
 packages/pi-web-search/live.e2e.local.json
