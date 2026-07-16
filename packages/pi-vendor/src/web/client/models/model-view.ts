@@ -163,6 +163,7 @@ export function renderModelSection(
 	html += `<option value="id"${state.visualSort === "id" ? " selected" : ""}>Model ID</option>`;
 	html += `<option value="name"${state.visualSort === "name" ? " selected" : ""}>Model name</option>`;
 	html += '</select><div class="model-actions">';
+	html += '<button class="btn-secondary" id="btn-import-models" type="button">Import from /models</button>';
 	html += '<button class="btn-save" id="btn-add-model" type="button">Add model</button>';
 	html += '</div></div>';
 
@@ -202,18 +203,6 @@ export function renderModelSection(
 
 }
 
-function renderAddModelChooser(): string {
-	let html = '<dialog id="add-model-chooser"><form method="dialog" class="add-source-form">';
-	html += '<h3>Add model</h3>';
-	html += '<p>Choose how you want to start this model configuration.</p>';
-	html += '<div class="add-source-list">';
-	html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Configure a model</strong><span>Open the model editor. Search official templates or type the details yourself.</span></button>';
-	html += '<button type="button" class="add-source-option" data-add-source="import"><strong>Import from /models</strong><span>List models from this provider’s OpenAI-compatible endpoint.</span></button>';
-	html += '</div>';
-	html += '<div class="dialog-actions"><button type="submit" class="btn-quiet" value="cancel">Cancel</button></div>';
-	html += '</form></dialog>';
-	return html;
-}
 
 function asRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -408,29 +397,14 @@ export function bindModelEvents(
 		callbacks.onSort((e.target as HTMLSelectElement).value as VisualSort);
 	});
 
-	// Add model — source chooser
+	// Add model opens the full editor; official search lives inside it.
 	$id("btn-add-model")?.addEventListener("click", () => {
-		document.querySelectorAll("#add-model-chooser").forEach((el) => el.remove());
-		document.body.insertAdjacentHTML("beforeend", renderAddModelChooser());
-		const dialog = document.getElementById("add-model-chooser") as HTMLDialogElement | null;
-		dialog?.showModal();
+		callbacks.onOpenEditor(null);
+	});
 
-		const closeChooser = () => {
-			dialog?.close();
-			dialog?.remove();
-		};
-
-		dialog?.querySelectorAll("[data-add-source]").forEach((btn) => {
-			btn.addEventListener("click", () => {
-				const source = btn.getAttribute("data-add-source");
-				closeChooser();
-				if (source === "import") {
-					if (state.selectedProvider) callbacks.onDiscover(state.selectedProvider);
-					return;
-				}
-				callbacks.onOpenEditor(null);
-			});
-		});
+	// Import is a sibling action on the same Models page — no intermediate chooser.
+	$id("btn-import-models")?.addEventListener("click", () => {
+		if (state.selectedProvider) callbacks.onDiscover(state.selectedProvider);
 	});
 
 
@@ -676,11 +650,11 @@ export function bindModelEvents(
 
 	const runDiscover = async () => {
 		if (!state.selectedProvider || !modelApi) return;
-		const addBtn = $id("btn-add-model");
-		const originalLabel = addBtn?.textContent ?? "Add model";
-		if (addBtn) {
-			addBtn.textContent = "Checking /models…";
-			addBtn.setAttribute("disabled", "");
+		const importBtn = $id("btn-import-models");
+		const originalLabel = importBtn?.textContent ?? "Import from /models";
+		if (importBtn) {
+			importBtn.textContent = "Checking /models…";
+			importBtn.setAttribute("disabled", "");
 		}
 
 		try {
@@ -703,18 +677,13 @@ export function bindModelEvents(
 				importArea.appendChild(errDiv);
 			}
 		} finally {
-			if (addBtn) {
-				addBtn.textContent = originalLabel;
-				addBtn.removeAttribute("disabled");
+			if (importBtn) {
+				importBtn.textContent = originalLabel;
+				importBtn.removeAttribute("disabled");
 			}
 		}
 	};
 
-	// Import option in chooser calls onDiscover; app wires it to this runner.
-	// Store on callbacks bag via side channel: return void, app uses bindModelEvents after setting onDiscover to invoke discover from here.
-	// Attach listener for synthetic discover trigger used by onDiscover wiring.
-	document.getElementById("btn-add-model")?.setAttribute("data-discover-ready", "1");
-	// Expose for app.ts onDiscover — minimal bridge without restructuring callbacks this pass.
 	(window as unknown as { __piVendorRunDiscover?: () => Promise<void> }).__piVendorRunDiscover = runDiscover;
 
 	// Import tray events

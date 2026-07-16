@@ -1842,6 +1842,7 @@ function renderModelSection(state, _fieldDescs, _callbacks) {
   html += `<option value="id"${state.visualSort === "id" ? " selected" : ""}>Model ID</option>`;
   html += `<option value="name"${state.visualSort === "name" ? " selected" : ""}>Model name</option>`;
   html += '</select><div class="model-actions">';
+  html += '<button class="btn-secondary" id="btn-import-models" type="button">Import from /models</button>';
   html += '<button class="btn-save" id="btn-add-model" type="button">Add model</button>';
   html += "</div></div>";
   if (rows.length === 0) {
@@ -1875,18 +1876,6 @@ function renderModelSection(state, _fieldDescs, _callbacks) {
     html += "</tbody></table></div>";
   }
   html += "</section>";
-  return html;
-}
-function renderAddModelChooser() {
-  let html = '<dialog id="add-model-chooser"><form method="dialog" class="add-source-form">';
-  html += "<h3>Add model</h3>";
-  html += "<p>Choose how you want to start this model configuration.</p>";
-  html += '<div class="add-source-list">';
-  html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Configure a model</strong><span>Open the model editor. Search official templates or type the details yourself.</span></button>';
-  html += '<button type="button" class="add-source-option" data-add-source="import"><strong>Import from /models</strong><span>List models from this provider\u2019s OpenAI-compatible endpoint.</span></button>';
-  html += "</div>";
-  html += '<div class="dialog-actions"><button type="submit" class="btn-quiet" value="cancel">Cancel</button></div>';
-  html += "</form></dialog>";
   return html;
 }
 function asRecord(value) {
@@ -2041,25 +2030,10 @@ function bindModelEvents(state, callbacks, modelApi2) {
     callbacks.onSort(e.target.value);
   });
   $id2("btn-add-model")?.addEventListener("click", () => {
-    document.querySelectorAll("#add-model-chooser").forEach((el) => el.remove());
-    document.body.insertAdjacentHTML("beforeend", renderAddModelChooser());
-    const dialog = document.getElementById("add-model-chooser");
-    dialog?.showModal();
-    const closeChooser = () => {
-      dialog?.close();
-      dialog?.remove();
-    };
-    dialog?.querySelectorAll("[data-add-source]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const source = btn.getAttribute("data-add-source");
-        closeChooser();
-        if (source === "import") {
-          if (state.selectedProvider) callbacks.onDiscover(state.selectedProvider);
-          return;
-        }
-        callbacks.onOpenEditor(null);
-      });
-    });
+    callbacks.onOpenEditor(null);
+  });
+  $id2("btn-import-models")?.addEventListener("click", () => {
+    if (state.selectedProvider) callbacks.onDiscover(state.selectedProvider);
   });
   document.querySelectorAll("[data-edit]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2274,11 +2248,11 @@ function bindModelEvents(state, callbacks, modelApi2) {
   }
   const runDiscover = async () => {
     if (!state.selectedProvider || !modelApi2) return;
-    const addBtn = $id2("btn-add-model");
-    const originalLabel = addBtn?.textContent ?? "Add model";
-    if (addBtn) {
-      addBtn.textContent = "Checking /models\u2026";
-      addBtn.setAttribute("disabled", "");
+    const importBtn = $id2("btn-import-models");
+    const originalLabel = importBtn?.textContent ?? "Import from /models";
+    if (importBtn) {
+      importBtn.textContent = "Checking /models\u2026";
+      importBtn.setAttribute("disabled", "");
     }
     try {
       const providers = state.draft.providers;
@@ -2297,13 +2271,12 @@ function bindModelEvents(state, callbacks, modelApi2) {
         importArea.appendChild(errDiv);
       }
     } finally {
-      if (addBtn) {
-        addBtn.textContent = originalLabel;
-        addBtn.removeAttribute("disabled");
+      if (importBtn) {
+        importBtn.textContent = originalLabel;
+        importBtn.removeAttribute("disabled");
       }
     }
   };
-  document.getElementById("btn-add-model")?.setAttribute("data-discover-ready", "1");
   window.__piVendorRunDiscover = runDiscover;
   listen2("btn-import-apply-skip", "click", () => {
     callbacks.onImportApply(state.selectedProvider ?? "", "skip-existing");
