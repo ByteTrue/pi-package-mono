@@ -428,15 +428,35 @@ dialog form .dialog-actions { justify-content: flex-end; margin-top: var(--space
 .catalog-empty, .catalog-loading { padding: var(--space-4); color: var(--text-muted); font-size: 0.8125rem; }
 .catalog-loading::before { content: ""; display: inline-block; width: 0.6rem; height: 0.6rem; margin-right: var(--space-2); border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; vertical-align: -0.05em; animation: spin 700ms linear infinite; }
 
-.import-tray { margin-top: var(--space-5); padding: var(--space-5); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); }
-.import-table-wrapper { max-height: 21rem; overflow: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.import-table { min-width: 37rem; }
+dialog#import-dialog {
+	width: min(56rem, calc(100vw - 2rem));
+	height: min(42rem, calc(100dvh - 2rem));
+	max-height: none;
+	overflow: hidden;
+}
+.import-dialog {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr) auto;
+	height: 100%;
+	min-height: 0;
+}
+.import-dialog-header { padding: var(--space-5) var(--space-6) var(--space-3); }
+.import-dialog-header h3 { margin: 0; color: var(--text); font-size: 1.05rem; }
+.import-status { margin: var(--space-1) 0 0; color: var(--text-muted); font-size: 0.8125rem; }
+.import-table-wrapper {
+	min-height: 0;
+	overflow: auto;
+	border-top: 1px solid var(--line);
+	border-bottom: 1px solid var(--line);
+	padding: 0 var(--space-6);
+}
+.import-table { min-width: 100%; }
 .import-state-ready { color: var(--success); }
 .import-state-ambiguous, .import-state-default-warning { color: var(--warning); }
 .import-state-failed { color: var(--danger); }
 .import-state-selected-unenriched { color: var(--text-subtle); }
 .import-candidates { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
-.import-actions { justify-content: flex-end; padding-top: var(--space-4); }
+.import-actions { justify-content: flex-end; padding: var(--space-4) var(--space-6); }
 
 /* Dialogs */
 dialog {

@@ -117,6 +117,18 @@ function dispatchModel(action: Parameters<typeof reduceModelAction>[1], opts?: {
 	return false;
 }
 
+function withPreservedScroll(run: () => void): void {
+	const detail = document.querySelector(".detail") as HTMLElement | null;
+	const importWrap = document.querySelector(".import-table-wrapper") as HTMLElement | null;
+	const detailTop = detail?.scrollTop ?? 0;
+	const importTop = importWrap?.scrollTop ?? 0;
+	run();
+	const nextDetail = document.querySelector(".detail") as HTMLElement | null;
+	const nextImport = document.querySelector(".import-table-wrapper") as HTMLElement | null;
+	if (nextDetail) nextDetail.scrollTop = detailTop;
+	if (nextImport) nextImport.scrollTop = importTop;
+}
+
 let enrichAbort: AbortController | null = null;
 
 function abortEnrich(): void {
@@ -340,7 +352,7 @@ function render(): void {
 			};
 			renderApp(appState as ProviderManagerState, fieldDescs, providerCallbacks);
 
-			// The workspace owns model management; catalog and import remain progressively disclosed tools.
+			// The workspace owns model management; catalog remains progressive disclosure.
 			const modelWorkspace = root.querySelector("#models-workspace");
 			if (modelWorkspace) {
 				const modelHtml = renderModelSection(appState as ModelManagerState, fieldDescs, {} as ModelViewCallbacks);
@@ -348,8 +360,16 @@ function render(): void {
 				const modelSection = modelWorkspace.querySelector(".model-section");
 				if (modelSection) {
 					modelSection.insertAdjacentHTML("beforeend", renderCatalogSearch(appState as ModelManagerState));
-					modelSection.insertAdjacentHTML("beforeend", renderImportTray(appState as ModelManagerState));
 				}
+			}
+
+			// Import is a modal so selection re-renders do not jump the page.
+			document.querySelectorAll("#import-dialog").forEach((el) => el.remove());
+			const importHtml = renderImportTray(appState as ModelManagerState);
+			if (importHtml) {
+				document.body.insertAdjacentHTML("beforeend", importHtml);
+				const importDialog = document.getElementById("import-dialog") as HTMLDialogElement | null;
+				if (importDialog && !importDialog.open) importDialog.showModal();
 			}
 
 			// The dialog is mounted in the top layer; remove stale instances before each full render.
@@ -473,23 +493,24 @@ function render(): void {
 					void run?.();
 				},
 				onImportApply: (pk, conflict) =>
-					dispatchModel({ type: "import-apply", providerKey: pk, conflict }),
+					withPreservedScroll(() => dispatchModel({ type: "import-apply", providerKey: pk, conflict })),
 				onImportSetRows: (rows) => {
-					dispatchModel({ type: "import-set-rows", rows });
-					// Kick enrichment for selected rows after selection changes; initial rows start unselected.
+					withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows }));
 				},
 				onImportToggle: (id) => {
-					if (!dispatchModel({ type: "import-toggle", id })) return;
-					void enrichImportIfNeeded();
+					withPreservedScroll(() => {
+						if (!dispatchModel({ type: "import-toggle", id })) return;
+						void enrichImportIfNeeded();
+					});
 				},
 				onImportClear: () => {
 					abortEnrich();
-					dispatchModel({ type: "import-set-rows", rows: [] });
+					withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows: [] }));
 				},
 				onImportChooseCandidate: (id, choice) =>
-					dispatchModel({ type: "import-choose-candidate", id, choice }),
+					withPreservedScroll(() => dispatchModel({ type: "import-choose-candidate", id, choice })),
 				onImportConfirmDefault: (id) =>
-					dispatchModel({ type: "import-confirm-default", id }),
+					withPreservedScroll(() => dispatchModel({ type: "import-confirm-default", id })),
 			};
 
 			bindModelEvents(appState as ModelManagerState, modelCallbacks, modelApi);

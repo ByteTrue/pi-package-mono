@@ -1882,8 +1882,7 @@ function renderAddModelChooser() {
   html += "<h3>Add model</h3>";
   html += "<p>Choose how you want to start this model configuration.</p>";
   html += '<div class="add-source-list">';
-  html += '<button type="button" class="add-source-option" data-add-source="catalog"><strong>Search official catalog</strong><span>Fill fields from Pi\u2019s built-in model templates.</span></button>';
-  html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Enter custom model</strong><span>Start with a blank form and type the model ID yourself.</span></button>';
+  html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Configure a model</strong><span>Open the model editor. Search official templates or type the details yourself.</span></button>';
   html += '<button type="button" class="add-source-option" data-add-source="import"><strong>Import from /models</strong><span>List models from this provider\u2019s OpenAI-compatible endpoint.</span></button>';
   html += "</div>";
   html += '<div class="dialog-actions"><button type="submit" class="btn-quiet" value="cancel">Cancel</button></div>';
@@ -2003,10 +2002,10 @@ function renderImportTray(state) {
   if (state.importRows.length === 0) return "";
   const selected = state.importRows.filter((r) => r.selected);
   const ready = selected.filter((r) => r.state === "ready");
-  let html = '<section class="import-tray" aria-labelledby="import-heading">';
-  html += '<div class="section-heading"><div><h3 id="import-heading">Import from /models</h3>';
+  let html = '<dialog id="import-dialog"><div class="import-dialog">';
+  html += '<div class="import-dialog-header"><div><h3 id="import-heading">Import from /models</h3>';
   html += `<p class="import-status" aria-live="polite">${selected.length} selected \xB7 ${ready.length} ready \xB7 max 100</p></div></div>`;
-  html += '<div class="import-table-wrapper"><table class="import-table">';
+  html += '<div class="import-table-wrapper" tabindex="0" aria-label="Discovered models"><table class="import-table">';
   html += "<thead><tr><th></th><th>ID</th><th>Status</th><th>Details</th></tr></thead><tbody>";
   for (const row of state.importRows) {
     const checked = row.selected ? " checked" : "";
@@ -2027,11 +2026,11 @@ function renderImportTray(state) {
     if (row.state === "default-warning") html += `<button class="btn-secondary btn-sm" data-import-confirm-default="${escAttr2(row.id)}">Use default</button>`;
     html += "</td></tr>";
   }
-  html += '</tbody></table></div><div class="import-actions">';
-  html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
-  html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
+  html += '</tbody></table></div><div class="import-actions dialog-actions">';
   html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel import</button>';
-  html += "</div></section>";
+  html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
+  html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
+  html += "</div></div></dialog>";
   return html;
 }
 function bindModelEvents(state, callbacks, modelApi2) {
@@ -2397,6 +2396,17 @@ function dispatchModel(action, opts) {
   if (!opts?.silent) render();
   return false;
 }
+function withPreservedScroll(run) {
+  const detail = document.querySelector(".detail");
+  const importWrap = document.querySelector(".import-table-wrapper");
+  const detailTop = detail?.scrollTop ?? 0;
+  const importTop = importWrap?.scrollTop ?? 0;
+  run();
+  const nextDetail = document.querySelector(".detail");
+  const nextImport = document.querySelector(".import-table-wrapper");
+  if (nextDetail) nextDetail.scrollTop = detailTop;
+  if (nextImport) nextImport.scrollTop = importTop;
+}
 var enrichAbort = null;
 function abortEnrich() {
   enrichAbort?.abort();
@@ -2612,8 +2622,14 @@ function render() {
         const modelSection = modelWorkspace.querySelector(".model-section");
         if (modelSection) {
           modelSection.insertAdjacentHTML("beforeend", renderCatalogSearch(appState));
-          modelSection.insertAdjacentHTML("beforeend", renderImportTray(appState));
         }
+      }
+      document.querySelectorAll("#import-dialog").forEach((el) => el.remove());
+      const importHtml = renderImportTray(appState);
+      if (importHtml) {
+        document.body.insertAdjacentHTML("beforeend", importHtml);
+        const importDialog = document.getElementById("import-dialog");
+        if (importDialog && !importDialog.open) importDialog.showModal();
       }
       document.querySelectorAll("#model-editor").forEach((el) => el.remove());
       const editorHtml = renderModelEditor(appState, fieldDescs, {});
@@ -2710,20 +2726,22 @@ function render() {
           const run = window.__piVendorRunDiscover;
           void run?.();
         },
-        onImportApply: (pk, conflict) => dispatchModel({ type: "import-apply", providerKey: pk, conflict }),
+        onImportApply: (pk, conflict) => withPreservedScroll(() => dispatchModel({ type: "import-apply", providerKey: pk, conflict })),
         onImportSetRows: (rows) => {
-          dispatchModel({ type: "import-set-rows", rows });
+          withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows }));
         },
         onImportToggle: (id) => {
-          if (!dispatchModel({ type: "import-toggle", id })) return;
-          void enrichImportIfNeeded();
+          withPreservedScroll(() => {
+            if (!dispatchModel({ type: "import-toggle", id })) return;
+            void enrichImportIfNeeded();
+          });
         },
         onImportClear: () => {
           abortEnrich();
-          dispatchModel({ type: "import-set-rows", rows: [] });
+          withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows: [] }));
         },
-        onImportChooseCandidate: (id, choice) => dispatchModel({ type: "import-choose-candidate", id, choice }),
-        onImportConfirmDefault: (id) => dispatchModel({ type: "import-confirm-default", id })
+        onImportChooseCandidate: (id, choice) => withPreservedScroll(() => dispatchModel({ type: "import-choose-candidate", id, choice })),
+        onImportConfirmDefault: (id) => withPreservedScroll(() => dispatchModel({ type: "import-confirm-default", id }))
       };
       bindModelEvents(appState, modelCallbacks, modelApi);
       const firstFieldErr = appState.errors.find((e) => e.field && e.field !== "raw");

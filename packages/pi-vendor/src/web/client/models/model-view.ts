@@ -207,8 +207,7 @@ function renderAddModelChooser(): string {
 	html += '<h3>Add model</h3>';
 	html += '<p>Choose how you want to start this model configuration.</p>';
 	html += '<div class="add-source-list">';
-	html += '<button type="button" class="add-source-option" data-add-source="catalog"><strong>Search official catalog</strong><span>Fill fields from Pi’s built-in model templates.</span></button>';
-	html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Enter custom model</strong><span>Start with a blank form and type the model ID yourself.</span></button>';
+	html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Configure a model</strong><span>Open the model editor. Search official templates or type the details yourself.</span></button>';
 	html += '<button type="button" class="add-source-option" data-add-source="import"><strong>Import from /models</strong><span>List models from this provider’s OpenAI-compatible endpoint.</span></button>';
 	html += '</div>';
 	html += '<div class="dialog-actions"><button type="submit" class="btn-quiet" value="cancel">Cancel</button></div>';
@@ -359,14 +358,14 @@ export function renderImportTray(state: ModelManagerState): string {
 	const selected = state.importRows.filter((r) => r.selected);
 	const ready = selected.filter((r) => r.state === "ready");
 
-	let html = '<section class="import-tray" aria-labelledby="import-heading">';
-	html += '<div class="section-heading"><div><h3 id="import-heading">Import from /models</h3>';
+	let html = '<dialog id="import-dialog"><div class="import-dialog">';
+	html += '<div class="import-dialog-header"><div><h3 id="import-heading">Import from /models</h3>';
 	html += `<p class="import-status" aria-live="polite">${selected.length} selected · ${ready.length} ready · max 100</p></div></div>`;
-	html += '<div class="import-table-wrapper"><table class="import-table">';
+	html += '<div class="import-table-wrapper" tabindex="0" aria-label="Discovered models"><table class="import-table">';
 	html += '<thead><tr><th></th><th>ID</th><th>Status</th><th>Details</th></tr></thead><tbody>';
 	for (const row of state.importRows) {
 		const checked = row.selected ? " checked" : "";
-		html += '<tr>';
+		html += "<tr>";
 		html += `<td><input type="checkbox" data-import-toggle="${escAttr(row.id)}"${checked} aria-label="Select ${escAttr(row.id)}"></td>`;
 		html += `<td><code>${esc(row.id)}</code></td><td class="import-state-${row.state}">${esc(row.state)}</td><td>`;
 		if (row.error) html += `<span class="error-msg">${esc(row.error)}</span>`;
@@ -378,17 +377,16 @@ export function renderImportTray(state: ModelManagerState): string {
 				const c = row.candidates[i]!;
 				html += `<button class="btn-secondary btn-sm" data-import-candidate="${escAttr(JSON.stringify({ id: row.id, index: i }))}">${esc(c.provider)}/${esc(c.modelId)}</button>`;
 			}
-			html += '</div>';
+			html += "</div>";
 		}
 		if (row.state === "default-warning") html += `<button class="btn-secondary btn-sm" data-import-confirm-default="${escAttr(row.id)}">Use default</button>`;
-		html += '</td></tr>';
+		html += "</td></tr>";
 	}
-	html += '</tbody></table></div><div class="import-actions">';
-	html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
-	html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
+	html += '</tbody></table></div><div class="import-actions dialog-actions">';
 	html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel import</button>';
-	html += '</div></section>';
-
+	html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
+	html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
+	html += "</div></div></dialog>";
 	return html;
 }
 
@@ -430,7 +428,6 @@ export function bindModelEvents(
 					if (state.selectedProvider) callbacks.onDiscover(state.selectedProvider);
 					return;
 				}
-				// catalog and custom both open the full editor; catalog users then fill from official.
 				callbacks.onOpenEditor(null);
 			});
 		});
