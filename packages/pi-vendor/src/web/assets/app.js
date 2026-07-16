@@ -1670,7 +1670,7 @@ function createModelApiClient(token) {
 var ENRICH_CONCURRENCY = 8;
 async function enrichSelectedRows(rows, api2, signal, onProgress) {
   const results = rows.map((r) => ({ ...r }));
-  const selectedIdx = results.map((r, i) => r.selected ? i : -1).filter((i) => i >= 0);
+  const selectedIdx = results.map((r, i) => r.state === "selected-unenriched" ? i : -1).filter((i) => i >= 0);
   async function enrichOne(row) {
     if (signal?.aborted) return row;
     try {
@@ -1991,19 +1991,28 @@ function renderImportTray(state) {
   if (state.importRows.length === 0) return "";
   const selected = state.importRows.filter((r) => r.selected);
   const ready = selected.filter((r) => r.state === "ready");
+  const enriching = state.importRows.filter((r) => r.state === "selected-unenriched").length;
+  const allSelected = state.importRows.length > 0 && selected.length === state.importRows.length;
   let html = '<dialog id="import-dialog"><div class="import-dialog">';
   html += '<div class="import-dialog-header"><div><h3 id="import-heading">Import from /models</h3>';
-  html += `<p class="import-status" aria-live="polite">${selected.length} selected \xB7 ${ready.length} ready \xB7 max 100</p></div></div>`;
+  html += `<p class="import-status" aria-live="polite">${selected.length} selected \xB7 ${ready.length} ready`;
+  if (enriching > 0) html += ` \xB7 resolving ${enriching}`;
+  html += ` \xB7 ${state.importRows.length} total \xB7 max 100</p></div>`;
+  html += '<div class="import-toolbar">';
+  html += `<button type="button" class="btn-secondary btn-sm" id="btn-import-select-all">${allSelected ? "Clear all" : "Select all"}</button>`;
+  html += "</div></div>";
   html += '<div class="import-table-wrapper" tabindex="0" aria-label="Discovered models"><table class="import-table">';
-  html += "<thead><tr><th></th><th>ID</th><th>Status</th><th>Details</th></tr></thead><tbody>";
+  html += '<thead><tr><th class="import-check-col"></th><th>Model</th><th>Status</th><th>Details</th></tr></thead><tbody>';
   for (const row of state.importRows) {
     const checked = row.selected ? " checked" : "";
-    html += "<tr>";
-    html += `<td><input type="checkbox" data-import-toggle="${escAttr2(row.id)}"${checked} aria-label="Select ${escAttr2(row.id)}"></td>`;
-    html += `<td><code>${esc(row.id)}</code></td><td class="import-state-${row.state}">${esc(row.state)}</td><td>`;
+    const rowClass = row.selected ? " is-selected" : "";
+    html += `<tr class="import-row${rowClass}" data-import-row="${escAttr2(row.id)}">`;
+    html += `<td class="import-check-col"><label class="import-check"><input type="checkbox" data-import-toggle="${escAttr2(row.id)}"${checked} aria-label="Select ${escAttr2(row.id)}"><span></span></label></td>`;
+    html += `<td class="import-id-cell"><code>${esc(row.id)}</code></td>`;
+    html += `<td class="import-state-cell import-state-${row.state}">${esc(statusLabel(row.state))}</td><td class="import-detail-cell">`;
     if (row.error) html += `<span class="error-msg">${esc(row.error)}</span>`;
-    if (row.model?.name) html += esc(String(row.model.name));
-    if (row.choice?.provider) html += ` (${esc(row.choice.provider)})`;
+    if (row.model?.name) html += `<span class="import-name">${esc(String(row.model.name))}</span>`;
+    if (row.choice?.provider) html += ` <span class="import-provider">${esc(row.choice.provider)}</span>`;
     if (row.state === "ambiguous" && row.candidates?.length) {
       html += '<div class="import-candidates">';
       for (let i = 0; i < row.candidates.length; i++) {
@@ -2016,11 +2025,25 @@ function renderImportTray(state) {
     html += "</td></tr>";
   }
   html += '</tbody></table></div><div class="import-actions dialog-actions">';
-  html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel import</button>';
+  html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel</button>';
   html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
   html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
   html += "</div></div></dialog>";
   return html;
+}
+function statusLabel(state) {
+  switch (state) {
+    case "selected-unenriched":
+      return "Resolving\u2026";
+    case "ready":
+      return "Ready";
+    case "ambiguous":
+      return "Choose source";
+    case "default-warning":
+      return "Default";
+    case "failed":
+      return "Failed";
+  }
 }
 function bindModelEvents(state, callbacks, modelApi2) {
   $id2("model-search")?.addEventListener("input", (e) => {
@@ -2278,44 +2301,6 @@ function bindModelEvents(state, callbacks, modelApi2) {
     }
   };
   window.__piVendorRunDiscover = runDiscover;
-  listen2("btn-import-apply-skip", "click", () => {
-    callbacks.onImportApply(state.selectedProvider ?? "", "skip-existing");
-  });
-  listen2("btn-import-apply-replace", "click", async () => {
-    const pk = state.selectedProvider ?? "";
-    const { modelCount, secretCount } = countImportReplaceTargets(
-      state.draft,
-      pk,
-      state.importRows,
-      state.secretSlots
-    );
-    const msg = secretCount > 0 ? `Replace ${modelCount} existing model(s)? Removes ${secretCount} known secret(s) under those targets.` : `Replace ${modelCount} existing model(s) with imported versions?`;
-    const confirmed = await showConfirmDialog("Replace Models", msg, "Replace");
-    if (confirmed) callbacks.onImportApply(pk, "replace-selected");
-  });
-  listen2("btn-import-cancel", "click", () => {
-    callbacks.onImportClear();
-  });
-  document.querySelectorAll("[data-import-toggle]").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const id = cb.getAttribute("data-import-toggle");
-      callbacks.onImportToggle(id);
-    });
-  });
-  document.querySelectorAll("[data-import-candidate]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const data = JSON.parse(btn.getAttribute("data-import-candidate"));
-      const row = state.importRows.find((r) => r.id === data.id);
-      const choice = row?.candidates?.[data.index];
-      if (choice) callbacks.onImportChooseCandidate(data.id, choice);
-    });
-  });
-  document.querySelectorAll("[data-import-confirm-default]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-import-confirm-default");
-      callbacks.onImportConfirmDefault(id);
-    });
-  });
 }
 
 // src/web/client/app.ts
@@ -2369,16 +2354,58 @@ function dispatchModel(action, opts) {
   if (!opts?.silent) render();
   return false;
 }
-function withPreservedScroll(run) {
-  const detail = document.querySelector(".detail");
-  const importWrap = document.querySelector(".import-table-wrapper");
-  const detailTop = detail?.scrollTop ?? 0;
-  const importTop = importWrap?.scrollTop ?? 0;
-  run();
-  const nextDetail = document.querySelector(".detail");
+function patchImportDialog() {
+  const importTop = document.querySelector(".import-table-wrapper")?.scrollTop ?? 0;
+  document.querySelectorAll("#import-dialog").forEach((el) => el.remove());
+  const importHtml = renderImportTray(appState);
+  if (!importHtml) return;
+  document.body.insertAdjacentHTML("beforeend", importHtml);
+  const importDialog = document.getElementById("import-dialog");
+  if (importDialog && !importDialog.open) importDialog.showModal();
   const nextImport = document.querySelector(".import-table-wrapper");
-  if (nextDetail) nextDetail.scrollTop = detailTop;
   if (nextImport) nextImport.scrollTop = importTop;
+  if (modelCallbacksRef) bindImportDialogEvents(modelCallbacksRef);
+}
+var modelCallbacksRef = null;
+function bindImportDialogEvents(callbacks) {
+  const $id3 = (id) => document.getElementById(id);
+  $id3("btn-import-apply-skip")?.addEventListener("click", () => {
+    callbacks.onImportApply(appState.selectedProvider ?? "", "skip-existing");
+  });
+  $id3("btn-import-apply-replace")?.addEventListener("click", async () => {
+    const pk = appState.selectedProvider ?? "";
+    const { modelCount, secretCount } = countImportReplaceTargets(
+      appState.draft,
+      pk,
+      appState.importRows,
+      appState.secretSlots
+    );
+    const msg = secretCount > 0 ? `Replace ${modelCount} existing model(s)? Removes ${secretCount} known secret(s) under those targets.` : `Replace ${modelCount} existing model(s) with imported versions?`;
+    const confirmed = await showConfirmDialog("Replace Models", msg, "Replace");
+    if (confirmed) callbacks.onImportApply(pk, "replace-selected");
+  });
+  $id3("btn-import-cancel")?.addEventListener("click", () => callbacks.onImportClear());
+  $id3("btn-import-select-all")?.addEventListener("click", () => callbacks.onImportSelectAll?.());
+  document.querySelectorAll("[data-import-toggle]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const id = cb.getAttribute("data-import-toggle");
+      callbacks.onImportToggle(id);
+    });
+  });
+  document.querySelectorAll("[data-import-candidate]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const data = JSON.parse(btn.getAttribute("data-import-candidate"));
+      const row = appState.importRows.find((r) => r.id === data.id);
+      const choice = row?.candidates?.[data.index];
+      if (choice) callbacks.onImportChooseCandidate(data.id, choice);
+    });
+  });
+  document.querySelectorAll("[data-import-confirm-default]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-import-confirm-default");
+      callbacks.onImportConfirmDefault(id);
+    });
+  });
 }
 var enrichAbort = null;
 function abortEnrich() {
@@ -2388,7 +2415,7 @@ function abortEnrich() {
 async function enrichImportIfNeeded() {
   if (!modelApi) return;
   const rows = appState.importRows ?? [];
-  const needs = rows.some((r) => r.selected && r.state === "selected-unenriched");
+  const needs = rows.some((r) => r.state === "selected-unenriched");
   if (!needs) return;
   abortEnrich();
   const ac = new AbortController();
@@ -2397,9 +2424,11 @@ async function enrichImportIfNeeded() {
     const updated = await enrichSelectedRows(rows, modelApi, ac.signal, (row) => {
       if (enrichAbort !== ac) return;
       dispatchModel({ type: "import-update-row", id: row.id, update: row }, { silent: true });
+      patchImportDialog();
     });
     if (enrichAbort !== ac) return;
-    dispatchModel({ type: "import-set-rows", rows: updated });
+    dispatchModel({ type: "import-set-rows", rows: updated }, { silent: true });
+    patchImportDialog();
   } catch {
   }
 }
@@ -2699,23 +2728,48 @@ function render() {
           const run = window.__piVendorRunDiscover;
           void run?.();
         },
-        onImportApply: (pk, conflict) => withPreservedScroll(() => dispatchModel({ type: "import-apply", providerKey: pk, conflict })),
+        onImportApply: (pk, conflict) => {
+          if (!dispatchModel({ type: "import-apply", providerKey: pk, conflict }, { silent: true })) return;
+          render();
+        },
         onImportSetRows: (rows) => {
-          withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows }));
+          if (!dispatchModel({ type: "import-set-rows", rows }, { silent: true })) return;
+          patchImportDialog();
+          void enrichImportIfNeeded();
         },
         onImportToggle: (id) => {
-          withPreservedScroll(() => {
-            if (!dispatchModel({ type: "import-toggle", id })) return;
-            void enrichImportIfNeeded();
-          });
+          if (!dispatchModel({ type: "import-toggle", id }, { silent: true })) return;
+          patchImportDialog();
+        },
+        onImportSelectAll: () => {
+          const rows = appState.importRows;
+          const allSelected = rows.length > 0 && rows.every((r) => r.selected);
+          const ids = rows.map((r) => r.id);
+          if (allSelected) {
+            if (!dispatchModel({ type: "import-select-ids", ids, selected: false }, { silent: true })) return;
+          } else {
+            const capped = ids.slice(0, 100);
+            if (!dispatchModel({ type: "import-select-ids", ids: capped, selected: true }, { silent: true })) return;
+          }
+          patchImportDialog();
         },
         onImportClear: () => {
           abortEnrich();
-          withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows: [] }));
+          if (!dispatchModel({ type: "import-set-rows", rows: [] }, { silent: true })) return;
+          document.querySelectorAll("#import-dialog").forEach((el) => el.remove());
         },
-        onImportChooseCandidate: (id, choice) => withPreservedScroll(() => dispatchModel({ type: "import-choose-candidate", id, choice })),
-        onImportConfirmDefault: (id) => withPreservedScroll(() => dispatchModel({ type: "import-confirm-default", id }))
+        onImportChooseCandidate: (id, choice) => {
+          if (!dispatchModel({ type: "import-choose-candidate", id, choice }, { silent: true })) return;
+          patchImportDialog();
+        },
+        onImportConfirmDefault: (id) => {
+          if (!dispatchModel({ type: "import-confirm-default", id }, { silent: true })) return;
+          patchImportDialog();
+        }
       };
+      modelCallbacksRef = modelCallbacks;
+      bindModelEvents(appState, modelCallbacks, modelApi);
+      if (document.getElementById("import-dialog")) bindImportDialogEvents(modelCallbacks);
       bindModelEvents(appState, modelCallbacks, modelApi);
       const firstFieldErr = appState.errors.find((e) => e.field && e.field !== "raw");
       if (firstFieldErr?.field) {

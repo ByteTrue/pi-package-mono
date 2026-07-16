@@ -40,6 +40,7 @@ import {
 	countSecretsUnderPrefixes,
 	modelSubtreePrefix,
 	enrichSelectedRows,
+	countImportReplaceTargets,
 	type ApiClient as ModelApiClient,
 } from "./models/state.js";
 
@@ -129,6 +130,67 @@ function withPreservedScroll(run: () => void): void {
 	if (nextImport) nextImport.scrollTop = importTop;
 }
 
+/** Re-render only the import modal so checkbox/select actions do not rebuild the whole page. */
+function patchImportDialog(): void {
+	const importTop = (document.querySelector(".import-table-wrapper") as HTMLElement | null)?.scrollTop ?? 0;
+	document.querySelectorAll("#import-dialog").forEach((el) => el.remove());
+	const importHtml = renderImportTray(appState as ModelManagerState);
+	if (!importHtml) return;
+	document.body.insertAdjacentHTML("beforeend", importHtml);
+	const importDialog = document.getElementById("import-dialog") as HTMLDialogElement | null;
+	if (importDialog && !importDialog.open) importDialog.showModal();
+	const nextImport = document.querySelector(".import-table-wrapper") as HTMLElement | null;
+	if (nextImport) nextImport.scrollTop = importTop;
+	// Rebind import-only handlers without full page rebind.
+	if (modelCallbacksRef) bindImportDialogEvents(modelCallbacksRef);
+}
+
+let modelCallbacksRef: ModelViewCallbacks | null = null;
+
+function bindImportDialogEvents(callbacks: ModelViewCallbacks): void {
+	const $id = (id: string) => document.getElementById(id);
+	$id("btn-import-apply-skip")?.addEventListener("click", () => {
+		callbacks.onImportApply((appState as ModelManagerState).selectedProvider ?? "", "skip-existing");
+	});
+	$id("btn-import-apply-replace")?.addEventListener("click", async () => {
+		const pk = (appState as ModelManagerState).selectedProvider ?? "";
+		const { modelCount, secretCount } = countImportReplaceTargets(
+			appState.draft,
+			pk,
+			(appState as ModelManagerState).importRows,
+			appState.secretSlots,
+		);
+		const msg =
+			secretCount > 0
+				? `Replace ${modelCount} existing model(s)? Removes ${secretCount} known secret(s) under those targets.`
+				: `Replace ${modelCount} existing model(s) with imported versions?`;
+		const confirmed = await showConfirmDialog("Replace Models", msg, "Replace");
+		if (confirmed) callbacks.onImportApply(pk, "replace-selected");
+	});
+	$id("btn-import-cancel")?.addEventListener("click", () => callbacks.onImportClear());
+	$id("btn-import-select-all")?.addEventListener("click", () => callbacks.onImportSelectAll?.());
+	document.querySelectorAll("[data-import-toggle]").forEach((cb) => {
+		cb.addEventListener("change", () => {
+			const id = cb.getAttribute("data-import-toggle")!;
+			callbacks.onImportToggle(id);
+		});
+	});
+	document.querySelectorAll("[data-import-candidate]").forEach((btn) => {
+		btn.addEventListener("click", () => {
+			const data = JSON.parse(btn.getAttribute("data-import-candidate")!) as { id: string; index: number };
+			const row = (appState as ModelManagerState).importRows.find((r) => r.id === data.id);
+			const choice = row?.candidates?.[data.index];
+			if (choice) callbacks.onImportChooseCandidate(data.id, choice);
+		});
+	});
+	document.querySelectorAll("[data-import-confirm-default]").forEach((btn) => {
+		btn.addEventListener("click", () => {
+			const id = btn.getAttribute("data-import-confirm-default")!;
+			callbacks.onImportConfirmDefault(id);
+		});
+	});
+}
+
 let enrichAbort: AbortController | null = null;
 
 function abortEnrich(): void {
@@ -139,7 +201,7 @@ function abortEnrich(): void {
 async function enrichImportIfNeeded(): Promise<void> {
 	if (!modelApi) return;
 	const rows = (appState.importRows ?? []) as ImportRow[];
-	const needs = rows.some((r) => r.selected && r.state === "selected-unenriched");
+	const needs = rows.some((r) => r.state === "selected-unenriched");
 	if (!needs) return;
 	abortEnrich();
 	const ac = new AbortController();
@@ -148,10 +210,12 @@ async function enrichImportIfNeeded(): Promise<void> {
 		const updated = await enrichSelectedRows(rows, modelApi, ac.signal, (row) => {
 			if (enrichAbort !== ac) return;
 			dispatchModel({ type: "import-update-row", id: row.id, update: row }, { silent: true });
+			patchImportDialog();
 		});
 		// Ignore stale controllers after clear/cancel so tray cannot resurrect.
 		if (enrichAbort !== ac) return;
-		dispatchModel({ type: "import-set-rows", rows: updated });
+		dispatchModel({ type: "import-set-rows", rows: updated }, { silent: true });
+		patchImportDialog();
 	} catch {
 		/* network errors surface as failed rows */
 	}
@@ -492,26 +556,51 @@ function render(): void {
 					const run = (window as unknown as { __piVendorRunDiscover?: () => Promise<void> }).__piVendorRunDiscover;
 					void run?.();
 				},
-				onImportApply: (pk, conflict) =>
-					withPreservedScroll(() => dispatchModel({ type: "import-apply", providerKey: pk, conflict })),
+				onImportApply: (pk, conflict) => {
+					if (!dispatchModel({ type: "import-apply", providerKey: pk, conflict }, { silent: true })) return;
+					render(); // apply closes import and updates model list
+				},
 				onImportSetRows: (rows) => {
-					withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows }));
+					if (!dispatchModel({ type: "import-set-rows", rows }, { silent: true })) return;
+					patchImportDialog();
+					// Resolve every discovered model once when the dialog opens.
+					void enrichImportIfNeeded();
 				},
 				onImportToggle: (id) => {
-					withPreservedScroll(() => {
-						if (!dispatchModel({ type: "import-toggle", id })) return;
-						void enrichImportIfNeeded();
-					});
+					if (!dispatchModel({ type: "import-toggle", id }, { silent: true })) return;
+					patchImportDialog();
+				},
+				onImportSelectAll: () => {
+					const rows = (appState as ModelManagerState).importRows;
+					const allSelected = rows.length > 0 && rows.every((r) => r.selected);
+					const ids = rows.map((r) => r.id);
+					if (allSelected) {
+						if (!dispatchModel({ type: "import-select-ids", ids, selected: false }, { silent: true })) return;
+					} else {
+						// Cap at 100 — select first 100 if over limit.
+						const capped = ids.slice(0, 100);
+						if (!dispatchModel({ type: "import-select-ids", ids: capped, selected: true }, { silent: true })) return;
+					}
+					patchImportDialog();
 				},
 				onImportClear: () => {
 					abortEnrich();
-					withPreservedScroll(() => dispatchModel({ type: "import-set-rows", rows: [] }));
+					if (!dispatchModel({ type: "import-set-rows", rows: [] }, { silent: true })) return;
+					document.querySelectorAll("#import-dialog").forEach((el) => el.remove());
 				},
-				onImportChooseCandidate: (id, choice) =>
-					withPreservedScroll(() => dispatchModel({ type: "import-choose-candidate", id, choice })),
-				onImportConfirmDefault: (id) =>
-					withPreservedScroll(() => dispatchModel({ type: "import-confirm-default", id })),
+				onImportChooseCandidate: (id, choice) => {
+					if (!dispatchModel({ type: "import-choose-candidate", id, choice }, { silent: true })) return;
+					patchImportDialog();
+				},
+				onImportConfirmDefault: (id) => {
+					if (!dispatchModel({ type: "import-confirm-default", id }, { silent: true })) return;
+					patchImportDialog();
+				},
 			};
+			modelCallbacksRef = modelCallbacks;
+
+			bindModelEvents(appState as ModelManagerState, modelCallbacks, modelApi);
+			if (document.getElementById("import-dialog")) bindImportDialogEvents(modelCallbacks);
 
 			bindModelEvents(appState as ModelManagerState, modelCallbacks, modelApi);
 

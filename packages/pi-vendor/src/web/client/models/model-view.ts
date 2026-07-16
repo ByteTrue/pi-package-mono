@@ -53,6 +53,7 @@ export type ModelViewCallbacks = {
 	onImportApply(providerKey: string, conflict: "skip-existing" | "replace-selected"): void;
 	onImportSetRows(rows: ImportRow[]): void;
 	onImportToggle(id: string): void;
+	onImportSelectAll(): void;
 	onImportClear(): void;
 	onImportChooseCandidate(id: string, choice: OfficialModelChoice): void;
 	onImportConfirmDefault(id: string): void;
@@ -346,20 +347,29 @@ export function renderImportTray(state: ModelManagerState): string {
 
 	const selected = state.importRows.filter((r) => r.selected);
 	const ready = selected.filter((r) => r.state === "ready");
+	const enriching = state.importRows.filter((r) => r.state === "selected-unenriched").length;
+	const allSelected = state.importRows.length > 0 && selected.length === state.importRows.length;
 
 	let html = '<dialog id="import-dialog"><div class="import-dialog">';
 	html += '<div class="import-dialog-header"><div><h3 id="import-heading">Import from /models</h3>';
-	html += `<p class="import-status" aria-live="polite">${selected.length} selected · ${ready.length} ready · max 100</p></div></div>`;
+	html += `<p class="import-status" aria-live="polite">${selected.length} selected · ${ready.length} ready`;
+	if (enriching > 0) html += ` · resolving ${enriching}`;
+	html += ` · ${state.importRows.length} total · max 100</p></div>`;
+	html += '<div class="import-toolbar">';
+	html += `<button type="button" class="btn-secondary btn-sm" id="btn-import-select-all">${allSelected ? "Clear all" : "Select all"}</button>`;
+	html += '</div></div>';
 	html += '<div class="import-table-wrapper" tabindex="0" aria-label="Discovered models"><table class="import-table">';
-	html += '<thead><tr><th></th><th>ID</th><th>Status</th><th>Details</th></tr></thead><tbody>';
+	html += '<thead><tr><th class="import-check-col"></th><th>Model</th><th>Status</th><th>Details</th></tr></thead><tbody>';
 	for (const row of state.importRows) {
 		const checked = row.selected ? " checked" : "";
-		html += "<tr>";
-		html += `<td><input type="checkbox" data-import-toggle="${escAttr(row.id)}"${checked} aria-label="Select ${escAttr(row.id)}"></td>`;
-		html += `<td><code>${esc(row.id)}</code></td><td class="import-state-${row.state}">${esc(row.state)}</td><td>`;
+		const rowClass = row.selected ? " is-selected" : "";
+		html += `<tr class="import-row${rowClass}" data-import-row="${escAttr(row.id)}">`;
+		html += `<td class="import-check-col"><label class="import-check"><input type="checkbox" data-import-toggle="${escAttr(row.id)}"${checked} aria-label="Select ${escAttr(row.id)}"><span></span></label></td>`;
+		html += `<td class="import-id-cell"><code>${esc(row.id)}</code></td>`;
+		html += `<td class="import-state-cell import-state-${row.state}">${esc(statusLabel(row.state))}</td><td class="import-detail-cell">`;
 		if (row.error) html += `<span class="error-msg">${esc(row.error)}</span>`;
-		if (row.model?.name) html += esc(String(row.model.name));
-		if (row.choice?.provider) html += ` (${esc(row.choice.provider)})`;
+		if (row.model?.name) html += `<span class="import-name">${esc(String(row.model.name))}</span>`;
+		if (row.choice?.provider) html += ` <span class="import-provider">${esc(row.choice.provider)}</span>`;
 		if (row.state === "ambiguous" && row.candidates?.length) {
 			html += '<div class="import-candidates">';
 			for (let i = 0; i < row.candidates.length; i++) {
@@ -372,11 +382,26 @@ export function renderImportTray(state: ModelManagerState): string {
 		html += "</td></tr>";
 	}
 	html += '</tbody></table></div><div class="import-actions dialog-actions">';
-	html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel import</button>';
+	html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel</button>';
 	html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
 	html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
 	html += "</div></div></dialog>";
 	return html;
+}
+
+function statusLabel(state: ImportRow["state"]): string {
+	switch (state) {
+		case "selected-unenriched":
+			return "Resolving…";
+		case "ready":
+			return "Ready";
+		case "ambiguous":
+			return "Choose source";
+		case "default-warning":
+			return "Default";
+		case "failed":
+			return "Failed";
+	}
 }
 
 
@@ -686,52 +711,5 @@ export function bindModelEvents(
 
 	(window as unknown as { __piVendorRunDiscover?: () => Promise<void> }).__piVendorRunDiscover = runDiscover;
 
-	// Import tray events
-	listen("btn-import-apply-skip", "click", () => {
-		callbacks.onImportApply(state.selectedProvider ?? "", "skip-existing");
-	});
-	listen("btn-import-apply-replace", "click", async () => {
-		const pk = state.selectedProvider ?? "";
-		const { modelCount, secretCount } = countImportReplaceTargets(
-			state.draft,
-			pk,
-			state.importRows,
-			state.secretSlots,
-		);
-		const msg =
-			secretCount > 0
-				? `Replace ${modelCount} existing model(s)? Removes ${secretCount} known secret(s) under those targets.`
-				: `Replace ${modelCount} existing model(s) with imported versions?`;
-		const confirmed = await showConfirmDialog("Replace Models", msg, "Replace");
-		if (confirmed) callbacks.onImportApply(pk, "replace-selected");
-	});
-	listen("btn-import-cancel", "click", () => {
-		callbacks.onImportClear();
-	});
-
-	// Import toggle checkboxes
-	document.querySelectorAll("[data-import-toggle]").forEach((cb) => {
-		cb.addEventListener("change", () => {
-			const id = cb.getAttribute("data-import-toggle")!;
-			callbacks.onImportToggle(id);
-		});
-	});
-
-	// Ambiguity candidate choice
-	document.querySelectorAll("[data-import-candidate]").forEach((btn) => {
-		btn.addEventListener("click", () => {
-			const data = JSON.parse(btn.getAttribute("data-import-candidate")!) as { id: string; index: number };
-			const row = state.importRows.find((r) => r.id === data.id);
-			const choice = row?.candidates?.[data.index];
-			if (choice) callbacks.onImportChooseCandidate(data.id, choice);
-		});
-	});
-
-	// Default warning confirm
-	document.querySelectorAll("[data-import-confirm-default]").forEach((btn) => {
-		btn.addEventListener("click", () => {
-			const id = btn.getAttribute("data-import-confirm-default")!;
-			callbacks.onImportConfirmDefault(id);
-		});
-	});
+	// Import dialog events are rebound by app.patchImportDialog after each import-only update.
 }

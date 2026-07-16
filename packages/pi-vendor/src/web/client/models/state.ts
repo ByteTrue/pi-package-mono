@@ -750,7 +750,8 @@ export function createModelApiClient(token: string): ApiClient {
 const ENRICH_CONCURRENCY = 8;
 
 /**
- * Enrich selected rows with concurrency 8.
+ * Enrich import rows that still need metadata (concurrency 8).
+ * Used after discover for the whole list, not only the currently selected rows.
  * Cancel stops scheduling pending work but keeps completed rows (no rollback).
  */
 export async function enrichSelectedRows(
@@ -761,7 +762,7 @@ export async function enrichSelectedRows(
 ): Promise<ImportRow[]> {
 	const results = rows.map((r) => ({ ...r }));
 	const selectedIdx = results
-		.map((r, i) => (r.selected ? i : -1))
+		.map((r, i) => (r.state === "selected-unenriched" ? i : -1))
 		.filter((i) => i >= 0);
 
 	async function enrichOne(row: ImportRow): Promise<ImportRow> {
