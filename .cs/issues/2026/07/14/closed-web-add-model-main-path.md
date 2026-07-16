@@ -2,7 +2,7 @@
 kind: issue
 title: "Web Add model 主路径对齐 TUI"
 type: feature
-status: open
+status: closed
 created: 2026-07-14
 epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 ---
@@ -109,24 +109,26 @@ Add model
 
 - `npm --workspace @bytetrue/pi-vendor test` — 294 passed（含 session discover 接线）
 - typecheck / build:web 通过
-- agent-browser：
-  - Add model → 三源 chooser
-  - Official catalog → editor open
-  - Import from /models → discover 成功，import tray 17 行（真实 provider）
+- agent-browser（owner 验收通过）：
+  - Models 工具栏：Add model + Import from /models 并列，无中间 chooser
+  - Add model → 打开全字段 editor（官方搜索内置）
+  - Import → dialog；打开后一次性 enrich 全部 id；Select all / 勾选不跳页
   - console/errors: 0
 
 ## 执行记录
 
-- `session.ts`：`handleDiscover` → hydrate SecretRef + `discoverModelIds` + production command runner；snapshot 作 initialProvider 信任基线
+- `session.ts`：`handleDiscover` → hydrate SecretRef + `discoverModelIds` + production command runner
 - `session.test.ts`：缺 baseUrl → 400 invalid_request；已接线响应非 404
-- Add model chooser：Official / Custom / Import；Import 复用 discover → import tray
-- 移除工具栏独立 Import 按钮，统一从 chooser 进入
-- 偏差：catalog 与 custom 都打开同一全字段 editor（catalog 用户再用 Find official）
+- 交互演进：chooser → 工具栏并列；import 页内 tray → modal dialog；按需 enrich → 打开后批量 enrich；勾选全页 re-render → 仅 patch dialog
+- Select all / Clear all、更大勾选热区、sticky 表头
 
 ## 关闭回写
 
-- epic：Add 主路径与 discover 完成
+- epic：Add 主路径与 discover 完成并勾选
 
 ## 关闭结论
 
-- （owner 确认后 Close）
+- **关闭判断**：owner 验收通过。discover 已接线；Add/Import 主路径可用；import dialog 批量 enrich 与无跳页选择已验证。
+- **验证摘要**：294 tests；agent-browser 18 行 resolve + select all；owner 确认。
+- **回写位置**：epic 当前推进。
+- **遗留**：`open-web-actions-copy`（动作文案）；import 歧义源选择仍可后续 polish。
