@@ -1358,4 +1358,57 @@ describe("Keep-alive / active socket cleanup", () => {
 			if (existsSync(tempPath)) unlinkSync(tempPath);
 		}
 	});
+
+	it("wires discover handler and validates baseUrl", async () => {
+		const tempPath = makeTempConfig({
+			providers: {
+				local: {
+					baseUrl: "https://example.com/v1",
+					api: "openai-completions",
+					apiKey: "test-key",
+					models: [],
+				},
+			},
+		});
+		try {
+			const session = await startVendorWebSession({
+				modelsPath: tempPath,
+				openBrowser: async () => true,
+			});
+			const port = Number(new URL(session.url).port);
+			const token = extractTokenFromSessionUrl(session.url);
+			const headers = {
+				Authorization: `Bearer ${token}`,
+				Host: `127.0.0.1:${port}`,
+				Origin: `http://127.0.0.1:${port}`,
+				"Content-Type": "application/json",
+			};
+
+			const missingBase = await fetchOnce(port, "/api/discover", {
+				method: "POST",
+				headers,
+				body: JSON.stringify({ providerKey: "local", provider: { api: "openai-completions" } }),
+			});
+			expect(missingBase.status).toBe(400);
+			const missingBody = (await missingBase.json()) as { error?: { code?: string } };
+			expect(missingBody.error?.code).toBe("invalid_request");
+
+			// Real discovery hits example.com; accept success or typed upstream failure, not 404/unwired.
+			const attempt = await fetchOnce(port, "/api/discover", {
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					providerKey: "local",
+					provider: { baseUrl: "https://example.com/v1", apiKey: "test-key" },
+				}),
+			});
+			expect([200, 400, 408, 413, 502]).toContain(attempt.status);
+			expect(attempt.status).not.toBe(404);
+
+			session.stop();
+			await session.waitForResult();
+		} finally {
+			if (existsSync(tempPath)) unlinkSync(tempPath);
+		}
+	});
 });

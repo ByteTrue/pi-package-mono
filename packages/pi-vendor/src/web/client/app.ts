@@ -468,7 +468,10 @@ function render(): void {
 				},
 				onSearch: (q) => dispatchModel({ type: "model-search", query: q }),
 				onSort: (s) => dispatchModel({ type: "model-sort", sort: s }),
-				onDiscover: () => {},
+				onDiscover: () => {
+					const run = (window as unknown as { __piVendorRunDiscover?: () => Promise<void> }).__piVendorRunDiscover;
+					void run?.();
+				},
 				onImportApply: (pk, conflict) =>
 					dispatchModel({ type: "import-apply", providerKey: pk, conflict }),
 				onImportSetRows: (rows) => {

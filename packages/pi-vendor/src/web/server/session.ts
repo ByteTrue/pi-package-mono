@@ -4,13 +4,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createVendorWebServer, type VendorWebListen, type WebSessionState, type VendorWebResult, type VendorWebSession } from "./server.js";
 import type { WebModelsDraft, SecretRef, SecretSlot } from "./mask.js";
-import { maskSnapshot, hydrateCommitDraft } from "./mask.js";
+import { maskSnapshot, hydrateCommitDraft, hydrateProviderCredentials } from "./mask.js";
 import { readModelsSnapshot, commitModelsSnapshot } from "../../config-core.js";
 import type { ModelsSnapshot } from "../../config-core.js";
 import { getModelsJsonPath } from "../../models-json.js";
+import type { ProviderConfig } from "../../models-json.js";
 import { listModelFields, listProviderFields } from "../../config-document.js";
 import { searchOfficialModels } from "../../model-source/catalog-search.js";
 import { enrichModelForWeb } from "../../model-source/web-enrich.js";
+import { discoverModelIds } from "../../model-source/bounded-discover.js";
+import { createProductionCommandRunner } from "../../model-source/config-resolver.js";
 import { ModelSourceError } from "../../model-source/model-source-error.js";
 
 /** Default asset root next to this module (`src/web/assets`). Override when bundled (dev:web). */
@@ -159,12 +162,62 @@ export async function startVendorWebSession(options?: {
 		}
 	};
 
-	const handleEnrich = async (body: { modelId: string }) => {
+const handleEnrich = async (body: { modelId: string }) => {
 		try {
 			return await enrichModelForWeb(body.modelId);
 		} catch (err) {
 			if (err instanceof ModelSourceError) {
 				throw Object.assign(new Error(err.message), { code: err.code });
+			}
+			throw err;
+		}
+	};
+
+	const handleDiscover = async (body: { providerKey: string; provider: Record<string, unknown> }) => {
+		try {
+			const providerKey = body.providerKey;
+			if (!providerKey || typeof providerKey !== "string") {
+				throw Object.assign(new Error("Missing providerKey"), { code: "invalid_request" as const });
+			}
+			const draftProvider = body.provider as ProviderConfig;
+			const hydrated = hydrateProviderCredentials(
+				providerKey,
+				draftProvider,
+				state.secrets,
+				state.snapshot.revision,
+			);
+			const baseUrl = typeof hydrated.baseUrl === "string" ? hydrated.baseUrl.trim() : "";
+			if (!baseUrl) {
+				throw Object.assign(new Error("Provider base URL is required for discovery"), {
+					code: "invalid_request" as const,
+				});
+			}
+			const snapshotProvider = state.snapshot.models.providers?.[providerKey];
+			const initialProvider = snapshotProvider
+				? {
+						apiKey: typeof snapshotProvider.apiKey === "string" ? snapshotProvider.apiKey : undefined,
+						headers: snapshotProvider.headers,
+					}
+				: undefined;
+			const ids = await discoverModelIds(
+				{
+					baseUrl,
+					apiKey: typeof hydrated.apiKey === "string" ? hydrated.apiKey : undefined,
+					headers: hydrated.headers,
+				},
+				{
+					initialProvider,
+					runCommand: createProductionCommandRunner(),
+				},
+			);
+			return { ids };
+		} catch (err) {
+			if (err instanceof ModelSourceError) {
+				throw Object.assign(new Error(err.message), { code: err.code });
+			}
+			const code = (err as { code?: string })?.code;
+			if (code === "invalid_secret_ref" || code === "invalid_request" || code === "credential_unresolved") {
+				throw err;
 			}
 			throw err;
 		}
@@ -181,6 +234,7 @@ export async function startVendorWebSession(options?: {
 			handleCancel,
 			handleCatalog,
 			handleEnrich,
+			handleDiscover,
 			onSaved: (saved) => {
 				settle({ kind: "saved", snapshot: saved });
 			},

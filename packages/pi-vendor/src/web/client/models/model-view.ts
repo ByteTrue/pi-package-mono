@@ -164,7 +164,6 @@ export function renderModelSection(
 	html += `<option value="name"${state.visualSort === "name" ? " selected" : ""}>Model name</option>`;
 	html += '</select><div class="model-actions">';
 	html += '<button class="btn-save" id="btn-add-model" type="button">Add model</button>';
-	html += '<button class="btn-secondary" id="btn-discover" type="button">Import from /models</button>';
 	html += '</div></div>';
 
 	if (rows.length === 0) {
@@ -201,6 +200,20 @@ export function renderModelSection(
 	html += '</section>';
 	return html;
 
+}
+
+function renderAddModelChooser(): string {
+	let html = '<dialog id="add-model-chooser"><form method="dialog" class="add-source-form">';
+	html += '<h3>Add model</h3>';
+	html += '<p>Choose how you want to start this model configuration.</p>';
+	html += '<div class="add-source-list">';
+	html += '<button type="button" class="add-source-option" data-add-source="catalog"><strong>Search official catalog</strong><span>Fill fields from Pi’s built-in model templates.</span></button>';
+	html += '<button type="button" class="add-source-option" data-add-source="custom"><strong>Enter custom model</strong><span>Start with a blank form and type the model ID yourself.</span></button>';
+	html += '<button type="button" class="add-source-option" data-add-source="import"><strong>Import from /models</strong><span>List models from this provider’s OpenAI-compatible endpoint.</span></button>';
+	html += '</div>';
+	html += '<div class="dialog-actions"><button type="submit" class="btn-quiet" value="cancel">Cancel</button></div>';
+	html += '</form></dialog>';
+	return html;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -397,9 +410,30 @@ export function bindModelEvents(
 		callbacks.onSort((e.target as HTMLSelectElement).value as VisualSort);
 	});
 
-	// Add model button
+	// Add model — source chooser
 	$id("btn-add-model")?.addEventListener("click", () => {
-		callbacks.onOpenEditor(null);
+		document.querySelectorAll("#add-model-chooser").forEach((el) => el.remove());
+		document.body.insertAdjacentHTML("beforeend", renderAddModelChooser());
+		const dialog = document.getElementById("add-model-chooser") as HTMLDialogElement | null;
+		dialog?.showModal();
+
+		const closeChooser = () => {
+			dialog?.close();
+			dialog?.remove();
+		};
+
+		dialog?.querySelectorAll("[data-add-source]").forEach((btn) => {
+			btn.addEventListener("click", () => {
+				const source = btn.getAttribute("data-add-source");
+				closeChooser();
+				if (source === "import") {
+					if (state.selectedProvider) callbacks.onDiscover(state.selectedProvider);
+					return;
+				}
+				// catalog and custom both open the full editor; catalog users then fill from official.
+				callbacks.onOpenEditor(null);
+			});
+		});
 	});
 
 
@@ -643,11 +677,14 @@ export function bindModelEvents(
 		});
 	}
 
-	// Discover button
-	listen("btn-discover", "click", async () => {
+	const runDiscover = async () => {
 		if (!state.selectedProvider || !modelApi) return;
-		const discoverBtn = $id("btn-discover");
-		if (discoverBtn) { discoverBtn.textContent = "Checking /models…"; discoverBtn.setAttribute("disabled", ""); }
+		const addBtn = $id("btn-add-model");
+		const originalLabel = addBtn?.textContent ?? "Add model";
+		if (addBtn) {
+			addBtn.textContent = "Checking /models…";
+			addBtn.setAttribute("disabled", "");
+		}
 
 		try {
 			const providers = (state.draft as Record<string, unknown>).providers as Record<
@@ -662,15 +699,26 @@ export function bindModelEvents(
 			const msg = err instanceof Error ? err.message : "Discovery failed";
 			const importArea = document.querySelector(".model-section");
 			if (importArea) {
+				importArea.querySelectorAll(".discover-error").forEach((el) => el.remove());
 				const errDiv = document.createElement("div");
-				errDiv.className = "error-msg";
-				errDiv.textContent = msg;
+				errDiv.className = "error-msg discover-error";
+				errDiv.innerHTML = `<strong>Could not import models</strong><span>${esc(msg)}</span>`;
 				importArea.appendChild(errDiv);
 			}
 		} finally {
-			if (discoverBtn) { discoverBtn.textContent = "Import from /models"; discoverBtn.removeAttribute("disabled"); }
+			if (addBtn) {
+				addBtn.textContent = originalLabel;
+				addBtn.removeAttribute("disabled");
+			}
 		}
-	});
+	};
+
+	// Import option in chooser calls onDiscover; app wires it to this runner.
+	// Store on callbacks bag via side channel: return void, app uses bindModelEvents after setting onDiscover to invoke discover from here.
+	// Attach listener for synthetic discover trigger used by onDiscover wiring.
+	document.getElementById("btn-add-model")?.setAttribute("data-discover-ready", "1");
+	// Expose for app.ts onDiscover — minimal bridge without restructuring callbacks this pass.
+	(window as unknown as { __piVendorRunDiscover?: () => Promise<void> }).__piVendorRunDiscover = runDiscover;
 
 	// Import tray events
 	listen("btn-import-apply-skip", "click", () => {
