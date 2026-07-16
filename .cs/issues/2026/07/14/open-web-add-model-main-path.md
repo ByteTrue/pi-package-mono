@@ -107,16 +107,26 @@ Add model
 
 ## 验证
 
-- （实现后填）
+- `npm --workspace @bytetrue/pi-vendor test` — 294 passed（含 session discover 接线）
+- typecheck / build:web 通过
+- agent-browser：
+  - Add model → 三源 chooser
+  - Official catalog → editor open
+  - Import from /models → discover 成功，import tray 17 行（真实 provider）
+  - console/errors: 0
 
 ## 执行记录
 
-- （未开始）
+- `session.ts`：`handleDiscover` → hydrate SecretRef + `discoverModelIds` + production command runner；snapshot 作 initialProvider 信任基线
+- `session.test.ts`：缺 baseUrl → 400 invalid_request；已接线响应非 404
+- Add model chooser：Official / Custom / Import；Import 复用 discover → import tray
+- 移除工具栏独立 Import 按钮，统一从 chooser 进入
+- 偏差：catalog 与 custom 都打开同一全字段 editor（catalog 用户再用 Find official）
 
 ## 关闭回写
 
-- epic：Add 主路径与 discover 完成事实
+- epic：Add 主路径与 discover 完成
 
 ## 关闭结论
 
-- （关闭时填）
+- （owner 确认后 Close）
