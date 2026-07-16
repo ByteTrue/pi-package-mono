@@ -245,8 +245,8 @@ function render(): void {
 			const previewDiv = root.querySelector(".preview");
 			if (previewDiv) {
 				const backBtn = document.createElement("button");
-				backBtn.className = "btn-cancel";
-				backBtn.textContent = "Back";
+				backBtn.className = "btn-secondary preview-back";
+				backBtn.textContent = "Back to configuration";
 				backBtn.addEventListener("click", () => { currentView = "provider"; render(); });
 				previewDiv.insertBefore(backBtn, previewDiv.firstChild);
 			}
@@ -340,31 +340,25 @@ function render(): void {
 			};
 			renderApp(appState as ProviderManagerState, fieldDescs, providerCallbacks);
 
-			// Inject model section after provider detail (Feature 3 — keep)
-			const detail = root.querySelector(".detail");
-			if (detail) {
+			// The workspace owns model management; catalog and import remain progressively disclosed tools.
+			const modelWorkspace = root.querySelector("#models-workspace");
+			if (modelWorkspace) {
 				const modelHtml = renderModelSection(appState as ModelManagerState, fieldDescs, {} as ModelViewCallbacks);
-				detail.insertAdjacentHTML("beforeend", modelHtml);
+				modelWorkspace.insertAdjacentHTML("beforeend", modelHtml);
+				const modelSection = modelWorkspace.querySelector(".model-section");
+				if (modelSection) {
+					modelSection.insertAdjacentHTML("beforeend", renderCatalogSearch(appState as ModelManagerState));
+					modelSection.insertAdjacentHTML("beforeend", renderImportTray(appState as ModelManagerState));
+				}
 			}
 
-			const modelSection = root.querySelector(".model-section");
-			if (modelSection) {
-				const catalogHtml = renderCatalogSearch(appState as ModelManagerState);
-				modelSection.insertAdjacentHTML("beforeend", catalogHtml);
-			}
-
-			const modelSection2 = root.querySelector(".model-section");
-			if (modelSection2) {
-				const importHtml = renderImportTray(appState as ModelManagerState);
-				modelSection2.insertAdjacentHTML("beforeend", importHtml);
-			}
-
-			// Model editor is appended to body (not #app). Remove prior instances so re-render
-			// does not stack multiple open dialogs (fill status would appear only on the last one).
+			// The dialog is mounted in the top layer; remove stale instances before each full render.
 			document.querySelectorAll("#model-editor").forEach((el) => el.remove());
 			const editorHtml = renderModelEditor(appState as ModelManagerState, fieldDescs, {} as ModelViewCallbacks);
 			if (editorHtml) {
 				document.body.insertAdjacentHTML("beforeend", editorHtml);
+				const dialog = document.getElementById("model-editor") as HTMLDialogElement | null;
+				if (dialog && !dialog.open) dialog.showModal();
 			}
 
 			const modelCallbacks: ModelViewCallbacks = {

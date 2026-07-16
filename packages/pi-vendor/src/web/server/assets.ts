@@ -14,14 +14,9 @@ function assetDir(): string {
 	return url.pathname;
 }
 
-let manifest: AssetManifest | undefined;
-let manifestRoot: string | undefined;
-
 function loadManifest(root?: string): AssetManifest {
-	const resolvedRoot = root ?? assetDir();
-	if (manifest && manifestRoot === resolvedRoot) return manifest;
-	const dir = resolvedRoot;
-	manifest = new Map();
+	const dir = root ?? assetDir();
+	const manifest: AssetManifest = new Map();
 	const entries: [string, string][] = [
 		["/", "index.html"],
 		["/index.html", "index.html"],
@@ -38,7 +33,6 @@ function loadManifest(root?: string): AssetManifest {
 			// Asset not available; route returns 404
 		}
 	}
-	manifestRoot = resolvedRoot;
 	return manifest;
 }
 

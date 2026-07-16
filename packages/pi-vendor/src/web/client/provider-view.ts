@@ -69,14 +69,14 @@ function renderProviderSidebar(state: ProviderManagerState): string {
 	const providers = (state.draft as Record<string, unknown>).providers as Record<string, Record<string, unknown>> | undefined ?? {};
 	const keys = Object.keys(providers).sort();
 
-	let html = '<div class="sidebar">';
+	let html = '<aside class="sidebar" aria-label="Provider navigation">';
 	html += '<div class="sidebar-header">';
-	html += '<h2>Providers</h2>';
-	html += '<button class="btn-add" id="btn-add-provider" title="Add provider">+ Add</button>';
+	html += `<div><h2>Providers</h2><p>${keys.length} configured</p></div>`;
+	html += '<button class="btn-add" id="btn-add-provider" type="button">New</button>';
 	html += '</div>';
 
 	if (keys.length === 0) {
-		html += '<div class="sidebar-empty">No providers configured</div>';
+		html += '<div class="sidebar-empty"><strong>No providers yet</strong><span>Create one to start adding models.</span></div>';
 	} else {
 		html += '<ul class="provider-list" role="listbox" aria-label="Providers">';
 		for (const key of keys) {
@@ -89,7 +89,7 @@ function renderProviderSidebar(state: ProviderManagerState): string {
 		}
 		html += "</ul>";
 	}
-	html += "</div>";
+	html += "</aside>";
 	return html;
 }
 
@@ -103,28 +103,29 @@ function renderProviderDetail(
 	slots: SecretSlot[],
 ): string {
 	if (!state.selectedProvider) {
-		return '<div class="detail-empty">Select a provider or add a new one</div>';
+		return '<main class="detail detail-empty" id="main-content"><div class="empty-state"><h1>Select a provider</h1><p>Choose one from the rail, or create a provider to begin.</p></div></main>';
 	}
 
 	const providers = (state.draft as Record<string, unknown>).providers as Record<string, Record<string, unknown>>;
 	const config = providers?.[state.selectedProvider];
-	if (!config) return '<div class="detail-empty">Provider not found</div>';
+	if (!config) return '<main class="detail detail-empty" id="main-content"><div class="empty-state"><h1>Provider not found</h1><p>Close and reopen this manager to reload the configuration.</p></div></main>';
 
-	let html = '<div class="detail">';
-
-	html += '<div class="detail-header">';
-	html += `<h2 class="provider-key">${esc(state.selectedProvider)}</h2>`;
+	const modelCount = Array.isArray(config.models) ? config.models.length : 0;
+	let html = '<main class="detail" id="main-content">';
+	html += '<div class="workspace-header">';
+	html += '<div><p class="workspace-kicker">Provider</p>';
+	html += `<h1 class="provider-key">${esc(state.selectedProvider)}</h1>`;
+	html += `<p class="workspace-subtitle">${modelCount} model${modelCount !== 1 ? "s" : ""} configured</p></div>`;
 	html += '<div class="detail-actions">';
-	html += '<button class="btn-rename" id="btn-rename">Rename</button>';
-	html += '<button class="btn-delete" id="btn-delete">Delete</button>';
-	html += '</div>';
-	html += '</div>';
+	html += '<button class="btn-secondary" id="btn-rename" type="button">Rename</button>';
+	html += '<button class="btn-danger" id="btn-delete" type="button">Delete</button>';
+	html += '</div></div>';
 
 	if (state.errors.length > 0) {
 		html += '<div class="errors" role="alert">';
 		for (const err of state.errors) {
 			const loc = err.field ? ` (${err.field})` : "";
-			html += `<div class="error-msg">${esc(err.message)}${esc(loc)}</div>`;
+			html += `<div class="error-msg"><strong>Needs attention</strong><span>${esc(err.message)}${esc(loc)}</span></div>`;
 		}
 		html += '</div>';
 	}
@@ -133,44 +134,33 @@ function renderProviderDetail(
 	const optionalFields = fieldDescs.filter((f) => !f.common && !f.required);
 	const hasKeys = Object.hasOwn as (obj: unknown, key: string) => boolean;
 
-	html += '<fieldset class="field-group"><legend>Connection</legend>';
-	for (const fd of commonFields) {
-		html += renderField(fd, config, state.selectedProvider, slots, fieldError(state, fd.key));
-	}
-	html += '</fieldset>';
+	html += '<section class="settings-section" aria-labelledby="connection-heading">';
+	html += '<div class="section-heading"><div><h2 id="connection-heading">Connection</h2><p>Where Pi sends requests for this provider.</p></div></div>';
+	html += '<div class="form-grid">';
+	for (const fd of commonFields) html += renderField(fd, config, state.selectedProvider, slots, fieldError(state, fd.key));
+	html += '</div></section>';
 
-	html += '<fieldset class="field-group"><legend>Optional settings</legend>';
+	html += '<section class="settings-section" aria-labelledby="settings-heading">';
+	html += '<div class="section-heading"><div><h2 id="settings-heading">Provider settings</h2><p>Add only the options this provider needs.</p></div></div>';
 	const existingOptional = optionalFields.filter((f) => hasKeys(config, f.key));
-	for (const fd of existingOptional) {
-		html += renderField(fd, config, state.selectedProvider, slots, fieldError(state, fd.key));
+	if (existingOptional.length > 0) {
+		html += '<div class="form-grid">';
+		for (const fd of existingOptional) html += renderField(fd, config, state.selectedProvider, slots, fieldError(state, fd.key));
+		html += '</div>';
 	}
-
 	const missingOptional = optionalFields.filter((f) => !hasKeys(config, f.key));
 	if (missingOptional.length > 0) {
-		html += '<div class="add-setting">';
-		html += '<select id="add-setting-select" aria-label="Add setting">';
-		html += '<option value="">Add setting…</option>';
-		for (const fd of missingOptional) {
-			html += `<option value="${escAttr(fd.key)}">${esc(fd.label)}</option>`;
-		}
-		html += '</select>';
-		html += '</div>';
+		html += '<div class="add-setting"><label for="add-setting-select">Add setting</label><select id="add-setting-select">';
+		html += '<option value="">Choose a setting…</option>';
+		for (const fd of missingOptional) html += `<option value="${escAttr(fd.key)}">${esc(fd.label)}</option>`;
+		html += '</select></div>';
 	} else if (existingOptional.length > 0) {
-		html += '<div class="add-setting"><span class="hint">All settings added</span></div>';
+		html += '<p class="settings-complete">All available settings are in use.</p>';
 	}
-	html += '</fieldset>';
+	html += '</section>';
 
-	html += '<div class="raw-toggle">';
-	html += '<button class="btn-raw" id="btn-toggle-raw">Raw JSON</button>';
-	html += '<button class="btn-raw" id="btn-preview">Preview</button>';
-	html += '</div>';
-
-	html += '<div class="detail-footer">';
-	html += `<button class="btn-cancel" id="btn-cancel">Cancel</button>`;
-	html += `<button class="btn-save" id="btn-save">Save &amp; Close</button>`;
-	html += '</div>';
-
-	html += "</div>";
+	html += '<div class="workspace-tools" aria-label="Configuration tools"><button class="btn-secondary" id="btn-toggle-raw" type="button">Edit raw JSON</button></div>';
+	html += '<div id="models-workspace"></div></main>';
 	return html;
 }
 
@@ -196,7 +186,7 @@ function renderField(
 				inputHtml += `<button type="button" class="btn-replace-secret" data-field="${escAttr(fd.key)}">Replace</button>`;
 				inputHtml += `<button type="button" class="btn-remove-secret" data-field="${escAttr(fd.key)}">Remove</button>`;
 				inputHtml += `</div>`;
-				inputHtml += `<div class="hint">Opaque keep-value: original secret never shown. Replace types a new value; Remove deletes the secret.</div>`;
+				inputHtml += `<div class="hint">The current value stays private. Replace enters a new value; Remove deletes it.</div>`;
 			} else {
 				const val = typeof rawValue === "string" ? rawValue : "";
 				inputHtml = `<input type="password" id="${fieldId}" value="${escAttr(val)}" autocomplete="off" aria-describedby="${errorId}">`;
@@ -343,22 +333,22 @@ export function renderApp(
 
 	const sidebar = renderProviderSidebar(state);
 	const detail = renderProviderDetail(state, fieldDescs, state.secretSlots);
-
-	const dirtyLabel = state.dirty ? '<span class="unsaved" aria-live="polite">Unsaved</span>' : "";
+	const draftState = state.dirty
+		? '<span class="command-status is-dirty" aria-live="polite">Draft changes</span>'
+		: '<span class="command-status" aria-live="polite">All changes saved</span>';
 
 	root.innerHTML = `
+		<a class="skip-link" href="#main-content">Skip to workspace</a>
 		<header class="app-header">
-			<strong>Pi Vendor Manager</strong>
-			${dirtyLabel}
+			<div class="brand-lockup"><span class="brand-mark" aria-hidden="true">π</span><div><strong>Pi Vendor</strong><span>Local configuration</span></div></div>
+			${draftState}
 			<div class="header-actions">
-				<button class="btn-raw" id="btn-header-preview">Preview</button>
-				<button class="btn-save" id="btn-header-save">Save &amp; Close</button>
+				<button class="btn-quiet" id="btn-header-cancel" type="button">Cancel</button>
+				<button class="btn-secondary" id="btn-header-preview" type="button">Review changes</button>
+				<button class="btn-save" id="btn-header-save" type="button">Save &amp; Close</button>
 			</div>
 		</header>
-		<div class="layout">
-			${sidebar}
-			${detail}
-		</div>
+		<div class="layout">${sidebar}${detail}</div>
 	`;
 
 	// Bind sidebar events
@@ -409,11 +399,9 @@ export function renderApp(
 		if (confirmed) callbacks.onDelete(state.selectedProvider);
 	});
 
-	listen("btn-save", "click", () => callbacks.onSave());
 	listen("btn-header-save", "click", () => callbacks.onSave());
-	listen("btn-cancel", "click", () => callbacks.onCancel());
+	listen("btn-header-cancel", "click", () => callbacks.onCancel());
 	listen("btn-toggle-raw", "click", () => callbacks.onToggleRaw());
-	listen("btn-preview", "click", () => callbacks.onPreview());
 	listen("btn-header-preview", "click", () => callbacks.onPreview());
 
 	// Bind field inputs — update state without full re-render focus steal

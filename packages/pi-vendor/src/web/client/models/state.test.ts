@@ -14,6 +14,9 @@ import {
 	type ModelManagerState,
 	type ImportRow,
 	type ApiClient,
+	buildEditorInputModes,
+	buildEditorCost,
+	parseEditorJson,
 } from "./state.js";
 import { addModel, replaceModel, deleteModel } from "../../../config-mutations.js";
 import type { SecretSlot } from "../state.js";
@@ -108,6 +111,35 @@ describe("applyOfficialTemplate", () => {
 		expect(next.api).toBeUndefined();
 		expect(next.reasoning).toBeUndefined();
 		expect(next.headers).toEqual({ H: "1" });
+	});
+
+	describe("full editor field helpers", () => {
+		it("builds input capabilities in stable order", () => {
+			expect(buildEditorInputModes(true, true)).toEqual(["text", "image"]);
+			expect(buildEditorInputModes(false, true)).toEqual(["image"]);
+			expect(buildEditorInputModes(false, false)).toBeUndefined();
+		});
+
+		it("builds all cost fields, preserves zero, and parses tiers", () => {
+			expect(buildEditorCost(
+				{ input: "10", output: "50", cacheRead: "1", cacheWrite: "12.5" },
+				'[{"inputTokensAbove":200000,"input":20,"output":60,"cacheRead":2,"cacheWrite":15}]',
+			)).toEqual({
+				input: 10,
+				output: 50,
+				cacheRead: 1,
+				cacheWrite: 12.5,
+				tiers: [{ inputTokensAbove: 200000, input: 20, output: 60, cacheRead: 2, cacheWrite: 15 }],
+			});
+			expect(buildEditorCost({ input: "0" })).toEqual({ input: 0 });
+			expect(buildEditorCost({})).toBeUndefined();
+		});
+
+		it("rejects invalid structured editor values", () => {
+			expect(() => buildEditorCost({ input: "nope" })).toThrow(/number/);
+			expect(() => buildEditorCost({}, "{}")).toThrow(/array/);
+			expect(parseEditorJson(" ")).toBeUndefined();
+		});
 	});
 
 	it("model-apply-template reducer updates open editor only", () => {

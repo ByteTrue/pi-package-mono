@@ -66,40 +66,28 @@ export function renderPreview(
 
 	const summary = computeProviderChangeSummary(baselineProviders, draftProviders);
 
-	let html = '<div class="preview">';
-	html += '<h3>Change Preview</h3>';
-
-	// Summary
-	html += '<div class="preview-summary">';
-	if (summary.added.length > 0) {
-		html += `<div class="preview-change preview-added">+ Added: ${summary.added.map(k => esc(k)).join(", ")}</div>`;
-	}
-	if (summary.removed.length > 0) {
-		html += `<div class="preview-change preview-removed">- Removed: ${summary.removed.map(k => esc(k)).join(", ")}</div>`;
-	}
-	if (summary.changed.length > 0) {
-		html += `<div class="preview-change preview-changed">~ Changed: ${summary.changed.map(k => esc(k)).join(", ")}</div>`;
-	}
-	if (summary.added.length === 0 && summary.removed.length === 0 && summary.changed.length === 0) {
-		html += '<div class="preview-change preview-none">No changes detected</div>';
-	}
-	html += '</div>';
-
-	// Before/After
 	const sanitizedBaseline = sanitizeForPreview(state.baseline);
 	const sanitizedDraft = sanitizeForPreview(state.draft);
 
-	html += '<div class="preview-columns">';
-	html += '<div class="preview-col">';
-	html += '<h4>Before</h4>';
-	html += `<pre>${esc(JSON.stringify(sanitizedBaseline, null, 2))}</pre>`;
-	html += '</div>';
-	html += '<div class="preview-col">';
-	html += '<h4>After</h4>';
-	html += `<pre>${esc(JSON.stringify(sanitizedDraft, null, 2))}</pre>`;
-	html += '</div>';
-	html += '</div>';
+	let html = '<main class="standalone-view preview" id="main-content">';
+	html += '<div class="standalone-header"><div>';
+	html += '<p class="workspace-kicker">Review</p><h1>Changes before saving</h1>';
+	html += '<p>Secrets remain hidden. This is the exact draft Pi will validate when you save.</p></div></div>';
 
-	html += '</div>';
+	html += '<section class="preview-summary" aria-label="Change summary">';
+	if (summary.added.length > 0) html += `<div class="preview-change preview-added"><strong>Added</strong><span>${summary.added.map(k => esc(k)).join(", ")}</span></div>`;
+	if (summary.removed.length > 0) html += `<div class="preview-change preview-removed"><strong>Deleted</strong><span>${summary.removed.map(k => esc(k)).join(", ")}</span></div>`;
+	if (summary.changed.length > 0) html += `<div class="preview-change preview-changed"><strong>Changed</strong><span>${summary.changed.map(k => esc(k)).join(", ")}</span></div>`;
+	if (summary.added.length === 0 && summary.removed.length === 0 && summary.changed.length === 0) {
+		html += '<div class="preview-change preview-none"><strong>No draft changes</strong><span>Return to configuration to make an edit.</span></div>';
+	}
+	html += '</section>';
+
+	html += '<section class="preview-columns" aria-label="Configuration comparison">';
+	html += '<div class="preview-col"><h2>Saved configuration</h2>';
+	html += `<pre>${esc(JSON.stringify(sanitizedBaseline, null, 2))}</pre></div>`;
+	html += '<div class="preview-col"><h2>Current draft</h2>';
+	html += `<pre>${esc(JSON.stringify(sanitizedDraft, null, 2))}</pre></div>`;
+	html += '</section></main>';
 	return html;
 }

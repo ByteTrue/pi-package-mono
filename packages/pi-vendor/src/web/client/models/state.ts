@@ -163,6 +163,39 @@ export function applyOfficialTemplate(
 	return next as ProviderModelConfig;
 }
 
+export function parseEditorJson(text: string): unknown {
+	const trimmed = text.trim();
+	if (!trimmed) return undefined;
+	return JSON.parse(trimmed) as unknown;
+}
+
+export function buildEditorInputModes(text: boolean, image: boolean): Array<"text" | "image"> | undefined {
+	const modes: Array<"text" | "image"> = [];
+	if (text) modes.push("text");
+	if (image) modes.push("image");
+	return modes.length > 0 ? modes : undefined;
+}
+
+export function buildEditorCost(
+	values: Partial<Record<"input" | "output" | "cacheRead" | "cacheWrite", string>>,
+	tiersText = "",
+): Record<string, unknown> | undefined {
+	const cost: Record<string, unknown> = {};
+	for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+		const raw = values[key]?.trim() ?? "";
+		if (!raw) continue;
+		const value = Number(raw);
+		if (!Number.isFinite(value)) throw new Error(`${key} cost must be a number`);
+		cost[key] = value;
+	}
+	const tiers = parseEditorJson(tiersText);
+	if (tiers !== undefined) {
+		if (!Array.isArray(tiers)) throw new Error("Cost tiers must be a JSON array");
+		cost.tiers = tiers;
+	}
+	return Object.keys(cost).length > 0 ? cost : undefined;
+}
+
 // ── Model Actions ──────────────────────────────────────────────────
 
 export type ModelAction =
@@ -410,7 +443,8 @@ export function reduceModelAction(
 					issues: [],
 					fillStatus: action.status ?? "Filled template fields from official source.",
 					fillError: false,
-					fillCandidates: [],
+					// Keep candidates so users can switch official sources without re-searching.
+					fillCandidates: next.editor.fillCandidates,
 				},
 			});
 		}

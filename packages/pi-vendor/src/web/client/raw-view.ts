@@ -10,24 +10,20 @@ export function renderRawView(state: ProviderManagerState): string {
 	const secretCount = state.secretSlots.length;
 	const rawError = state.errors.find((e) => e.field === "raw")?.message;
 
-	let html = '<div class="raw-editor">';
-	html += '<div class="raw-header">';
-	html += '<h3>Raw JSON (whole document)</h3>';
+	let html = '<main class="standalone-view raw-editor" id="main-content">';
+	html += '<div class="standalone-header raw-header"><div>';
+	html += '<p class="workspace-kicker">Advanced</p><h1>Raw JSON</h1>';
+	html += '<p>Edit the complete configuration. Apply validates the draft before returning to the workspace.</p></div>';
 	html += '<div class="raw-actions">';
-	html += '<button class="btn-save" id="btn-apply-raw">Apply</button>';
-	html += '<button class="btn-cancel" id="btn-discard-raw">Discard</button>';
-	html += '<button class="btn-cancel" id="btn-stay-raw">Stay</button>';
-	html += '</div>';
-	html += '</div>';
-
+	html += '<button class="btn-quiet" id="btn-discard-raw" type="button">Back to configuration</button>';
+	html += '<button class="btn-save" id="btn-apply-raw" type="button">Apply JSON</button>';
+	html += '</div></div>';
 	if (secretCount > 0) {
-		html += `<div class="raw-secret-hint">This document contains ${secretCount} opaque secret reference(s). Moving or copying them will fail on save. Deleting a ref removes the secret (requires confirmation).</div>`;
+		html += `<div class="raw-secret-hint"><strong>${secretCount} configured secret${secretCount === 1 ? "" : "s"}</strong><span>Keep their references in the same place. Moving or copying one cannot be saved.</span></div>`;
 	}
-
-	html += `<textarea id="raw-textarea" rows="20" autocomplete="off" spellcheck="false">${esc(rawText)}</textarea>`;
+	html += `<textarea id="raw-textarea" rows="20" autocomplete="off" spellcheck="false" aria-label="Raw configuration JSON">${esc(rawText)}</textarea>`;
 	html += `<div id="raw-error" class="field-error" role="alert">${rawError ? esc(rawError) : ""}</div>`;
-	html += '</div>';
-
+	html += '</main>';
 	return html;
 }
 
@@ -45,5 +41,4 @@ export function bindRawView(handlers: {
 		if (textarea) handlers.onApply(textarea.value);
 	});
 	document.getElementById("btn-discard-raw")?.addEventListener("click", () => handlers.onDiscard());
-	document.getElementById("btn-stay-raw")?.addEventListener("click", () => handlers.onStay());
 }

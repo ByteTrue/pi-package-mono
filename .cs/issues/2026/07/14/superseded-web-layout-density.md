@@ -1,22 +1,17 @@
 ---
 kind: issue
-title: "Web 模型表单常用字段"
+title: "Web 布局与信息密度（已被全表面视觉重设计取代）"
 type: feature
-status: open
+status: superseded
 created: 2026-07-14
 epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
 ---
 
-# Web 模型表单常用字段
+# Web 布局与信息密度
 
-## 目标
+## 结论
 
-模型编辑器覆盖日常常用字段（至少 input/compat/thinking 等已在 DTO 中的非密钥字段），高级仍靠 Raw JSON。
-
-## 范围
-
-- 包含：字段展示与写回 draft
-- 不包含：强制 cost 映射（未确认前可选）
+本 issue 的局部布局/密度目标已被 `.cs/issues/2026/07/15/open-web-visual-redesign.md` 的全表面视觉重设计取代。保留此记录以说明范围迁移；不在这里继续设计或实现。
 
 ## 归属
 
@@ -53,16 +48,17 @@ Web 已有 catalog/enrich API 与旁路 Official Catalog UI，但未接入模型
 
 ## 验证
 
-- 不打开 Raw 也能改常用非密钥字段；round-trip 不丢未知字段
+- bytetrueapi 级列表无需极端滚动空白；主任务控件仍可见
 
 ## 执行记录
 
-- （未开始）
+- 未开始；由全表面视觉重设计统一处理。
 
 ## 关闭回写
 
-- epic / project spec：（关闭时填）
+- 取代者：`.cs/issues/2026/07/15/open-web-visual-redesign.md`
+- epic：当前推进已标注本 issue 为 superseded
 
 ## 关闭结论
 
-- （关闭时填）
+- 不适用：未实现；用户将局部优化升级为全 Web 视觉重设计。

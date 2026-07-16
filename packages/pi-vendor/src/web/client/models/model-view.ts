@@ -14,6 +14,8 @@ import {
 	listModelRows,
 	importRowsFromIds,
 	countImportReplaceTargets,
+	buildEditorInputModes,
+	buildEditorCost,
 	type ApiClient,
 } from "./state.js";
 import type { FieldDescriptor } from "../state.js";
@@ -148,67 +150,71 @@ export function renderModelSection(
 
 	const rows = listModelRows(state.draft, state.selectedProvider, state.modelQuery, state.visualSort);
 
-	let html = '<div class="model-section">';
-	html += "<h3>Models</h3>";
+	let html = '<section class="model-section" aria-labelledby="models-heading">';
+	html += '<div class="section-heading model-section-heading"><div>';
+	html += '<h2 id="models-heading">Models</h2>';
+	html += `<p>${rows.length} visible model${rows.length !== 1 ? "s" : ""}. Search, edit, or add a configuration.</p>`;
+	html += '</div></div>';
 
-	// Toolbar
 	html += '<div class="model-toolbar">';
-	html += `<input type="search" id="model-search" placeholder="Search models…" value="${escAttr(state.modelQuery)}" autocomplete="off">`;
+	html += `<input type="search" id="model-search" placeholder="Filter configured models" value="${escAttr(state.modelQuery)}" autocomplete="off" aria-label="Filter configured models">`;
 	html += '<select id="model-sort" aria-label="Sort models">';
-	html += `<option value="document"${state.visualSort === "document" ? " selected" : ""}>Default order</option>`;
-	html += `<option value="id"${state.visualSort === "id" ? " selected" : ""}>By ID</option>`;
-	html += `<option value="name"${state.visualSort === "name" ? " selected" : ""}>By name</option>`;
-	html += "</select>";
-	html += '<div class="model-actions">';
-	html += '<button class="btn-save" id="btn-add-model">Add model</button>';
-	html += '<button class="btn-raw" id="btn-discover">Import /models</button>';
-	html += "</div>";
-	html += "</div>";
+	html += `<option value="document"${state.visualSort === "document" ? " selected" : ""}>Document order</option>`;
+	html += `<option value="id"${state.visualSort === "id" ? " selected" : ""}>Model ID</option>`;
+	html += `<option value="name"${state.visualSort === "name" ? " selected" : ""}>Model name</option>`;
+	html += '</select><div class="model-actions">';
+	html += '<button class="btn-save" id="btn-add-model" type="button">Add model</button>';
+	html += '<button class="btn-secondary" id="btn-discover" type="button">Import from /models</button>';
+	html += '</div></div>';
 
-	// Table
 	if (rows.length === 0) {
 		html += '<div class="model-empty">';
 		if (state.modelQuery) {
-			html += `No models matching "${esc(state.modelQuery)}"`;
+			html += `<strong>No matching models</strong><span>Try a different name or model ID.</span>`;
 		} else {
-			html += "No models configured. Add a model, search official catalog, or import from /models.";
+			html += '<strong>No models configured</strong><span>Add a model, find one in the official catalog, or import from this provider.</span>';
 		}
-		html += "</div>";
+		html += '</div>';
 	} else {
-		html += '<table class="model-table" role="table" aria-label="Models">';
-		html += "<thead><tr>";
-		html += "<th>ID</th><th>Name</th><th>API</th><th>Context</th><th>Actions</th>";
-		html += "</tr></thead><tbody>";
-
+		html += '<div class="model-table-wrap"><table class="model-table" aria-label="Models">';
+		html += '<thead><tr><th>ID</th><th>Name</th><th>API</th><th>Context</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>';
 		for (const row of rows) {
 			const model = row.model;
 			const id = row.previousId;
 			const name = String(model.name ?? "");
 			const api = String(model.api ?? "");
-			const ctxWin = model.contextWindow ? String(model.contextWindow) : "";
-			const handle: ModelRowHandle = {
-				providerKey: row.providerKey,
-				index: row.index,
-				previousId: id,
-			};
-
-			html += "<tr>";
-			html += `<td><code>${esc(id)}</code></td>`;
-			html += `<td>${esc(name)}</td>`;
-			html += `<td>${esc(api)}</td>`;
-			html += `<td>${esc(ctxWin)}</td>`;
-			html += '<td class="model-row-actions">';
-			html += `<button class="btn-rename" data-edit="${escAttr(JSON.stringify(handle))}" aria-label="Edit ${escAttr(id)}">Edit</button>`;
-			html += `<button class="btn-delete" data-delete="${escAttr(JSON.stringify({ providerKey: state.selectedProvider, modelId: id }))}" aria-label="Delete ${escAttr(id)}">Delete</button>`;
-			html += "</td>";
-			html += "</tr>";
+			const ctxWin = model.contextWindow ? String(model.contextWindow) : "—";
+			const handle: ModelRowHandle = { providerKey: row.providerKey, index: row.index, previousId: id };
+			html += '<tr>';
+			html += `<td data-label="ID"><code>${esc(id)}</code></td>`;
+			html += `<td data-label="Name">${esc(name || "—")}</td>`;
+			html += `<td data-label="API"><span class="api-value">${esc(api || "—")}</span></td>`;
+			html += `<td data-label="Context" class="numeric-value">${esc(ctxWin)}</td>`;
+			html += '<td data-label="Actions" class="model-row-actions">';
+			html += `<button class="btn-secondary btn-sm" data-edit="${escAttr(JSON.stringify(handle))}" aria-label="Edit ${escAttr(id)}">Edit</button>`;
+			html += `<button class="btn-danger btn-sm" data-delete="${escAttr(JSON.stringify({ providerKey: state.selectedProvider, modelId: id }))}" aria-label="Delete ${escAttr(id)}">Delete</button>`;
+			html += '</td></tr>';
 		}
-
-		html += "</tbody></table>";
+		html += '</tbody></table></div>';
 	}
 
-	html += "</div>";
+	html += '</section>';
 	return html;
+
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: {};
+}
+
+function jsonText(value: unknown): string {
+	return value === undefined ? "" : JSON.stringify(value, null, 2);
+}
+
+function numberText(value: unknown): string {
+	return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 export function renderModelEditor(
@@ -221,92 +227,100 @@ export function renderModelEditor(
 	const isNew = !state.editor.handle;
 	const title = isNew ? "Add Model" : `Edit Model: ${esc(String(state.editor.value.id ?? ""))}`;
 
-	let html = '<dialog id="model-editor" open><div class="model-editor">';
-	html += `<h3>${title}</h3>`;
+	let html = '<dialog id="model-editor"><div class="model-editor">';
+	html += '<div class="editor-header"><div>';
+	html += `<h2>${title}</h2>`;
+	html += `<p>${isNew ? "Start with an ID, then choose an official configuration or enter the details yourself." : "Changes stay in this draft until you save the session."}</p>`;
+	html += '</div></div>';
+	html += '<div class="editor-layout">';
+	html += '<section class="editor-config-pane" aria-label="Model configuration">';
 
-	const idVal = String(state.editor.value.id ?? "");
-	html += '<div class="field editor-fill-row">';
-	html += '<label for="editor-id">ID</label>';
-	html += '<div class="editor-fill-controls">';
-	html += `<input type="text" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="model id">`;
-	html += '<button type="button" class="btn-save btn-sm" id="btn-editor-fill">Fill from official</button>';
-	html += "</div>";
-	const fillStatus = state.editor.fillStatus ?? "";
-	const fillErr = state.editor.fillError ? " error-msg" : "";
-	html += `<div id="editor-fill-status" class="editor-fill-status${fillErr}" aria-live="polite">${esc(fillStatus)}</div>`;
-	html += '<div id="editor-fill-results" class="editor-fill-results">';
-	const candidates = state.editor.fillCandidates ?? [];
-	for (let i = 0; i < candidates.length; i++) {
-		const e = candidates[i]!;
-		const name = String(e.model?.name ?? e.modelId);
-		html += `<div class="catalog-entry">`;
-		html += `<span class="catalog-id"><code>${esc(e.modelId)}</code></span>`;
-		html += `<span class="catalog-name">${esc(name)}</span>`;
-		html += `<span class="catalog-provider">${esc(e.provider)}</span>`;
-		html += `<button type="button" class="btn-save btn-sm" data-fill-pick="${i}">Select</button>`;
-		html += "</div>";
-	}
-	html += "</div>";
-	html += "</div>";
+	const editorValue = state.editor.value as Record<string, unknown>;
+	const idVal = String(editorValue.id ?? "");
+	const nameVal = String(editorValue.name ?? "");
+	const apiVal = String(editorValue.api ?? "");
+	const baseUrlVal = String(editorValue.baseUrl ?? "");
+	const reasoning = editorValue.reasoning === true;
+	const ctxWin = numberText(editorValue.contextWindow);
+	const maxToks = numberText(editorValue.maxTokens);
+	const inputModes = Array.isArray(editorValue.input) ? editorValue.input : [];
+	const cost = asRecord(editorValue.cost);
 
-	const nameVal = String(state.editor.value.name ?? "");
-	html += '<div class="field">';
-	html += '<label for="editor-name">Name</label>';
-	html += `<input type="text" id="editor-name" value="${escAttr(nameVal)}" autocomplete="off">`;
-	html += "</div>";
-
-	const apiVal = String(state.editor.value.api ?? "");
-	html += '<div class="field">';
-	html += '<label for="editor-api">API</label>';
+	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Identity & limits</h3><p>How Pi identifies and calls this model.</p></div>';
+	html += '<div class="field editor-fill-row field-span">';
+	html += '<label for="editor-id">Model ID</label><div class="editor-fill-controls">';
+	html += `<input type="text" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="e.g. claude-fable-5">`;
+	html += '<button type="button" class="btn-secondary" id="btn-editor-fill">Find official config</button></div></div>';
+	html += '<div class="editor-form-grid">';
+	html += `<div class="field"><label for="editor-name">Display name</label><input type="text" id="editor-name" value="${escAttr(nameVal)}" autocomplete="off"></div>`;
+	html += '<div class="field"><label for="editor-api">API</label>';
 	html += `<input type="text" id="editor-api" value="${escAttr(apiVal)}" list="api-formats" autocomplete="off">`;
 	html += '<datalist id="api-formats">';
-	for (const fmt of ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"]) {
-		html += `<option value="${escAttr(fmt)}">`;
+	for (const fmt of ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"]) html += `<option value="${escAttr(fmt)}">`;
+	html += '</datalist></div>';
+	html += `<div class="field field-span"><label for="editor-baseUrl">Base URL override</label><input type="text" id="editor-baseUrl" value="${escAttr(baseUrlVal)}" autocomplete="off" placeholder="Use provider base URL"></div>`;
+	html += `<div class="field"><label for="editor-contextWindow">Context window</label><input type="text" inputmode="numeric" id="editor-contextWindow" value="${escAttr(ctxWin)}" autocomplete="off"></div>`;
+	html += `<div class="field"><label for="editor-maxTokens">Max output tokens</label><input type="text" inputmode="numeric" id="editor-maxTokens" value="${escAttr(maxToks)}" autocomplete="off"></div>`;
+	html += '</div></div>';
+
+	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Capabilities</h3><p>Inputs and reasoning behavior exposed to Pi.</p></div>';
+	html += '<div class="capability-row">';
+	html += `<label class="checkbox-label"><input type="checkbox" id="editor-reasoning"${reasoning ? " checked" : ""}> Supports reasoning</label>`;
+	html += '<fieldset class="input-capabilities"><legend>Input</legend>';
+	html += `<label class="checkbox-label"><input type="checkbox" id="editor-input-text"${inputModes.includes("text") ? " checked" : ""}> Text</label>`;
+	html += `<label class="checkbox-label"><input type="checkbox" id="editor-input-image"${inputModes.includes("image") ? " checked" : ""}> Image</label></fieldset></div>`;
+	html += `<div class="field"><label for="editor-thinkingLevelMap">Thinking level map (JSON)</label><textarea id="editor-thinkingLevelMap" rows="4" autocomplete="off" spellcheck="false" placeholder='{"off": null, "xhigh": "xhigh"}'>${esc(jsonText(editorValue.thinkingLevelMap))}</textarea></div></div>`;
+
+	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Cost</h3><p>USD per million tokens. Zero is a valid value.</p></div>';
+	html += '<div class="cost-grid">';
+	for (const [key, label] of [["input", "Input"], ["output", "Output"], ["cacheRead", "Cache read"], ["cacheWrite", "Cache write"]] as const) {
+		html += `<div class="field"><label for="editor-cost-${key}">${label}</label><input type="text" inputmode="decimal" id="editor-cost-${key}" value="${escAttr(numberText(cost[key]))}" autocomplete="off"></div>`;
 	}
-	html += "</datalist>";
-	html += "</div>";
+	html += '</div>';
+	html += `<div class="field"><label for="editor-cost-tiers">Tier overrides (JSON)</label><textarea id="editor-cost-tiers" rows="3" autocomplete="off" spellcheck="false" placeholder="Optional array of tier overrides">${esc(jsonText(cost.tiers))}</textarea></div></div>`;
 
-	const reasoning = state.editor.value.reasoning === true;
-	html += '<div class="field">';
-	html += '<label class="checkbox-label">';
-	html += `<input type="checkbox" id="editor-reasoning"${reasoning ? " checked" : ""}> Reasoning`;
-	html += "</label>";
-	html += "</div>";
-
-	const ctxWin = state.editor.value.contextWindow ? String(state.editor.value.contextWindow) : "";
-	html += '<div class="field">';
-	html += '<label for="editor-contextWindow">Context window</label>';
-	html += `<input type="text" id="editor-contextWindow" value="${escAttr(ctxWin)}" autocomplete="off">`;
-	html += "</div>";
-
-	const maxToks = state.editor.value.maxTokens ? String(state.editor.value.maxTokens) : "";
-	html += '<div class="field">';
-	html += '<label for="editor-maxTokens">Max tokens</label>';
-	html += `<input type="text" id="editor-maxTokens" value="${escAttr(maxToks)}" autocomplete="off">`;
-	html += "</div>";
-
-	const headersVal = state.editor.value.headers ? JSON.stringify(state.editor.value.headers, null, 2) : "";
-	html += '<div class="field">';
-	html += '<label for="editor-headers">Headers (JSON)</label>';
-	html += `<textarea id="editor-headers" rows="3" autocomplete="off">${esc(headersVal)}</textarea>`;
-	html += "</div>";
+	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Compatibility & headers</h3><p>Advanced Pi adapter behavior and model-specific headers.</p></div>';
+	html += `<div class="field"><label for="editor-compat">Compatibility (JSON)</label><textarea id="editor-compat" rows="4" autocomplete="off" spellcheck="false" placeholder='{"forceAdaptiveThinking": true}'>${esc(jsonText(editorValue.compat))}</textarea></div>`;
+	html += `<div class="field"><label for="editor-headers">Headers (JSON)</label><textarea id="editor-headers" rows="4" autocomplete="off" spellcheck="false" placeholder="Optional model-specific headers">${esc(jsonText(editorValue.headers))}</textarea></div></div>`;
 
 	if (state.editor.issues.length > 0) {
-		html += '<div class="errors">';
-		for (const iss of state.editor.issues) {
-			html += `<div class="error-msg">${esc(iss.message)}</div>`;
-		}
-		html += "</div>";
+		html += '<div class="errors" role="alert">';
+		for (const iss of state.editor.issues) html += `<div class="error-msg"><strong>Check this model</strong><span>${esc(iss.message)}</span></div>`;
+		html += '</div>';
 	}
+	html += '</section>';
+
+	const fillStatus = state.editor.fillStatus ?? "";
+	const fillErr = state.editor.fillError ? " error-msg" : "";
+	const candidates = state.editor.fillCandidates ?? [];
+	html += '<aside class="editor-catalog-pane" aria-labelledby="editor-catalog-heading">';
+	html += '<div class="editor-catalog-heading"><div><h3 id="editor-catalog-heading">Official configurations</h3>';
+	html += '<p>Choose the provider template that matches your endpoint.</p></div>';
+	html += `<span class="candidate-count">${candidates.length || "—"}</span></div>`;
+	html += `<div id="editor-fill-status" class="editor-fill-status${fillErr}" aria-live="polite">${esc(fillStatus)}</div>`;
+	html += '<div id="editor-fill-results" class="editor-fill-results" tabindex="0" aria-label="Official configuration candidates">';
+	if (candidates.length === 0) {
+		html += '<div class="editor-catalog-empty"><strong>No results yet</strong><span>Enter a model ID to search Pi’s built-in catalog.</span></div>';
+	} else {
+		for (let i = 0; i < candidates.length; i++) {
+			const entry = candidates[i]!;
+			const name = String(entry.model?.name ?? entry.modelId);
+			html += '<div class="catalog-entry">';
+			html += '<span class="catalog-copy">';
+			html += `<strong>${esc(name)}</strong><code>${esc(entry.modelId)}</code>`;
+			html += '</span>';
+			html += `<span class="catalog-provider">${esc(entry.provider)}</span>`;
+			html += `<button type="button" class="btn-secondary btn-sm" data-fill-pick="${i}">Use</button></div>`;
+		}
+	}
+	html += '</div></aside></div>';
 
 	html += '<div class="dialog-actions">';
-	html += '<button class="btn-cancel" id="btn-editor-cancel">Cancel</button>';
-	html += `<button class="btn-save" id="btn-editor-save">${isNew ? "Add" : "Save"}</button>`;
-	html += "</div>";
-
-	html += "</div></dialog>";
-
+	html += '<button class="btn-quiet" id="btn-editor-cancel" type="button">Keep editing later</button>';
+	html += `<button class="btn-save" id="btn-editor-save" type="button">${isNew ? "Add model" : "Save model"}</button>`;
+	html += '</div></div></dialog>';
 	return html;
+
 }
 
 // ── Catalog Search ─────────────────────────────────────────────────
@@ -314,14 +328,12 @@ export function renderModelEditor(
 export function renderCatalogSearch(state: ModelManagerState): string {
 	if (!state.catalogAvailable) return "";
 
-	let html = '<div class="catalog-section">';
-	html += "<h4>Official Catalog</h4>";
-	html += '<div class="catalog-search">';
-	html += '<input type="search" id="catalog-query" placeholder="Search official models…" autocomplete="off">';
-	html += '<button class="btn-save" id="btn-catalog-search">Search</button>';
-	html += "</div>";
-	html += '<div id="catalog-results" class="catalog-results"></div>';
-	html += "</div>";
+	let html = '<details class="catalog-section">';
+	html += '<summary><span><strong>Official catalog</strong><small>Start a new model from a Pi template</small></span></summary>';
+	html += '<div class="catalog-body"><div class="catalog-search">';
+	html += '<input type="search" id="catalog-query" placeholder="Search official models" autocomplete="off" aria-label="Search official models">';
+	html += '<button class="btn-secondary" id="btn-catalog-search" type="button">Search</button></div>';
+	html += '<div id="catalog-results" class="catalog-results" aria-live="polite"></div></div></details>';
 
 	return html;
 }
@@ -334,22 +346,16 @@ export function renderImportTray(state: ModelManagerState): string {
 	const selected = state.importRows.filter((r) => r.selected);
 	const ready = selected.filter((r) => r.state === "ready");
 
-	let html = '<div class="import-tray">';
-	html += "<h4>Import /models</h4>";
-	html += `<div class="import-status" aria-live="polite">${selected.length} selected, ${ready.length} ready (max 100)</div>`;
-
-	html += '<div class="import-table-wrapper">';
-	html += '<table class="import-table">';
-	html += "<thead><tr><th></th><th>ID</th><th>Status</th><th>Info</th></tr></thead>";
-	html += "<tbody>";
-
+	let html = '<section class="import-tray" aria-labelledby="import-heading">';
+	html += '<div class="section-heading"><div><h3 id="import-heading">Import from /models</h3>';
+	html += `<p class="import-status" aria-live="polite">${selected.length} selected · ${ready.length} ready · max 100</p></div></div>`;
+	html += '<div class="import-table-wrapper"><table class="import-table">';
+	html += '<thead><tr><th></th><th>ID</th><th>Status</th><th>Details</th></tr></thead><tbody>';
 	for (const row of state.importRows) {
 		const checked = row.selected ? " checked" : "";
-		html += "<tr>";
+		html += '<tr>';
 		html += `<td><input type="checkbox" data-import-toggle="${escAttr(row.id)}"${checked} aria-label="Select ${escAttr(row.id)}"></td>`;
-		html += `<td><code>${esc(row.id)}</code></td>`;
-		html += `<td class="import-state-${row.state}">${esc(row.state)}</td>`;
-		html += "<td>";
+		html += `<td><code>${esc(row.id)}</code></td><td class="import-state-${row.state}">${esc(row.state)}</td><td>`;
 		if (row.error) html += `<span class="error-msg">${esc(row.error)}</span>`;
 		if (row.model?.name) html += esc(String(row.model.name));
 		if (row.choice?.provider) html += ` (${esc(row.choice.provider)})`;
@@ -357,29 +363,22 @@ export function renderImportTray(state: ModelManagerState): string {
 			html += '<div class="import-candidates">';
 			for (let i = 0; i < row.candidates.length; i++) {
 				const c = row.candidates[i]!;
-				html += `<button class="btn-raw btn-sm" data-import-candidate="${escAttr(JSON.stringify({ id: row.id, index: i }))}">${esc(c.provider)}/${esc(c.modelId)}</button>`;
+				html += `<button class="btn-secondary btn-sm" data-import-candidate="${escAttr(JSON.stringify({ id: row.id, index: i }))}">${esc(c.provider)}/${esc(c.modelId)}</button>`;
 			}
-			html += "</div>";
+			html += '</div>';
 		}
-		if (row.state === "default-warning") {
-			html += `<button class="btn-save btn-sm" data-import-confirm-default="${escAttr(row.id)}">Confirm default</button>`;
-		}
-		html += "</td>";
-		html += "</tr>";
+		if (row.state === "default-warning") html += `<button class="btn-secondary btn-sm" data-import-confirm-default="${escAttr(row.id)}">Use default</button>`;
+		html += '</td></tr>';
 	}
-
-	html += "</tbody></table>";
-	html += "</div>";
-
-	html += '<div class="import-actions">';
-	html += '<button class="btn-save" id="btn-import-apply-skip">Apply (skip existing)</button>';
-	html += '<button class="btn-raw" id="btn-import-apply-replace">Apply (replace existing)</button>';
-	html += '<button class="btn-cancel" id="btn-import-cancel">Cancel</button>';
-	html += "</div>";
-	html += "</div>";
+	html += '</tbody></table></div><div class="import-actions">';
+	html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
+	html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
+	html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel import</button>';
+	html += '</div></section>';
 
 	return html;
 }
+
 
 // ── Bind Events ────────────────────────────────────────────────────
 
@@ -402,6 +401,7 @@ export function bindModelEvents(
 	$id("btn-add-model")?.addEventListener("click", () => {
 		callbacks.onOpenEditor(null);
 	});
+
 
 	// Edit buttons
 	document.querySelectorAll("[data-edit]").forEach((btn) => {
@@ -500,10 +500,53 @@ export function bindModelEvents(
 		bindEditorField("editor-id", "id");
 		bindEditorField("editor-name", "name");
 		bindEditorField("editor-api", "api");
+		bindEditorField("editor-baseUrl", "baseUrl");
 		bindEditorField("editor-reasoning", "reasoning");
 		bindEditorField("editor-contextWindow", "contextWindow");
 		bindEditorField("editor-maxTokens", "maxTokens");
+		bindEditorField("editor-thinkingLevelMap", "thinkingLevelMap");
+		bindEditorField("editor-compat", "compat");
 		bindEditorField("editor-headers", "headers");
+
+		const updateInputModes = () => {
+			const modes = buildEditorInputModes(
+				($id("editor-input-text") as HTMLInputElement | null)?.checked === true,
+				($id("editor-input-image") as HTMLInputElement | null)?.checked === true,
+			);
+			callbacks.onUpdateEditor("input", modes);
+		};
+		for (const id of ["editor-input-text", "editor-input-image"]) {
+			const el = $id(id) as HTMLInputElement | null;
+			el?.addEventListener("change", () => {
+				rememberEditorFocus(el);
+				updateInputModes();
+			});
+		}
+
+		const updateCost = () => {
+			try {
+				const values: Partial<Record<"input" | "output" | "cacheRead" | "cacheWrite", string>> = {};
+				for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+					values[key] = ($id(`editor-cost-${key}`) as HTMLInputElement | null)?.value ?? "";
+				}
+				const tiersText = ($id("editor-cost-tiers") as HTMLTextAreaElement | null)?.value ?? "";
+				callbacks.onUpdateEditor("cost", buildEditorCost(values, tiersText));
+			} catch {
+				// Keep incomplete numeric/JSON input visible; commit after it becomes valid.
+			}
+		};
+		for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+			const el = $id(`editor-cost-${key}`) as HTMLInputElement | null;
+			el?.addEventListener("input", () => {
+				rememberEditorFocus(el);
+				updateCost();
+			});
+		}
+		const tiers = $id("editor-cost-tiers") as HTMLTextAreaElement | null;
+		tiers?.addEventListener("input", () => {
+			rememberEditorFocus(tiers);
+			updateCost();
+		});
 
 		listen("btn-editor-save", "click", () => {
 			if (state.editor?.handle) {
@@ -564,7 +607,7 @@ export function bindModelEvents(
 			if (!query) return;
 			const resultsDiv = $id("catalog-results");
 			if (!resultsDiv) return;
-			resultsDiv.innerHTML = '<div class="status-loading">Searching…</div>';
+			resultsDiv.innerHTML = '<div class="catalog-loading" aria-live="polite">Searching the official catalog…</div>';
 			try {
 				const entries = await modelApi.fetchCatalog(query, 50);
 				let html = "";
@@ -574,10 +617,10 @@ export function bindModelEvents(
 					html += `<span class="catalog-id"><code>${esc(entry.modelId)}</code></span>`;
 					html += `<span class="catalog-name">${esc(name)}</span>`;
 					html += `<span class="catalog-provider">${esc(entry.provider)}</span>`;
-					html += '<button class="btn-save btn-sm">Select</button>';
+					html += '<button class="btn-secondary btn-sm" type="button">Use</button>';
 					html += "</div>";
 				}
-				if (entries.length === 0) html = '<div class="catalog-empty">No results</div>';
+				if (entries.length === 0) html = '<div class="catalog-empty">No official models matched this search. Try another ID.</div>';
 				resultsDiv.innerHTML = html;
 
 				resultsDiv.querySelectorAll("[data-catalog]").forEach((div) => {
@@ -595,7 +638,7 @@ export function bindModelEvents(
 					});
 				});
 			} catch {
-				resultsDiv.innerHTML = '<div class="error-msg">Catalog unavailable</div>';
+				resultsDiv.innerHTML = '<div class="error-msg"><strong>Catalog unavailable</strong><span>Try again, or enter the model details manually.</span></div>';
 			}
 		});
 	}
@@ -604,7 +647,7 @@ export function bindModelEvents(
 	listen("btn-discover", "click", async () => {
 		if (!state.selectedProvider || !modelApi) return;
 		const discoverBtn = $id("btn-discover");
-		if (discoverBtn) discoverBtn.textContent = "Discovering…";
+		if (discoverBtn) { discoverBtn.textContent = "Checking /models…"; discoverBtn.setAttribute("disabled", ""); }
 
 		try {
 			const providers = (state.draft as Record<string, unknown>).providers as Record<
@@ -625,7 +668,7 @@ export function bindModelEvents(
 				importArea.appendChild(errDiv);
 			}
 		} finally {
-			if (discoverBtn) discoverBtn.textContent = "Import /models";
+			if (discoverBtn) { discoverBtn.textContent = "Import from /models"; discoverBtn.removeAttribute("disabled"); }
 		}
 	});
 

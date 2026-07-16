@@ -339,6 +339,10 @@ describe("VendorWebServer HTTP", () => {
 			expect(res.headers.get("cache-control")).toBe("no-store");
 			expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
 
+			writeFileSync(join(assetDir, "index.html"), "<!DOCTYPE html><body>Updated</body>");
+			const refreshed = await fetchOnce(assetPort, "/");
+			expect(await refreshed.text()).toContain("Updated");
+
 			const unknown = await fetchOnce(assetPort, "/nonexistent");
 			expect(unknown.status).toBe(404);
 
