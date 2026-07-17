@@ -11,9 +11,9 @@
 
 ## 当前方向
 
-- 双界面 `pi-vendor` 骨架已交付并关闭；**Web 产品化升级**进行中（epic draft：日常可用、官方填充、主路径与密度）。
+- `pi-vendor` 的双界面与 **Web 产品化升级**均已关闭：Web 现在是日常可用的本地完整管理 workspace，含官方模板、`/models` 导入、完整模型 editor、Raw JSON/review 与安全 draft 提交。
 - `pi-web-search` 已完成安全与预算类 hardening（SSRF、body 预算、proxy 隔离、无效配置保护等）。
-- 近期优先：vendor Web 产品化分批 issue；按需发版与回归。
+- 近期优先：两个已发布扩展的维护、回归与按需发版。
 
 ## 能力地图
 
@@ -52,6 +52,7 @@
 - 改 web-search：[`pi-web-search/index.md`](pi-web-search/index.md)
 - 改 pi-vendor：[`pi-vendor/index.md`](pi-vendor/index.md)
 - 追溯 dual-UI 决策：closed epic [`.cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md`](../epics/2026/07/12/vendor-dual-ui-manager/spec.md)
+- 追溯 Web 产品化决策：closed epic [`.cs/epics/2026/07/14/vendor-web-productization/spec.md`](../epics/2026/07/14/vendor-web-productization/spec.md)
 
 ## 当前边界
 

@@ -9,7 +9,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
 ## 它负责什么
 
 - **TUI `/vendor`**：Add model / Add provider / Open Web / Cancel；Save 恰好一次 commit + registry refresh；Cancel / Esc / Add another 零写入。
-- **Web `/vendor web`**：loopback 一次性 modal；内存 draft；Save 校验 + revision + SecretRef hydration + 原子写；Cancel / Pi Esc / session_shutdown 回收 server。
+- **Web `/vendor web`**：loopback 一次性完整管理 workspace；浏览器内 draft；固定 command bar / provider rail 与独立主区；结构化全模型字段、官方模板、`/models` 导入、Raw JSON 与变更审查。只有 `Save & close` 执行校验、revision、SecretRef hydration 和原子写；Cancel / Pi Esc / session_shutdown 回收 server。
 - **Config core**：快照、局部校验、Pi `ModelRegistry` oracle、revision 条件提交、provider/model 纯 mutation（`MutationResult` / `ConfigCoreError`）。
 - **Model source core**：官方 catalog、enrich、OpenAI-compatible `/models` 发现（信任预检、截止时间、体预算、typed errors、closed DTO）。
 - **密钥**：已知 secret 路径以 opaque `SecretRef` 进浏览器；exact path + baseRevision hydration；移动/伪造 fail closed。
@@ -37,9 +37,31 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
 |---|---|
 | 快速给已有 provider 加模型 | `/vendor` → Add model |
 | 最短路径新建 provider | `/vendor` → Add provider |
-| 完整 CRUD / Raw JSON / 批量导入 | `/vendor web` 或 TUI Open Web |
+| 完整 CRUD / 官方模板 / `/models` 导入 / Raw JSON | `/vendor web` 或 TUI Open Web |
+| 在 Web 新建或编辑模型 | Models → Add model to draft → 结构化字段或官方模板 |
+| 批量导入 provider 的模型 | Models → Import from `/models` → 选择模板与模型 → Add/Replace in draft |
 | 冲突 / 陈旧 revision | Web `409 config_changed` → 关闭重开 |
 | Secret 路径失效 | 重输或删除，禁止隐式 remap |
+
+## Web 完整管理
+
+Web 是一次性的本地配置 workspace，不是常驻控制台。固定 command bar 和 provider rail；只有主 workspace 滚动。它在一个 draft 中组合 provider、模型、官方模板、导入、Raw JSON 与 review，所有写盘仍归同一个安全提交路径。
+
+```text
+┌ Pi Vendor ─ draft 状态 ─────────────────────── command bar ─┐
+│ No changes: [Close]                                          │
+│ Unsaved changes: [Discard & close] [Review] [Save & close]   │
+├─ Providers（固定）──┬─ Provider workspace（独立滚动）─────────┤
+│                    │ Connection / optional settings          │
+│                    │ Models: [Import] [Add model to draft]   │
+│                    │ Raw JSON / Review                       │
+└────────────────────┴─────────────────────────────────────────┘
+```
+
+- **一个 draft，一次写入**：`Save & close` 是唯一写入 `models.json` 的终态动作；Raw JSON、模型编辑、官方模板和导入都只更新 draft。clean draft 只可 Close；有变更时才出现 Discard、Review 与 Save。
+- **模型主路径**：结构化 editor 覆盖当前 closed model DTO 字段（identity、limits、capabilities、thinking map、cost、compat、headers）；未知或罕见字段保留 Raw JSON 出口。新模型可搜索官方模板或手填；编辑时官方模板覆盖非密钥模板字段前需要确认，headers/密钥不覆盖。
+- **运行时模型来源**：官方模板始终取 active Pi runtime 的 catalog，不取 workspace peer dependency；`/models` 导入先在 provider endpoint 发现 id，再解析模板并在 import dialog 中加到或替换 draft。
+- **可恢复与密钥**：确认框说明具体对象、后果与保留路径。已配置密钥在浏览器中只显示为 configured，永不显示原值；删除、移动或复制仍按 SecretRef 既有 fail-closed 规则处理。
 
 ## 子系统地图
 
@@ -64,7 +86,7 @@ Config core ──► TUI quick workflows
 - **Pi 作兼容 oracle**：不复制完整 schema；未知字段 round-trip。
 - **严格 JSON 提交**：canonical `JSON.stringify(..., null, 2)` + newline；不保留注释/BOM。
 - **安全默认**：127.0.0.1、随机端口与 bearer、CSP、no-store、0o600 原子写。
-- **关闭后的 polish**：第一版 dual-UI owner 曾接受「可用即关」；现已另开 epic **Web 产品化升级**（`.cs/epics/2026/07/14/vendor-web-productization/`）补能力缺口与体验，不在此重复当已完成。
+- **Web 产品化已关闭**：Web 现为日常可用的完整本地配置 workspace；历史范围与决策见 closed epic [`.cs/epics/2026/07/14/vendor-web-productization/spec.md`](../../epics/2026/07/14/vendor-web-productization/spec.md)。
 
 ## 当前边界
 
@@ -76,4 +98,5 @@ Config core ──► TUI quick workflows
 - 包 README：`packages/pi-vendor/README.md`
 - closed epic：`.cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md`
 - closed feature issues：`.cs/issues/2026/07/12/closed-vendor-*.md`
+- closed Web productization epic：`.cs/epics/2026/07/14/vendor-web-productization/spec.md`
 - 旧 design/QA 全量：`.cs/archive/codestable-legacy/features/2026-07-12-vendor-*/`
