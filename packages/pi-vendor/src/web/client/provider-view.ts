@@ -72,11 +72,11 @@ function renderProviderSidebar(state: ProviderManagerState): string {
 	let html = '<aside class="sidebar" aria-label="Provider navigation">';
 	html += '<div class="sidebar-header">';
 	html += `<div><h2>Providers</h2><p>${keys.length} configured</p></div>`;
-	html += '<button class="btn-add" id="btn-add-provider" type="button">New</button>';
+	html += '<button class="btn-add" id="btn-add-provider" type="button">Add provider</button>';
 	html += '</div>';
 
 	if (keys.length === 0) {
-		html += '<div class="sidebar-empty"><strong>No providers yet</strong><span>Create one to start adding models.</span></div>';
+		html += '<div class="sidebar-empty"><strong>No providers yet</strong><span>Add a provider to start configuring models.</span></div>';
 	} else {
 		html += '<ul class="provider-list" role="listbox" aria-label="Providers">';
 		for (const key of keys) {
@@ -103,12 +103,12 @@ function renderProviderDetail(
 	slots: SecretSlot[],
 ): string {
 	if (!state.selectedProvider) {
-		return '<main class="detail detail-empty" id="main-content"><div class="empty-state"><h1>Select a provider</h1><p>Choose one from the rail, or create a provider to begin.</p></div></main>';
+		return '<main class="detail detail-empty" id="main-content"><div class="empty-state"><h1>Select a provider</h1><p>Choose one to edit it, or add a provider to start.</p></div></main>';
 	}
 
 	const providers = (state.draft as Record<string, unknown>).providers as Record<string, Record<string, unknown>>;
 	const config = providers?.[state.selectedProvider];
-	if (!config) return '<main class="detail detail-empty" id="main-content"><div class="empty-state"><h1>Provider not found</h1><p>Close and reopen this manager to reload the configuration.</p></div></main>';
+	if (!config) return '<main class="detail detail-empty" id="main-content"><div class="empty-state"><h1>Provider unavailable</h1><p>Close this manager and reopen it to load the latest configuration.</p></div></main>';
 
 	const modelCount = Array.isArray(config.models) ? config.models.length : 0;
 	let html = '<main class="detail" id="main-content">';
@@ -118,7 +118,7 @@ function renderProviderDetail(
 	html += `<p class="workspace-subtitle">${modelCount} model${modelCount !== 1 ? "s" : ""} configured</p></div>`;
 	html += '<div class="detail-actions">';
 	html += '<button class="btn-secondary" id="btn-rename" type="button">Rename</button>';
-	html += '<button class="btn-danger" id="btn-delete" type="button">Delete</button>';
+	html += '<button class="btn-danger" id="btn-delete" type="button">Delete provider</button>';
 	html += '</div></div>';
 
 	if (state.errors.length > 0) {
@@ -141,7 +141,7 @@ function renderProviderDetail(
 	html += '</div></section>';
 
 	html += '<section class="settings-section" aria-labelledby="settings-heading">';
-	html += '<div class="section-heading"><div><h2 id="settings-heading">Provider settings</h2><p>Add only the options this provider needs.</p></div></div>';
+	html += '<div class="section-heading"><div><h2 id="settings-heading">Optional settings</h2><p>Add only the options this provider needs.</p></div></div>';
 	const existingOptional = optionalFields.filter((f) => hasKeys(config, f.key));
 	if (existingOptional.length > 0) {
 		html += '<div class="form-grid">';
@@ -150,7 +150,7 @@ function renderProviderDetail(
 	}
 	const missingOptional = optionalFields.filter((f) => !hasKeys(config, f.key));
 	if (missingOptional.length > 0) {
-		html += '<div class="add-setting"><label for="add-setting-select">Add setting</label><select id="add-setting-select">';
+		html += '<div class="add-setting"><label for="add-setting-select">Add optional setting</label><select id="add-setting-select">';
 		html += '<option value="">Choose a setting…</option>';
 		for (const fd of missingOptional) html += `<option value="${escAttr(fd.key)}">${esc(fd.label)}</option>`;
 		html += '</select></div>';
@@ -159,7 +159,7 @@ function renderProviderDetail(
 	}
 	html += '</section>';
 
-	html += '<div class="workspace-tools" aria-label="Configuration tools"><button class="btn-secondary" id="btn-toggle-raw" type="button">Edit raw JSON</button></div>';
+	html += '<div class="workspace-tools" aria-label="Configuration tools"><button class="btn-secondary" id="btn-toggle-raw" type="button">Edit configuration as JSON</button></div>';
 	html += '<div id="models-workspace"></div></main>';
 	return html;
 }
@@ -181,12 +181,12 @@ function renderField(
 	switch (fd.kind) {
 		case "secret-text": {
 			if (isSecretRef(rawValue) || slot) {
-				inputHtml = `<div class="secret-badge" id="${fieldId}" data-secret-field="${escAttr(fd.key)}">configured (unchanged)</div>`;
+				inputHtml = `<div class="secret-badge" id="${fieldId}" data-secret-field="${escAttr(fd.key)}">Configured</div>`;
 				inputHtml += `<div class="secret-actions">`;
-				inputHtml += `<button type="button" class="btn-replace-secret" data-field="${escAttr(fd.key)}">Replace</button>`;
-				inputHtml += `<button type="button" class="btn-remove-secret" data-field="${escAttr(fd.key)}">Remove</button>`;
+				inputHtml += `<button type="button" class="btn-replace-secret" data-field="${escAttr(fd.key)}">Replace secret</button>`;
+				inputHtml += `<button type="button" class="btn-remove-secret" data-field="${escAttr(fd.key)}">Remove secret</button>`;
 				inputHtml += `</div>`;
-				inputHtml += `<div class="hint">The current value stays private. Replace enters a new value; Remove deletes it.</div>`;
+				inputHtml += `<div class="hint">The saved value stays private. Replacing it stores a new value; removing it deletes it when you save.</div>`;
 			} else {
 				const val = typeof rawValue === "string" ? rawValue : "";
 				inputHtml = `<input type="password" id="${fieldId}" value="${escAttr(val)}" autocomplete="off" aria-describedby="${errorId}">`;
@@ -201,7 +201,7 @@ function renderField(
 		case "json": {
 			const jsonVal = rawValue !== undefined && rawValue !== null ? JSON.stringify(rawValue, null, 2) : "";
 			inputHtml = `<textarea id="${fieldId}" rows="3" autocomplete="off" aria-describedby="${errorId}" data-json-field="${escAttr(fd.key)}">${esc(jsonVal)}</textarea>`;
-			inputHtml += `<div class="hint">Opaque secret refs (pi-vendor-secret:…) mean configured unchanged. Moving fails; deleting removes the secret.</div>`;
+			inputHtml += `<div class="hint">Configured secrets stay protected. Keep their entries in place; moving or copying one cannot be saved.</div>`;
 			break;
 		}
 		case "text":
@@ -224,7 +224,7 @@ function renderField(
 
 	const removeBtn = fd.common || fd.required
 		? ""
-		: ` <button class="btn-remove-field" data-field="${escAttr(fd.key)}" title="Remove ${escAttr(fd.label)}">×</button>`;
+		: ` <button class="btn-remove-field" data-field="${escAttr(fd.key)}" title="Remove ${escAttr(fd.label)}">Remove setting</button>`;
 
 	const errHtml = errorMsg
 		? `<div id="${errorId}" class="field-error" role="alert">${esc(errorMsg)}</div>`
@@ -244,6 +244,7 @@ export function showConfirmDialog(
 	title: string,
 	message: string,
 	confirmLabel: string,
+	cancelLabel = "Keep editing",
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		const existing = document.getElementById("confirm-dialog");
@@ -256,23 +257,19 @@ export function showConfirmDialog(
 				<h3>${esc(title)}</h3>
 				<p>${esc(message)}</p>
 				<div class="dialog-actions">
-					<button type="submit" class="btn-cancel" value="cancel" autofocus>Cancel</button>
+					<button type="submit" class="btn-quiet" value="cancel" autofocus>${esc(cancelLabel)}</button>
 					<button type="submit" class="btn-save" value="confirm">${esc(confirmLabel)}</button>
 				</div>
 			</form>
 		`;
 		document.body.appendChild(dialog);
-
 		dialog.addEventListener("close", () => {
 			const val = dialog.returnValue;
 			dialog.remove();
 			resolve(val === "confirm");
 		});
-
 		dialog.showModal();
-		// First-safe focus: Cancel (not destructive confirm).
-		const cancelBtn = dialog.querySelector('button[value="cancel"]') as HTMLButtonElement | null;
-		cancelBtn?.focus();
+		(dialog.querySelector('button[value="cancel"]') as HTMLButtonElement | null)?.focus();
 	});
 }
 
@@ -280,6 +277,7 @@ export function showPromptDialog(
 	title: string,
 	label: string,
 	defaultValue: string,
+	confirmLabel = "Continue",
 ): Promise<string | null> {
 	return new Promise((resolve) => {
 		const existing = document.getElementById("prompt-dialog");
@@ -293,20 +291,18 @@ export function showPromptDialog(
 				<label for="prompt-input">${esc(label)}</label>
 				<input type="text" id="prompt-input" value="${escAttr(defaultValue)}" autocomplete="off">
 				<div class="dialog-actions">
-					<button type="submit" class="btn-cancel" value="cancel">Cancel</button>
-					<button type="submit" class="btn-save" value="confirm">OK</button>
+					<button type="submit" class="btn-quiet" value="cancel">Cancel</button>
+					<button type="submit" class="btn-save" value="confirm">${esc(confirmLabel)}</button>
 				</div>
 			</form>
 		`;
 		document.body.appendChild(dialog);
-
 		dialog.addEventListener("close", () => {
 			const val = dialog.returnValue;
 			const input = dialog.querySelector("#prompt-input") as HTMLInputElement | null;
 			dialog.remove();
 			resolve(val === "confirm" ? (input?.value ?? null) : null);
 		});
-
 		dialog.showModal();
 		const input = dialog.querySelector("#prompt-input") as HTMLInputElement | null;
 		input?.focus();
@@ -334,8 +330,11 @@ export function renderApp(
 	const sidebar = renderProviderSidebar(state);
 	const detail = renderProviderDetail(state, fieldDescs, state.secretSlots);
 	const draftState = state.dirty
-		? '<span class="command-status is-dirty" aria-live="polite">Draft changes</span>'
-		: '<span class="command-status" aria-live="polite">All changes saved</span>';
+		? '<span class="command-status is-dirty" aria-live="polite">Unsaved changes</span>'
+		: '<span class="command-status" aria-live="polite">No changes</span>';
+	const headerActions = state.dirty
+		? '<button class="btn-quiet" id="btn-header-cancel" type="button">Discard &amp; close</button><button class="btn-secondary" id="btn-header-preview" type="button">Review changes</button><button class="btn-save" id="btn-header-save" type="button">Save &amp; close</button>'
+		: '<button class="btn-quiet" id="btn-header-cancel" type="button">Close</button>';
 
 	root.innerHTML = `
 		<a class="skip-link" href="#main-content">Skip to workspace</a>
@@ -343,9 +342,7 @@ export function renderApp(
 			<div class="brand-lockup"><span class="brand-mark" aria-hidden="true">π</span><div><strong>Pi Vendor</strong><span>Local configuration</span></div></div>
 			${draftState}
 			<div class="header-actions">
-				<button class="btn-quiet" id="btn-header-cancel" type="button">Cancel</button>
-				<button class="btn-secondary" id="btn-header-preview" type="button">Review changes</button>
-				<button class="btn-save" id="btn-header-save" type="button">Save &amp; Close</button>
+				${headerActions}
 			</div>
 		</header>
 		<div class="layout">${sidebar}${detail}</div>
@@ -353,7 +350,7 @@ export function renderApp(
 
 	// Bind sidebar events
 	listen("btn-add-provider", "click", async () => {
-		const name = await showPromptDialog("Add Provider", "Provider key", "");
+		const name = await showPromptDialog("Add provider", "Provider name", "", "Add provider");
 		if (name) callbacks.onCreate(name);
 	});
 
@@ -373,7 +370,7 @@ export function renderApp(
 
 	// Bind detail events
 	listen("btn-rename", "click", async () => {
-		const newName = await showPromptDialog("Rename Provider", "New key", state.selectedProvider ?? "");
+		const newName = await showPromptDialog("Rename provider", "Provider name", state.selectedProvider ?? "", "Rename provider");
 		if (!newName || !state.selectedProvider || newName === state.selectedProvider) return;
 		callbacks.onRename(state.selectedProvider, newName, "reject");
 	});
@@ -395,7 +392,7 @@ export function renderApp(
 			msg += `\n${secrets.total} secret(s) will be removed (${parts.join(", ")}).`;
 		}
 
-		const confirmed = await showConfirmDialog("Delete Provider", msg, "Delete");
+		const confirmed = await showConfirmDialog("Delete provider", msg, "Delete provider", "Keep provider");
 		if (confirmed) callbacks.onDelete(state.selectedProvider);
 	});
 
@@ -434,7 +431,7 @@ export function renderApp(
 					if (err) err.textContent = "";
 				} catch {
 					const err = $id(`field-${fd.key}-error`);
-					if (err) err.textContent = "Invalid JSON";
+					if (err) err.textContent = "Enter valid JSON before continuing.";
 				}
 			});
 			el.addEventListener("focus", () => {
@@ -464,7 +461,7 @@ export function renderApp(
 			if (!state.selectedProvider) return;
 			const field = (btn as HTMLElement).getAttribute("data-field") as ProviderFieldKey | null;
 			if (!field) return;
-			const value = await showPromptDialog("Replace secret", "New value (will not be revealed later)", "");
+			const value = await showPromptDialog(`Replace ${field}`, "New secret value", "", "Replace secret");
 			if (value === null) return;
 			callbacks.onReplaceSecret(state.selectedProvider, field, value);
 		});
@@ -476,8 +473,9 @@ export function renderApp(
 			if (!field) return;
 			const confirmed = await showConfirmDialog(
 				"Remove secret",
-				"Remove this configured secret? The original value will not be recoverable from this page.",
-				"Remove",
+				"Remove this configured secret? The saved value cannot be recovered from this page.",
+				"Remove secret",
+				"Keep secret",
 			);
 			if (confirmed) callbacks.onRemoveSecret(state.selectedProvider, field);
 		});

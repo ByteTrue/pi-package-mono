@@ -13,13 +13,13 @@ export function renderRawView(state: ProviderManagerState): string {
 	let html = '<main class="standalone-view raw-editor" id="main-content">';
 	html += '<div class="standalone-header raw-header"><div>';
 	html += '<p class="workspace-kicker">Advanced</p><h1>Raw JSON</h1>';
-	html += '<p>Edit the complete configuration. Apply validates the draft before returning to the workspace.</p></div>';
+	html += '<p>Edit the complete configuration. Applying validates this JSON and updates your draft; nothing is saved until Save &amp; close.</p></div>';
 	html += '<div class="raw-actions">';
-	html += '<button class="btn-quiet" id="btn-discard-raw" type="button">Back to configuration</button>';
-	html += '<button class="btn-save" id="btn-apply-raw" type="button">Apply JSON</button>';
+	html += '<button class="btn-quiet" id="btn-discard-raw" type="button">Discard JSON edits</button>';
+	html += '<button class="btn-save" id="btn-apply-raw" type="button">Apply JSON to draft</button>';
 	html += '</div></div>';
 	if (secretCount > 0) {
-		html += `<div class="raw-secret-hint"><strong>${secretCount} configured secret${secretCount === 1 ? "" : "s"}</strong><span>Keep their references in the same place. Moving or copying one cannot be saved.</span></div>`;
+		html += `<div class="raw-secret-hint"><strong>${secretCount} configured secret${secretCount === 1 ? "" : "s"}</strong><span>Keep their entries in the same place. Moving or copying one cannot be saved.</span></div>`;
 	}
 	html += `<textarea id="raw-textarea" rows="20" autocomplete="off" spellcheck="false" aria-label="Raw configuration JSON">${esc(rawText)}</textarea>`;
 	html += `<div id="raw-error" class="field-error" role="alert">${rawError ? esc(rawError) : ""}</div>`;

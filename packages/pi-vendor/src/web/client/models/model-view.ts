@@ -154,7 +154,7 @@ export function renderModelSection(
 	let html = '<section class="model-section" aria-labelledby="models-heading">';
 	html += '<div class="section-heading model-section-heading"><div>';
 	html += '<h2 id="models-heading">Models</h2>';
-	html += `<p>${rows.length} visible model${rows.length !== 1 ? "s" : ""}. Search, edit, or add a configuration.</p>`;
+	html += `<p>${rows.length} visible model${rows.length !== 1 ? "s" : ""}. Search, edit, or add models to this draft.</p>`;
 	html += '</div></div>';
 
 	html += '<div class="model-toolbar">';
@@ -165,7 +165,7 @@ export function renderModelSection(
 	html += `<option value="name"${state.visualSort === "name" ? " selected" : ""}>Model name</option>`;
 	html += '</select><div class="model-actions">';
 	html += '<button class="btn-secondary" id="btn-import-models" type="button">Import from /models</button>';
-	html += '<button class="btn-save" id="btn-add-model" type="button">Add model</button>';
+	html += '<button class="btn-save" id="btn-add-model" type="button">Add model to draft</button>';
 	html += '</div></div>';
 
 	if (rows.length === 0) {
@@ -173,7 +173,7 @@ export function renderModelSection(
 		if (state.modelQuery) {
 			html += `<strong>No matching models</strong><span>Try a different name or model ID.</span>`;
 		} else {
-			html += '<strong>No models configured</strong><span>Add a model, find one in the official catalog, or import from this provider.</span>';
+			html += '<strong>No models in this draft</strong><span>Add a model, use an official template, or import from this provider.</span>';
 		}
 		html += '</div>';
 	} else {
@@ -193,7 +193,7 @@ export function renderModelSection(
 			html += `<td data-label="Context" class="numeric-value">${esc(ctxWin)}</td>`;
 			html += '<td data-label="Actions" class="model-row-actions">';
 			html += `<button class="btn-secondary btn-sm" data-edit="${escAttr(JSON.stringify(handle))}" aria-label="Edit ${escAttr(id)}">Edit</button>`;
-			html += `<button class="btn-danger btn-sm" data-delete="${escAttr(JSON.stringify({ providerKey: state.selectedProvider, modelId: id }))}" aria-label="Delete ${escAttr(id)}">Delete</button>`;
+			html += `<button class="btn-danger btn-sm" data-delete="${escAttr(JSON.stringify({ providerKey: state.selectedProvider, modelId: id }))}" aria-label="Delete ${escAttr(id)} from draft">Delete model</button>`;
 			html += '</td></tr>';
 		}
 		html += '</tbody></table></div>';
@@ -227,12 +227,12 @@ export function renderModelEditor(
 	if (!state.editor) return "";
 
 	const isNew = !state.editor.handle;
-	const title = isNew ? "Add Model" : `Edit Model: ${esc(String(state.editor.value.id ?? ""))}`;
+	const title = isNew ? "Add model to draft" : `Edit model in draft: ${esc(String(state.editor.value.id ?? ""))}`;
 
 	let html = '<dialog id="model-editor"><div class="model-editor">';
 	html += '<div class="editor-header"><div>';
 	html += `<h2>${title}</h2>`;
-	html += `<p>${isNew ? "Start with an ID, then choose an official configuration or enter the details yourself." : "Changes stay in this draft until you save the session."}</p>`;
+	html += '<p>Choose an official template or enter values yourself. Nothing is written until you save &amp; close.</p>';
 	html += '</div></div>';
 	html += '<div class="editor-layout">';
 	html += '<section class="editor-config-pane" aria-label="Model configuration">';
@@ -252,7 +252,7 @@ export function renderModelEditor(
 	html += '<div class="field editor-fill-row field-span">';
 	html += '<label for="editor-id">Model ID</label><div class="editor-fill-controls">';
 	html += `<input type="text" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="e.g. claude-fable-5">`;
-	html += '<button type="button" class="btn-secondary" id="btn-editor-fill">Find official config</button></div></div>';
+	html += '<button type="button" class="btn-secondary" id="btn-editor-fill">Search official templates</button></div></div>';
 	html += '<div class="editor-form-grid">';
 	html += `<div class="field"><label for="editor-name">Display name</label><input type="text" id="editor-name" value="${escAttr(nameVal)}" autocomplete="off"></div>`;
 	html += '<div class="field"><label for="editor-api">API</label>';
@@ -265,7 +265,7 @@ export function renderModelEditor(
 	html += `<div class="field"><label for="editor-maxTokens">Max output tokens</label><input type="text" inputmode="numeric" id="editor-maxTokens" value="${escAttr(maxToks)}" autocomplete="off"></div>`;
 	html += '</div></div>';
 
-	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Capabilities</h3><p>Inputs and reasoning behavior exposed to Pi.</p></div>';
+	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Capabilities</h3><p>What Pi can send to and request from this model.</p></div>';
 	html += '<div class="capability-row">';
 	html += `<label class="checkbox-label"><input type="checkbox" id="editor-reasoning"${reasoning ? " checked" : ""}> Supports reasoning</label>`;
 	html += '<fieldset class="input-capabilities"><legend>Input</legend>';
@@ -281,7 +281,7 @@ export function renderModelEditor(
 	html += '</div>';
 	html += `<div class="field"><label for="editor-cost-tiers">Tier overrides (JSON)</label><textarea id="editor-cost-tiers" rows="3" autocomplete="off" spellcheck="false" placeholder="Optional array of tier overrides">${esc(jsonText(cost.tiers))}</textarea></div></div>`;
 
-	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Compatibility & headers</h3><p>Advanced Pi adapter behavior and model-specific headers.</p></div>';
+	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Compatibility &amp; headers</h3><p>Advanced adapter settings and model-specific headers.</p></div>';
 	html += `<div class="field"><label for="editor-compat">Compatibility (JSON)</label><textarea id="editor-compat" rows="4" autocomplete="off" spellcheck="false" placeholder='{"forceAdaptiveThinking": true}'>${esc(jsonText(editorValue.compat))}</textarea></div>`;
 	html += `<div class="field"><label for="editor-headers">Headers (JSON)</label><textarea id="editor-headers" rows="4" autocomplete="off" spellcheck="false" placeholder="Optional model-specific headers">${esc(jsonText(editorValue.headers))}</textarea></div></div>`;
 
@@ -297,12 +297,12 @@ export function renderModelEditor(
 	const candidates = state.editor.fillCandidates ?? [];
 	html += '<aside class="editor-catalog-pane" aria-labelledby="editor-catalog-heading">';
 	html += '<div class="editor-catalog-heading"><div><h3 id="editor-catalog-heading">Official configurations</h3>';
-	html += '<p>Choose the provider template that matches your endpoint.</p></div>';
+	html += '<p>Choose the template that matches this provider endpoint.</p></div>';
 	html += `<span class="candidate-count">${candidates.length || "—"}</span></div>`;
 	html += `<div id="editor-fill-status" class="editor-fill-status${fillErr}" aria-live="polite">${esc(fillStatus)}</div>`;
 	html += '<div id="editor-fill-results" class="editor-fill-results" tabindex="0" aria-label="Official configuration candidates">';
 	if (candidates.length === 0) {
-		html += '<div class="editor-catalog-empty"><strong>No results yet</strong><span>Enter a model ID to search Pi’s built-in catalog.</span></div>';
+		html += '<div class="editor-catalog-empty"><strong>Search official templates</strong><span>Enter a model ID to find Pi’s built-in templates.</span></div>';
 	} else {
 		for (let i = 0; i < candidates.length; i++) {
 			const entry = candidates[i]!;
@@ -312,14 +312,14 @@ export function renderModelEditor(
 			html += `<strong>${esc(name)}</strong><code>${esc(entry.modelId)}</code>`;
 			html += '</span>';
 			html += `<span class="catalog-provider">${esc(entry.provider)}</span>`;
-			html += `<button type="button" class="btn-secondary btn-sm" data-fill-pick="${i}">Use</button></div>`;
+			html += `<button type="button" class="btn-secondary btn-sm" data-fill-pick="${i}">Use template</button></div>`;
 		}
 	}
 	html += '</div></aside></div>';
 
 	html += '<div class="dialog-actions">';
-	html += '<button class="btn-quiet" id="btn-editor-cancel" type="button">Keep editing later</button>';
-	html += `<button class="btn-save" id="btn-editor-save" type="button">${isNew ? "Add model" : "Save model"}</button>`;
+	html += '<button class="btn-quiet" id="btn-editor-cancel" type="button">Discard model edits</button>';
+	html += `<button class="btn-save" id="btn-editor-save" type="button">${isNew ? "Add to draft" : "Update draft"}</button>`;
 	html += '</div></div></dialog>';
 	return html;
 
@@ -331,10 +331,10 @@ export function renderCatalogSearch(state: ModelManagerState): string {
 	if (!state.catalogAvailable) return "";
 
 	let html = '<details class="catalog-section">';
-	html += '<summary><span><strong>Official catalog</strong><small>Start a new model from a Pi template</small></span></summary>';
+	html += '<summary><span><strong>Official templates</strong><small>Search Pi’s built-in model configurations</small></span></summary>';
 	html += '<div class="catalog-body"><div class="catalog-search">';
-	html += '<input type="search" id="catalog-query" placeholder="Search official models" autocomplete="off" aria-label="Search official models">';
-	html += '<button class="btn-secondary" id="btn-catalog-search" type="button">Search</button></div>';
+	html += '<input type="search" id="catalog-query" placeholder="Search model ID or name" autocomplete="off" aria-label="Search official model templates">';
+	html += '<button class="btn-secondary" id="btn-catalog-search" type="button">Search templates</button></div>';
 	html += '<div id="catalog-results" class="catalog-results" aria-live="polite"></div></div></details>';
 
 	return html;
@@ -350,16 +350,24 @@ export function renderImportTray(state: ModelManagerState): string {
 	const enriching = state.importRows.filter((r) => r.state === "selected-unenriched").length;
 	const allSelected = state.importRows.length > 0 && selected.length === state.importRows.length;
 
+	const selectAllLabel = allSelected
+		? "Clear selection"
+		: state.importRows.length > 100 ? "Select first 100" : "Select all";
+	const readyCount = ready.length;
+	const actionDisabled = readyCount === 0 ? " disabled" : "";
+	const addLabel = readyCount === 1 ? "Add 1 to draft" : `Add ${readyCount} to draft`;
+	const replaceLabel = readyCount === 1 ? "Replace 1 in draft" : `Replace ${readyCount} in draft`;
+
 	let html = '<dialog id="import-dialog"><div class="import-dialog">';
-	html += '<div class="import-dialog-header"><div><h3 id="import-heading">Import from /models</h3>';
-	html += `<p class="import-status" aria-live="polite">${selected.length} selected · ${ready.length} ready`;
+	html += '<div class="import-dialog-header"><div><h3 id="import-heading">Import models</h3>';
+	html += `<p class="import-status" aria-live="polite">${selected.length} selected · ${readyCount} ready to add · ${state.importRows.length} found`;
 	if (enriching > 0) html += ` · resolving ${enriching}`;
-	html += ` · ${state.importRows.length} total · max 100</p></div>`;
+	html += "</p></div>";
 	html += '<div class="import-toolbar">';
-	html += `<button type="button" class="btn-secondary btn-sm" id="btn-import-select-all">${allSelected ? "Clear all" : "Select all"}</button>`;
+	html += `<button type="button" class="btn-secondary btn-sm" id="btn-import-select-all">${selectAllLabel}</button>`;
 	html += '</div></div>';
-	html += '<div class="import-table-wrapper" tabindex="0" aria-label="Discovered models"><table class="import-table">';
-	html += '<thead><tr><th class="import-check-col"></th><th>Model</th><th>Status</th><th>Details</th></tr></thead><tbody>';
+	html += '<div class="import-table-wrapper" tabindex="0" aria-label="Models discovered from this provider"><table class="import-table">';
+	html += '<thead><tr><th class="import-check-col"></th><th>Model</th><th>Status</th><th>Template</th></tr></thead><tbody>';
 	for (const row of state.importRows) {
 		const checked = row.selected ? " checked" : "";
 		const rowClass = row.selected ? " is-selected" : "";
@@ -374,17 +382,17 @@ export function renderImportTray(state: ModelManagerState): string {
 			html += '<div class="import-candidates">';
 			for (let i = 0; i < row.candidates.length; i++) {
 				const c = row.candidates[i]!;
-				html += `<button class="btn-secondary btn-sm" data-import-candidate="${escAttr(JSON.stringify({ id: row.id, index: i }))}">${esc(c.provider)}/${esc(c.modelId)}</button>`;
+				html += `<button class="btn-secondary btn-sm" data-import-candidate="${escAttr(JSON.stringify({ id: row.id, index: i }))}">Use ${esc(c.provider)} template</button>`;
 			}
 			html += "</div>";
 		}
-		if (row.state === "default-warning") html += `<button class="btn-secondary btn-sm" data-import-confirm-default="${escAttr(row.id)}">Use default</button>`;
+		if (row.state === "default-warning") html += `<button class="btn-secondary btn-sm" data-import-confirm-default="${escAttr(row.id)}">Use default template</button>`;
 		html += "</td></tr>";
 	}
 	html += '</tbody></table></div><div class="import-actions dialog-actions">';
-	html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Cancel</button>';
-	html += '<button class="btn-secondary" id="btn-import-apply-replace" type="button">Replace selected</button>';
-	html += '<button class="btn-save" id="btn-import-apply-skip" type="button">Add selected</button>';
+	html += '<button class="btn-quiet" id="btn-import-cancel" type="button">Close import</button>';
+	html += `<button class="btn-secondary" id="btn-import-apply-replace" type="button"${actionDisabled}>${replaceLabel}</button>`;
+	html += `<button class="btn-save" id="btn-import-apply-skip" type="button"${actionDisabled}>${addLabel}</button>`;
 	html += "</div></div></dialog>";
 	return html;
 }
@@ -392,15 +400,15 @@ export function renderImportTray(state: ModelManagerState): string {
 function statusLabel(state: ImportRow["state"]): string {
 	switch (state) {
 		case "selected-unenriched":
-			return "Resolving…";
+			return "Finding template…";
 		case "ready":
-			return "Ready";
+			return "Ready to add";
 		case "ambiguous":
-			return "Choose source";
+			return "Choose template";
 		case "default-warning":
-			return "Default";
+			return "Confirm default";
 		case "failed":
-			return "Failed";
+			return "Could not resolve";
 	}
 }
 
@@ -446,9 +454,10 @@ export function bindModelEvents(
 		btn.addEventListener("click", async () => {
 			const data = JSON.parse(btn.getAttribute("data-delete")!) as { providerKey: string; modelId: string };
 			const confirmed = await showConfirmDialog(
-				"Delete Model",
-				`Delete model "${data.modelId}"?`,
-				"Delete",
+				"Delete model from draft",
+				`Delete model "${data.modelId}" from this draft? The saved file stays unchanged until you save & close.`,
+				"Delete model",
+				"Keep model",
 			);
 			if (confirmed) callbacks.onDelete(data.providerKey, data.modelId);
 		});
@@ -597,15 +606,16 @@ export function bindModelEvents(
 			const applyWithConfirm = async (official: Record<string, unknown>, warning?: string) => {
 				if (state.editor?.handle) {
 					const ok = await showConfirmDialog(
-						"Fill from official",
-						"Replace template fields (name, api, context, …) with the official catalog values? Headers and secrets stay unchanged.",
-						"Fill",
+						"Apply official template",
+						"Replace template fields with this official template? Your headers and configured secrets stay unchanged.",
+						"Apply template",
+						"Keep current values",
 					);
 					if (!ok) return;
 				}
 				callbacks.onApplyTemplate(
 					official,
-					warning ?? "Filled template fields from official source.",
+					warning ?? "Official template applied to this draft.",
 				);
 			};
 
@@ -625,7 +635,7 @@ export function bindModelEvents(
 			});
 		} else {
 			listen("btn-editor-fill", "click", () => {
-				callbacks.onSetFillStatus("Catalog API client not ready", { error: true, candidates: [] });
+				callbacks.onSetFillStatus("Official templates are unavailable. Enter the model details manually.", { error: true, candidates: [] });
 			});
 		}
 	}
@@ -647,10 +657,10 @@ export function bindModelEvents(
 					html += `<span class="catalog-id"><code>${esc(entry.modelId)}</code></span>`;
 					html += `<span class="catalog-name">${esc(name)}</span>`;
 					html += `<span class="catalog-provider">${esc(entry.provider)}</span>`;
-					html += '<button class="btn-secondary btn-sm" type="button">Use</button>';
+					html += '<button class="btn-secondary btn-sm" type="button">Use template</button>';
 					html += "</div>";
 				}
-				if (entries.length === 0) html = '<div class="catalog-empty">No official models matched this search. Try another ID.</div>';
+				if (entries.length === 0) html = '<div class="catalog-empty">No official template matched. Try another model ID or name.</div>';
 				resultsDiv.innerHTML = html;
 
 				resultsDiv.querySelectorAll("[data-catalog]").forEach((div) => {
@@ -668,7 +678,7 @@ export function bindModelEvents(
 					});
 				});
 			} catch {
-				resultsDiv.innerHTML = '<div class="error-msg"><strong>Catalog unavailable</strong><span>Try again, or enter the model details manually.</span></div>';
+				resultsDiv.innerHTML = '<div class="error-msg"><strong>Could not search official templates</strong><span>Try again, or enter the model details manually.</span></div>';
 			}
 		});
 	}
@@ -692,13 +702,13 @@ export function bindModelEvents(
 			const rows = importRowsFromIds(result.ids);
 			callbacks.onImportSetRows(rows);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : "Discovery failed";
+			const msg = err instanceof Error ? err.message : "Could not list models from this provider";
 			const importArea = document.querySelector(".model-section");
 			if (importArea) {
 				importArea.querySelectorAll(".discover-error").forEach((el) => el.remove());
 				const errDiv = document.createElement("div");
 				errDiv.className = "error-msg discover-error";
-				errDiv.innerHTML = `<strong>Could not import models</strong><span>${esc(msg)}</span>`;
+			errDiv.innerHTML = `<strong>Could not list models from this provider</strong><span>${esc(msg)} Check the provider URL and credentials, then try again.</span>`;
 				importArea.appendChild(errDiv);
 			}
 		} finally {

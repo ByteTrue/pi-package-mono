@@ -266,6 +266,13 @@ describe("reduceProviderAction", () => {
 			expect(s.draft).toEqual({ providers: { p: {} } });
 		});
 
+		it("uses recovery-oriented copy for invalid raw JSON", () => {
+			const r = reduceProviderAction(stateWithProvider("p"), { type: "apply-raw", text: "not json" });
+			expect(r.ok).toBe(false);
+			if (r.ok) return;
+			expect(r.error.message).toBe("Enter valid JSON before applying it to the draft");
+		});
+
 		it("rejects JSON without providers", () => {
 			const r = reduceProviderAction(emptyState(), { type: "apply-raw", text: "{}" });
 			expect(r.ok).toBe(false);
@@ -390,6 +397,11 @@ describe("segment-safe SecretRef prefixes", () => {
 		const counts = countSecretsForProvider(slots, "foo");
 		expect(counts).toEqual({ total: 2, apiKey: 1, header: 1, other: 0 });
 		expect(formatSecretRemovalMessage(slots.slice(0, 1))).toMatch(/1 apiKey/);
+	});
+
+	it("explains that secret deletion happens only after Save & close", () => {
+		const slots: SecretSlot[] = [{ ref: "x", path: "/providers/p/apiKey" }];
+		expect(formatSecretRemovalMessage(slots)).toContain("only when you save & close");
 	});
 });
 

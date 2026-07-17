@@ -707,7 +707,7 @@ export function createModelApiClient(token: string): ApiClient {
 				headers: h,
 				signal,
 			});
-			if (!res.ok) throw new Error("Catalog unavailable");
+			if (!res.ok) throw new Error("Official templates are unavailable");
 			const data = (await res.json()) as { entries: OfficialModelChoice[] };
 			return data.entries;
 		},
@@ -719,7 +719,7 @@ export function createModelApiClient(token: string): ApiClient {
 				body: JSON.stringify({ modelId }),
 				signal,
 			});
-			if (!res.ok) throw new Error("Enrichment failed");
+			if (!res.ok) throw new Error("Could not load this model template");
 			return res.json() as Promise<WebModelEnrichmentResult>;
 		},
 
@@ -735,9 +735,9 @@ export function createModelApiClient(token: string): ApiClient {
 				signal,
 			});
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({ error: { message: "Discovery failed" } }));
+				const body = await res.json().catch(() => ({ error: { message: "Could not list models from this provider" } }));
 				throw new Error(
-					(body as { error?: { message?: string } }).error?.message ?? "Discovery failed",
+					(body as { error?: { message?: string } }).error?.message ?? "Could not list models from this provider",
 				);
 			}
 			return res.json() as Promise<{ ids: string[] }>;
@@ -802,7 +802,7 @@ export async function enrichSelectedRows(
 			return {
 				...row,
 				state: "failed",
-				error: err instanceof Error ? err.message : "Enrichment failed",
+			error: err instanceof Error ? err.message : "Could not load a model template",
 			};
 		}
 	}

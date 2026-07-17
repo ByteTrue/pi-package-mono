@@ -160,11 +160,14 @@ function bindImportDialogEvents(callbacks: ModelViewCallbacks): void {
 			(appState as ModelManagerState).importRows,
 			appState.secretSlots,
 		);
-		const msg =
+		const confirmed = await showConfirmDialog(
+			"Replace imported models in draft",
 			secretCount > 0
-				? `Replace ${modelCount} existing model(s)? Removes ${secretCount} known secret(s) under those targets.`
-				: `Replace ${modelCount} existing model(s) with imported versions?`;
-		const confirmed = await showConfirmDialog("Replace Models", msg, "Replace");
+				? `Replace ${modelCount} existing model${modelCount === 1 ? "" : "s"} in this draft? ${secretCount} configured secret${secretCount === 1 ? "" : "s"} on those models will be removed when you save & close.`
+				: `Replace ${modelCount} existing model${modelCount === 1 ? "" : "s"} in this draft? The saved configuration stays unchanged until you save & close.`,
+			"Replace in draft",
+			"Keep existing models",
+		);
 		if (confirmed) callbacks.onImportApply(pk, "replace-selected");
 	});
 	$id("btn-import-cancel")?.addEventListener("click", () => callbacks.onImportClear());
@@ -230,26 +233,26 @@ function render(): void {
 	}
 	if (appStatus === "error") {
 		root.innerHTML = `<div class="status status-error">${esc(appError)}</div>
-			<div class="actions"><button class="btn-cancel" id="btn-cancel">Cancel</button></div>`;
-		bindCancel();
-		return;
-	}
-	if (appStatus === "saved") {
-		root.innerHTML = '<div class="status status-saved">Configuration saved. You may close this page.</div>';
-		return;
-	}
-	if (appStatus === "cancelled") {
-		root.innerHTML = '<div class="status status-loading">Session cancelled. You may close this page.</div>';
-		return;
-	}
-	if (appStatus === "conflict") {
-		root.innerHTML = `<div class="status status-error">${esc(appError)}</div>
 			<div class="actions"><button class="btn-cancel" id="btn-cancel">Close</button></div>`;
 		bindCancel();
 		return;
 	}
+	if (appStatus === "saved") {
+		root.innerHTML = '<div class="status status-saved">Configuration saved. You can close this page.</div>';
+		return;
+	}
+	if (appStatus === "cancelled") {
+		root.innerHTML = '<div class="status status-loading">Configuration unchanged. You can close this page.</div>';
+		return;
+	}
+	if (appStatus === "conflict") {
+		root.innerHTML = `<div class="status status-error">${esc(appError)}</div>
+			<div class="actions"><button class="btn-cancel" id="btn-cancel">Close and reopen</button></div>`;
+		bindCancel();
+		return;
+	}
 	if (appStatus === "saving") {
-		root.innerHTML = '<div class="status status-loading">Saving…</div>';
+		root.innerHTML = '<div class="status status-loading">Saving configuration…</div>';
 		return;
 	}
 
@@ -276,9 +279,10 @@ function render(): void {
 						const check = validateSecretRefLocations(parsed as typeof appState.draft, appState.secretSlots);
 						if (check.ok && check.value.removed.length > 0) {
 							const confirmed = await showConfirmDialog(
-								"Remove secrets",
+								"Remove configured secrets",
 								formatSecretRemovalMessage(check.value.removed),
-								"Remove secrets",
+								"Apply without secrets",
+								"Keep secrets",
 							);
 							if (!confirmed) {
 								dispatchProvider({ type: "set-raw-text", text });
@@ -322,7 +326,7 @@ function render(): void {
 			if (previewDiv) {
 				const backBtn = document.createElement("button");
 				backBtn.className = "btn-secondary preview-back";
-				backBtn.textContent = "Back to configuration";
+				backBtn.textContent = "Back to draft";
 				backBtn.addEventListener("click", () => { currentView = "provider"; render(); });
 				previewDiv.insertBefore(backBtn, previewDiv.firstChild);
 			}
@@ -350,7 +354,8 @@ function render(): void {
 						const confirmed = await showConfirmDialog(
 							"Overwrite provider",
 							first.error.message,
-							"Overwrite",
+							"Overwrite provider",
+							"Keep provider",
 						);
 						if (!confirmed) {
 							appState = { ...appState, errors: [...appState.errors, first.error] };
@@ -480,9 +485,9 @@ function render(): void {
 								: 0;
 						const msg =
 							secrets > 0
-								? `Model "${id}" exists and has ${secrets} known secret(s). Overwrite?`
-								: `Model "${id}" already exists. Overwrite?`;
-						const ok = await showConfirmDialog("Overwrite model", msg, "Overwrite");
+								? `Model "${id}" already exists in this draft and has ${secrets} configured secret${secrets === 1 ? "" : "s"}. Replacing it removes those secrets when you save & close.`
+								: `Model "${id}" already exists in this draft. Replace its draft values?`;
+						const ok = await showConfirmDialog("Replace model in draft", msg, "Replace model", "Keep existing model");
 						if (!ok || !appState.editor) return;
 						dispatchModel({
 							type: "model-replace",
@@ -512,15 +517,13 @@ function render(): void {
 						const idx = models.findIndex((m) => m.id === id);
 						const secrets =
 							idx >= 0
-								? countSecretsUnderPrefixes(appState.secretSlots, [
-										modelSubtreePrefix(pk, idx),
-								  ])
+								? countSecretsUnderPrefixes(appState.secretSlots, [modelSubtreePrefix(pk, idx)])
 								: 0;
 						const msg =
 							secrets > 0
-								? `Target model has ${secrets} known secret(s). Overwrite?`
-								: `Model id "${id}" already exists. Overwrite?`;
-						const confirmed = await showConfirmDialog("Overwrite model", msg, "Overwrite");
+								? `Model "${id}" already exists in this draft and has ${secrets} configured secret${secrets === 1 ? "" : "s"}. Replacing it removes those secrets when you save & close.`
+								: `Model "${id}" already exists in this draft. Replace its draft values?`;
+						const confirmed = await showConfirmDialog("Replace model in draft", msg, "Replace model", "Keep existing model");
 						if (!confirmed || !appState.editor) return;
 						dispatchModel({
 							type: "model-replace",
@@ -531,25 +534,7 @@ function render(): void {
 						});
 					})();
 				},
-				onDelete: (pk, modelId) => {
-					const models = getModels(appState.draft, pk);
-					const idx = models.findIndex((m) => m.id === modelId);
-					const secrets =
-						idx >= 0
-							? countSecretsUnderPrefixes(appState.secretSlots, [
-									modelSubtreePrefix(pk, idx),
-							  ])
-							: 0;
-					void (async () => {
-						const msg =
-							secrets > 0
-								? `Delete model "${modelId}"? Removes ${secrets} known secret(s).`
-								: `Delete model "${modelId}"?`;
-						const confirmed = await showConfirmDialog("Delete model", msg, "Delete");
-						if (!confirmed) return;
-						dispatchModel({ type: "model-delete", providerKey: pk, modelId });
-					})();
-				},
+				onDelete: (pk, modelId) => dispatchModel({ type: "model-delete", providerKey: pk, modelId }),
 				onSearch: (q) => dispatchModel({ type: "model-search", query: q }),
 				onSort: (s) => dispatchModel({ type: "model-sort", sort: s }),
 				onDiscover: () => {
@@ -600,9 +585,6 @@ function render(): void {
 			modelCallbacksRef = modelCallbacks;
 
 			bindModelEvents(appState as ModelManagerState, modelCallbacks, modelApi);
-			if (document.getElementById("import-dialog")) bindImportDialogEvents(modelCallbacks);
-
-			bindModelEvents(appState as ModelManagerState, modelCallbacks, modelApi);
 
 			// Focus first field-level error when present.
 			const firstFieldErr = appState.errors.find((e) => e.field && e.field !== "raw");
@@ -640,9 +622,10 @@ async function handleSave(): Promise<void> {
 	}
 	if (pre.value.removed.length > 0) {
 		const confirmed = await showConfirmDialog(
-			"Remove secrets",
+			"Remove configured secrets",
 			formatSecretRemovalMessage(pre.value.removed),
-			"Save without secrets",
+			"Save & close without secrets",
+			"Keep secrets",
 		);
 		if (!confirmed) return;
 	}
@@ -674,7 +657,7 @@ async function handleSave(): Promise<void> {
 
 async function handleCancel(): Promise<void> {
 	if (appState.dirty) {
-		const confirmed = await showConfirmDialog("Discard Changes", "You have unsaved changes. Discard them?", "Discard");
+		const confirmed = await showConfirmDialog("Discard unsaved changes", "Close this manager without saving your draft?", "Discard & close", "Keep editing");
 		if (!confirmed) return;
 	}
 	abortEnrich();

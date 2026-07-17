@@ -162,8 +162,8 @@ export function formatSecretRemovalMessage(slots: SecretSlot[]): string {
 	if (header > 0) parts.push(`${header} header secret(s)`);
 	if (other > 0) parts.push(`${other} other secret(s)`);
 	return parts.length > 0
-		? `This will remove ${parts.join(", ")}. Continue?`
-		: "Configured secrets will be removed. Continue?";
+		? `This draft removes ${parts.join(", ")}. They will be deleted only when you save & close.`
+		: "This draft removes configured secrets. They will be deleted only when you save & close.";
 }
 
 // ── Secret Ref Validation ──────────────────────────────────────────
@@ -410,7 +410,7 @@ export function reduceProviderAction(
 				parsed = JSON.parse(action.text);
 			} catch {
 				// Preserve buffer for user to fix
-				return fail("Invalid JSON", { field: "raw" });
+				return fail("Enter valid JSON before applying it to the draft", { field: "raw" });
 			}
 			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 				return fail("Configuration must be a JSON object", { field: "raw" });

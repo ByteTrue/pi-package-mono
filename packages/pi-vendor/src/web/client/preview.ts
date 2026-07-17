@@ -71,22 +71,22 @@ export function renderPreview(
 
 	let html = '<main class="standalone-view preview" id="main-content">';
 	html += '<div class="standalone-header"><div>';
-	html += '<p class="workspace-kicker">Review</p><h1>Changes before saving</h1>';
-	html += '<p>Secrets remain hidden. This is the exact draft Pi will validate when you save.</p></div></div>';
+	html += '<p class="workspace-kicker">Review</p><h1>Review draft changes</h1>';
+	html += '<p>Secrets stay hidden. Save &amp; close validates this exact draft before writing it.</p></div></div>';
 
 	html += '<section class="preview-summary" aria-label="Change summary">';
 	if (summary.added.length > 0) html += `<div class="preview-change preview-added"><strong>Added</strong><span>${summary.added.map(k => esc(k)).join(", ")}</span></div>`;
 	if (summary.removed.length > 0) html += `<div class="preview-change preview-removed"><strong>Deleted</strong><span>${summary.removed.map(k => esc(k)).join(", ")}</span></div>`;
 	if (summary.changed.length > 0) html += `<div class="preview-change preview-changed"><strong>Changed</strong><span>${summary.changed.map(k => esc(k)).join(", ")}</span></div>`;
 	if (summary.added.length === 0 && summary.removed.length === 0 && summary.changed.length === 0) {
-		html += '<div class="preview-change preview-none"><strong>No draft changes</strong><span>Return to configuration to make an edit.</span></div>';
+		html += '<div class="preview-change preview-none"><strong>No draft changes</strong><span>Return to the draft to make an edit.</span></div>';
 	}
 	html += '</section>';
 
 	html += '<section class="preview-columns" aria-label="Configuration comparison">';
-	html += '<div class="preview-col"><h2>Saved configuration</h2>';
+	html += '<div class="preview-col"><h2>Saved file</h2>';
 	html += `<pre>${esc(JSON.stringify(sanitizedBaseline, null, 2))}</pre></div>`;
-	html += '<div class="preview-col"><h2>Current draft</h2>';
+	html += '<div class="preview-col"><h2>Draft to save</h2>';
 	html += `<pre>${esc(JSON.stringify(sanitizedDraft, null, 2))}</pre></div>`;
 	html += '</section></main>';
 	return html;

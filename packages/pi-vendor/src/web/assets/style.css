@@ -671,7 +671,7 @@ dialog#model-editor {
 	.command-status { display: none; }
 	.brand-lockup span:not(.brand-mark) { display: none; }
 	.header-actions { gap: var(--space-1); }
-	.header-actions .btn-quiet { display: none; }
+	.header-actions .btn-quiet:not(#btn-header-cancel) { display: none; }
 	#app:has(.layout) {
 		grid-template-areas: "header" "nav" "main";
 		grid-template-columns: minmax(0, 1fr);
@@ -699,6 +699,7 @@ dialog#model-editor {
 @media (max-width: 40rem) {
 	.app-header { min-height: 3.75rem; }
 	.header-actions .btn-secondary { display: none; }
+	.header-actions .btn-quiet#btn-header-cancel { display: inline-flex; min-height: 2.25rem; padding: 0.45rem 0.6rem; font-size: 0.8125rem; }
 	.header-actions .btn-save { min-height: 2.25rem; padding: 0.45rem 0.6rem; font-size: 0.8125rem; }
 	.brand-mark { width: 1.8rem; height: 1.8rem; }
 	.workspace-header h1, .standalone-header h1, .editor-header h2 { font-size: 1.45rem; }
