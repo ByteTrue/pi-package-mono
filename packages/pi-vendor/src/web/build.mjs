@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,8 @@ const outdir = join(baseDir, "assets");
 const clientDir = join(baseDir, "client");
 
 mkdirSync(outdir, { recursive: true });
+// `dev:web` writes source maps into this shared directory; never package them.
+rmSync(join(outdir, "app.js.map"), { force: true });
 
 const result = await esbuild.build({
 	entryPoints: [join(clientDir, "app.ts")],
