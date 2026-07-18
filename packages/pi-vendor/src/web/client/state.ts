@@ -298,7 +298,9 @@ export function reduceProviderAction(
 		case "create": {
 			const key = providerKey(action.key);
 			if (!key) return fail("Provider key cannot be empty", { field: "key" });
-			const result = createProvider(next.draft, key, {});
+			// Seed the same default as the TUI quick-add flow so a fresh provider
+			// is Pi-oracle-valid without the user having to notice the blank API field.
+			const result = createProvider(next.draft, key, { api: "openai-completions" });
 			if (!result.ok) return fail(result.error.message, { provider: key, field: "key" });
 			return ok({
 				...next,

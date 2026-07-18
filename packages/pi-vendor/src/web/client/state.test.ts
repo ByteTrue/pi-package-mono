@@ -66,12 +66,12 @@ describe("reduceProviderAction", () => {
 	});
 
 	describe("create", () => {
-		it("adds a new provider via shared mutation", () => {
+		it("adds a new provider seeded with a Pi-valid default API format", () => {
 			const r = reduceProviderAction(emptyState(), { type: "create", key: "my-provider" });
 			expect(r.ok).toBe(true);
 			if (!r.ok) return;
 			const p = r.value.draft as Record<string, unknown>;
-			expect((p.providers as Record<string, unknown>)["my-provider"]).toEqual({});
+			expect((p.providers as Record<string, unknown>)["my-provider"]).toEqual({ api: "openai-completions" });
 			expect(r.value.selectedProvider).toBe("my-provider");
 			expect(r.value.dirty).toBe(true);
 		});
