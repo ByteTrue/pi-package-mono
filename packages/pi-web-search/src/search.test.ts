@@ -22,6 +22,17 @@ describe("buildSearchCandidates", () => {
 		expect(c).toContain("exa-free");
 	});
 
+	it("prefers other keyed providers over keyless after the active one", () => {
+		const c = buildSearchCandidates({
+			provider: "firecrawl",
+			apiKeys: { firecrawl: "fc", tavily: "tv", exa: "ex", jina: "jn" },
+		});
+		expect(c[0]).toBe("firecrawl");
+		const keyed = c.slice(1, 4);
+		expect(keyed).toEqual(["tavily", "exa", "jina"]);
+		expect(c.slice(4)).toEqual(["exa-free", "bing"]);
+	});
+
 	it("skips base-url providers unless an explicit URL is configured", () => {
 		expect(buildSearchCandidates({})).not.toContain("searxng");
 		expect(buildSearchCandidates({ baseUrls: { searxng: "http://localhost:8080" } })).toContain("searxng");

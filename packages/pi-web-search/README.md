@@ -63,7 +63,7 @@ When a key-backed provider with a native fetch endpoint is active (Tavily, Exa, 
 
 ## Automatic fallback
 
-When the active search provider fails (error, rate-limit) or returns nothing, `web_search` automatically tries the other **available** providers — keyless ones (Exa MCP free, Bing, and SearXNG only when a URL is configured) plus any keyed ones you've configured — in order, and returns the first that yields results. The returned tool content and details report which provider actually answered and what it fell back from. Disable with `"autoFallback": false` in the config.
+When the active search provider fails (error, rate-limit) or returns nothing, `web_search` automatically tries the other **available** providers and returns the first that yields results. Order: active → other keyed providers you've configured → keyless (Exa MCP free, Bing, and SearXNG only when a URL is configured). The returned tool content and details report which provider actually answered and what it fell back from. Disable with `"autoFallback": false` in the config.
 
 `web_fetch` similarly falls back to the built-in HTML extractor if a keyed provider's native fetch fails.
 

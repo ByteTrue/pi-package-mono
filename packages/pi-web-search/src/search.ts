@@ -120,15 +120,18 @@ function hasExplicitBaseUrl(name: string, config: WebConfig): boolean {
 	if (!meta?.baseUrlEnvVar) return true;
 	return Boolean(process.env[meta.baseUrlEnvVar]?.trim() || config.baseUrls?.[name]?.trim());
 }
-// Active provider first, then other available search providers in registry order.
+// Active first, then other keyed providers, then keyless — prefer paid/configured quality over free fallbacks.
 export function buildSearchCandidates(config: WebConfig): string[] {
 	const active = getActiveProviderName(config);
 	const available = PROVIDERS.filter(
 		(p) =>
 			p.roles.includes("search") &&
 			((p.keyless && hasExplicitBaseUrl(p.name, config)) || resolveApiKey(p.name, config) !== undefined),
-	).map((p) => p.name);
-	return [active, ...available.filter((n) => n !== active)];
+	);
+	const rest = available.filter((p) => p.name !== active);
+	const keyed = rest.filter((p) => !p.keyless).map((p) => p.name);
+	const keyless = rest.filter((p) => p.keyless).map((p) => p.name);
+	return [active, ...keyed, ...keyless];
 }
 
 export async function searchWithFallback(

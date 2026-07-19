@@ -1,0 +1,7 @@
+{
+  "packages": [
+    "./packages/pi-web-search",
+    "./packages/pi-vendor",
+    "./packages/pi-image-gen"
+  ]
+}
