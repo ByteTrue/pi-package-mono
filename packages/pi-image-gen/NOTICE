@@ -1,0 +1,6 @@
+This package incorporates `packages/pi-image-gen` from TGYD-helige/pi
+(https://github.com/TGYD-helige/pi), imported from commit
+374112cd3460fddb43bbe643dd03abf3b6eb8274 and modified for this monorepo.
+
+Upstream work and this derivative are licensed under Apache License 2.0.
+See LICENSE.

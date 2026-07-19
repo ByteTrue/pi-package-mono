@@ -2,10 +2,11 @@
 
 ## 这个项目是什么
 
-`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。每个包以 TypeScript 源码通过 jiti 加载，不需要先 build 再安装。当前有两个已发布能力：
+`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。每个包以 TypeScript 源码通过 jiti 加载，不需要先 build 再安装。当前有三个已发布能力：
 
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：用 TUI 快捷流 + 一次性本地 Web 管理器维护 `models.json`。
+3. **图像生成**（`@bytetrue/pi-image-gen`）：提供 `image_generate`，支持 OpenAI、Gemini、Qwen-Image、Ark、OpenRouter 与兼容网关。
 
 仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
 
@@ -13,12 +14,13 @@
 
 - `pi-vendor` 的双界面与 **Web 产品化升级**均已关闭：Web 现在是日常可用的本地完整管理 workspace，含官方模板、`/models` 导入、完整模型 editor、Raw JSON/review 与安全 draft 提交。
 - `pi-web-search` 已完成安全与预算类 hardening（SSRF、body 预算、proxy 隔离、无效配置保护等）。
-- 近期优先：两个已发布扩展的维护、回归与按需发版。
+- 近期优先：三个已发布扩展的维护、回归与按需发版。
 
 ## 能力地图
 
 - **搜网页 / 抓页面** → 读 [`pi-web-search/`](pi-web-search/index.md)
 - **管理自定义 provider / model** → 读 [`pi-vendor/`](pi-vendor/index.md)
+- **生成图像** → 读 `packages/pi-image-gen/README.md`
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
 - **历史审计与旧流程证据** → [`.cs/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
 
@@ -35,8 +37,9 @@
 |---|---|---|
 | `@bytetrue/pi-web-search` | agent 工具 `web_search`/`web_fetch`、`/web` | `~/.pi/byte-pi-web/config.json`（可用 `PI_CONFIG_DIR`） |
 | `@bytetrue/pi-vendor` | 命令 `/vendor`、`/vendor web` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
+| `@bytetrue/pi-image-gen` | agent 工具 `image_generate`、`/image-gen` | `~/.pi/agent/settings.json`、覆盖 agent dir 或 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
 
-两包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置。
+三包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置。
 
 ## 统一语言
 
@@ -48,9 +51,10 @@
 
 ## 阅读路径
 
-- 新人理解仓库：本页 → 两个子包 index → 根与包 README
+- 新人理解仓库：本页 → 三个包的 README → 根 README
 - 改 web-search：[`pi-web-search/index.md`](pi-web-search/index.md)
 - 改 pi-vendor：[`pi-vendor/index.md`](pi-vendor/index.md)
+- 配置/使用图像生成：`packages/pi-image-gen/README.md`
 - 追溯 dual-UI 决策：closed epic [`.cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md`](../epics/2026/07/12/vendor-dual-ui-manager/spec.md)
 - 追溯 Web 产品化决策：closed epic [`.cs/epics/2026/07/14/vendor-web-productization/spec.md`](../epics/2026/07/14/vendor-web-productization/spec.md)
 
@@ -58,7 +62,7 @@
 
 **做**
 
-- 发布与维护上述两个 pi 扩展
+- 发布与维护上述三个 pi 扩展
 - 安全/正确性回归（SSRF、密钥权限、配置损坏保护、revision 冲突）
 - 用新 CodeStable（`.cs/`）承载真相、epic、issue、notes
 
@@ -79,6 +83,7 @@
 ## 证据索引（按需）
 
 - 根 `package.json` workspaces、`npm test`
-- `packages/pi-web-search`、`packages/pi-vendor`
+- `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`
+- 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
 - 迁移映射：`.cs/archive/MIGRATION.md`
 - 旧体系全量：`.cs/archive/codestable-legacy/`
