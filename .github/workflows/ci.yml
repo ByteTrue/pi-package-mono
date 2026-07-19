@@ -28,5 +28,6 @@ jobs:
       - run: npm run typecheck --workspaces --if-present
       # Run every workspace's test suite (vitest).
       - run: npm test
-      # Real tarball extraction + loopback server smoke (no browser, no user config).
+      # Each distributable package must build, pack, and load after a production-only install.
       - run: node packages/pi-vendor/scripts/pack-smoke.mjs
+      - run: node packages/pi-image-gen/scripts/pack-smoke.mjs

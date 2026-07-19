@@ -11,7 +11,7 @@ name: Release
 # are generated automatically.
 on:
   push:
-    tags: ["v*", "pi-vendor-v*", "pi-web-search-v*"]
+    tags: ["v*", "pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*"]
 
 jobs:
   publish:
@@ -36,6 +36,7 @@ jobs:
           case "$tag" in
             pi-vendor-v*) packages=(packages/pi-vendor/) ;;
             pi-web-search-v*) packages=(packages/pi-web-search/) ;;
+            pi-image-gen-v*) packages=(packages/pi-image-gen/) ;;
             v*) packages=(packages/*/) ;;
             *) echo "Unsupported release tag: $tag"; exit 1 ;;
           esac
