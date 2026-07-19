@@ -234,7 +234,7 @@ export function renderModelEditor(
 	html += `<h2>${title}</h2>`;
 	html += '<p>Choose an official template or enter values yourself. Nothing is written until you save &amp; close.</p>';
 	html += '</div></div>';
-	html += '<div class="editor-layout">';
+	html += `<div class="editor-layout${isNew ? " is-new" : ""}">`;
 	html += '<section class="editor-config-pane" aria-label="Model configuration">';
 
 	const editorValue = state.editor.value as Record<string, unknown>;
@@ -249,10 +249,12 @@ export function renderModelEditor(
 	const cost = asRecord(editorValue.cost);
 
 	html += '<div class="editor-field-group"><div class="editor-group-heading"><h3>Identity & limits</h3><p>How Pi identifies and calls this model.</p></div>';
-	html += '<div class="field editor-fill-row field-span">';
-	html += '<label for="editor-id">Model ID</label><div class="editor-fill-controls">';
-	html += `<input type="text" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="e.g. claude-fable-5">`;
-	html += '<button type="button" class="btn-secondary" id="btn-editor-fill">Search official templates</button></div></div>';
+	if (!isNew) {
+		html += '<div class="field editor-fill-row field-span">';
+		html += '<label for="editor-id">Model ID</label><div class="editor-fill-controls">';
+		html += `<input type="text" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="e.g. claude-fable-5">`;
+		html += '<button type="button" class="btn-secondary" id="btn-editor-fill">Search official templates</button></div></div>';
+	}
 	html += '<div class="editor-form-grid">';
 	html += `<div class="field"><label for="editor-name">Display name</label><input type="text" id="editor-name" value="${escAttr(nameVal)}" autocomplete="off"></div>`;
 	html += '<div class="field"><label for="editor-api">API</label>';
@@ -296,8 +298,16 @@ export function renderModelEditor(
 	const fillErr = state.editor.fillError ? " error-msg" : "";
 	const candidates = state.editor.fillCandidates ?? [];
 	html += '<aside class="editor-catalog-pane" aria-labelledby="editor-catalog-heading">';
-	html += '<div class="editor-catalog-heading"><div><h3 id="editor-catalog-heading">Official configurations</h3>';
-	html += '<p>Choose the template that matches this provider endpoint.</p></div>';
+	html += '<div class="editor-catalog-heading"><div><h3 id="editor-catalog-heading">';
+	html += isNew ? 'Find an official model' : 'Official configurations';
+	html += '</h3>';
+	html += `<p>${isNew ? 'Search by model ID, then choose a Pi template. The selected configuration is added to this provider.' : 'Choose the template that matches this provider endpoint.'}</p></div>`;
+	if (isNew) {
+		html += '<div class="field editor-template-search">';
+		html += '<label for="editor-id">Model ID search</label><div class="editor-fill-controls">';
+		html += `<input type="search" id="editor-id" value="${escAttr(idVal)}" autocomplete="off" placeholder="e.g. claude-sonnet-4-5" aria-describedby="editor-fill-status">`;
+		html += '<button type="button" class="btn-save" id="btn-editor-fill">Search</button></div></div>';
+	}
 	html += `<span class="candidate-count">${candidates.length || "—"}</span></div>`;
 	html += `<div id="editor-fill-status" class="editor-fill-status${fillErr}" aria-live="polite">${esc(fillStatus)}</div>`;
 	html += '<div id="editor-fill-results" class="editor-fill-results" tabindex="0" aria-label="Official configuration candidates">';

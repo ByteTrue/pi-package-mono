@@ -6,10 +6,9 @@
  * - Bundles session server to ESM and starts loopback session
  * - Prints openable URL (token in query string)
  *
- * Usage:
- *   npm --workspace @bytetrue/pi-vendor run dev:web
- *   PI_VENDOR_MODELS=/path/to/models.json npm --workspace @bytetrue/pi-vendor run dev:web
  *   PI_VENDOR_NO_BROWSER=1 npm --workspace @bytetrue/pi-vendor run dev:web
+ *
+ * Dev Web uses `.tmp/pi-vendor-dev/models.json` by default. Override with PI_VENDOR_MODELS or PI_CODING_AGENT_DIR, but only with a path inside this repository.
  */
 import * as esbuild from "esbuild";
 import { copyFileSync, mkdirSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -61,9 +60,24 @@ function activePiRoot() {
 }
 
 function defaultModelsPath() {
-	if (process.env.PI_VENDOR_MODELS) return resolve(process.env.PI_VENDOR_MODELS);
-	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
-	return join(agentDir, "models.json");
+	const explicitPath = process.env.PI_VENDOR_MODELS?.trim();
+	const configDir = process.env.PI_CODING_AGENT_DIR?.trim();
+	if (explicitPath) return resolve(explicitPath);
+	if (configDir) return join(resolve(configDir), "models.json");
+	return join(repoRoot, ".tmp", "pi-vendor-dev", "models.json");
+}
+
+function assertIsolatedModelsPath(modelsPath) {
+	const resolved = resolve(modelsPath);
+	const projectRoot = resolve(repoRoot);
+	const userPiRoot = join(homedir(), ".pi");
+	const relativePath = relative(projectRoot, resolved);
+	if (resolved === join(userPiRoot, "agent", "models.json") || resolved.startsWith(userPiRoot + "/")) {
+		throw new Error(`Refusing to use user-level Pi config in dev:web: ${resolved}`);
+	}
+	if (relativePath.startsWith("..") || relativePath === "") {
+		throw new Error(`Refusing models.json outside the project: ${resolved}`);
+	}
 }
 
 async function openBrowserUrl(url) {
@@ -119,10 +133,11 @@ async function main() {
 	}
 
 	const modelsPath = defaultModelsPath();
+	assertIsolatedModelsPath(modelsPath);
 	if (!existsSync(modelsPath)) {
 		mkdirSync(dirname(modelsPath), { recursive: true });
 		writeFileSync(modelsPath, `${JSON.stringify({ providers: {} }, null, 2)}\n`, { mode: 0o600 });
-		console.log(`[dev-web] created empty models.json at ${modelsPath}`);
+		console.log(`[dev-web] created empty project config at ${modelsPath}`);
 	} else {
 		JSON.parse(readFileSync(modelsPath, "utf8"));
 		console.log(`[dev-web] models: ${modelsPath}`);

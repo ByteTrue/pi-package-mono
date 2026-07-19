@@ -6,6 +6,7 @@ coverage/
 *.tsbuildinfo
 .claude
 .pi
+.tmp/
 .pi-subagents/
 .playwright-mcp/
 vendor-web-*.png
