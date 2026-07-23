@@ -1,0 +1,496 @@
+/* ../../node_modules/@xterm/xterm/css/xterm.css */
+.xterm {
+  cursor: text;
+  position: relative;
+  user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+}
+.xterm.focus,
+.xterm:focus {
+  outline: none;
+}
+.xterm .xterm-helpers {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+}
+.xterm .xterm-helper-textarea {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  position: absolute;
+  opacity: 0;
+  left: -9999em;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: -5;
+  white-space: nowrap;
+  overflow: hidden;
+  resize: none;
+}
+.xterm .composition-view {
+  background: #000;
+  color: #FFF;
+  display: none;
+  position: absolute;
+  white-space: nowrap;
+  z-index: 1;
+}
+.xterm .composition-view.active {
+  display: block;
+}
+.xterm .xterm-viewport {
+  background-color: #000;
+  overflow-y: scroll;
+  cursor: default;
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+.xterm .xterm-screen {
+  position: relative;
+}
+.xterm .xterm-screen canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.xterm-char-measure-element {
+  display: inline-block;
+  visibility: hidden;
+  position: absolute;
+  top: 0;
+  left: -9999em;
+  line-height: normal;
+}
+.xterm.enable-mouse-events {
+  cursor: default;
+}
+.xterm.xterm-cursor-pointer,
+.xterm .xterm-cursor-pointer {
+  cursor: pointer;
+}
+.xterm.column-select.focus {
+  cursor: crosshair;
+}
+.xterm .xterm-accessibility:not(.debug),
+.xterm .xterm-message {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 10;
+  color: transparent;
+  pointer-events: none;
+}
+.xterm .xterm-accessibility-tree:not(.debug) *::selection {
+  color: transparent;
+}
+.xterm .xterm-accessibility-tree {
+  font-family: monospace;
+  user-select: text;
+  white-space: pre;
+}
+.xterm .xterm-accessibility-tree > div {
+  transform-origin: left;
+  width: fit-content;
+}
+.xterm .live-region {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.xterm-dim {
+  opacity: 1 !important;
+}
+.xterm-underline-1 {
+  text-decoration: underline;
+}
+.xterm-underline-2 {
+  text-decoration: double underline;
+}
+.xterm-underline-3 {
+  text-decoration: wavy underline;
+}
+.xterm-underline-4 {
+  text-decoration: dotted underline;
+}
+.xterm-underline-5 {
+  text-decoration: dashed underline;
+}
+.xterm-overline {
+  text-decoration: overline;
+}
+.xterm-overline.xterm-underline-1 {
+  text-decoration: overline underline;
+}
+.xterm-overline.xterm-underline-2 {
+  text-decoration: overline double underline;
+}
+.xterm-overline.xterm-underline-3 {
+  text-decoration: overline wavy underline;
+}
+.xterm-overline.xterm-underline-4 {
+  text-decoration: overline dotted underline;
+}
+.xterm-overline.xterm-underline-5 {
+  text-decoration: overline dashed underline;
+}
+.xterm-strikethrough {
+  text-decoration: line-through;
+}
+.xterm-screen .xterm-decoration-container .xterm-decoration {
+  z-index: 6;
+  position: absolute;
+}
+.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
+  z-index: 7;
+}
+.xterm-decoration-overview-ruler {
+  z-index: 8;
+  position: absolute;
+  top: 0;
+  right: 0;
+  pointer-events: none;
+}
+.xterm-decoration-top {
+  z-index: 2;
+  position: relative;
+}
+.xterm .xterm-scrollable-element > .scrollbar {
+  cursor: default;
+}
+.xterm .xterm-scrollable-element > .scrollbar > .scra {
+  cursor: pointer;
+  font-size: 11px !important;
+}
+.xterm .xterm-scrollable-element > .visible {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0);
+  transition: opacity 100ms linear;
+  z-index: 11;
+}
+.xterm .xterm-scrollable-element > .invisible {
+  opacity: 0;
+  pointer-events: none;
+}
+.xterm .xterm-scrollable-element > .invisible.fade {
+  transition: opacity 800ms linear;
+}
+.xterm .xterm-scrollable-element > .shadow {
+  position: absolute;
+  display: none;
+}
+.xterm .xterm-scrollable-element > .shadow.top {
+  display: block;
+  top: 0;
+  left: 3px;
+  height: 3px;
+  width: 100%;
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.left {
+  display: block;
+  top: 3px;
+  left: 0;
+  height: 100%;
+  width: 3px;
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.top-left-corner {
+  display: block;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 3px;
+}
+.xterm .xterm-scrollable-element > .shadow.top.left {
+  box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+
+/* src/web/client/style.css */
+:root {
+  color-scheme: dark;
+  --bg: #0b0f12;
+  --panel: #10161c;
+  --panel-2: #151d25;
+  --panel-3: #18222b;
+  --border: #25303a;
+  --border-strong: #34404a;
+  --text: #e6edf3;
+  --muted: #92a0ae;
+  --accent: #7ae0cb;
+  --accent-2: #2bbf9f;
+  --danger: #ff7b72;
+  --warning: #f2cc60;
+  --shadow: rgba(0, 0, 0, 0.35);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    13px/1.45 ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Segoe UI",
+    sans-serif;
+}
+button {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover:enabled {
+  border-color: var(--accent-2);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#app {
+  min-height: 100vh;
+}
+.app-shell {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 100vh;
+}
+.sidebar {
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sidebar-header {
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.sidebar-subtitle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.connection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.02);
+}
+.connection-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--warning);
+}
+.connection-chip[data-state=open]::before {
+  background: var(--accent);
+}
+.connection-chip[data-state=closed]::before {
+  background: var(--danger);
+}
+.session-list {
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.session-card {
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.session-card.active {
+  border-color: var(--accent-2);
+  background: rgba(122, 224, 203, 0.08);
+}
+.session-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 600;
+}
+.session-card-status {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+}
+.session-card-status[data-status=running] {
+  color: var(--accent);
+  border-color: rgba(122, 224, 203, 0.5);
+}
+.session-card-status[data-status=killed],
+.session-card-status[data-status=exited] {
+  color: var(--warning);
+}
+.session-card-desc,
+.session-card-command,
+.session-card-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(16, 22, 28, 0.86);
+  backdrop-filter: blur(10px);
+}
+.toolbar-copy {
+  min-width: 0;
+}
+.toolbar-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.toolbar-description {
+  margin-top: 6px;
+  color: var(--muted);
+}
+.toolbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.toolbar-pill {
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+.toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.btn-danger {
+  border-color: rgba(255, 123, 114, 0.45);
+  color: #ffd5d1;
+}
+.terminal-panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 18px;
+}
+.terminal-frame {
+  position: relative;
+  height: 100%;
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #0c1117;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 24px 60px var(--shadow);
+}
+.terminal-root {
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+}
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  color: var(--muted);
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(11, 15, 18, 0.55),
+      rgba(11, 15, 18, 0.8));
+}
+.empty-state.visible {
+  display: flex;
+}
+.status-bar {
+  min-height: 42px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--panel);
+}
+.status-bar.error {
+  color: #ffd5d1;
+}
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(220px, 34vh) minmax(0, 1fr);
+  }
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .toolbar {
+    flex-direction: column;
+  }
+  .toolbar-actions {
+    width: 100%;
+  }
+  .toolbar-actions > button {
+    flex: 1 1 auto;
+  }
+}
