@@ -33,6 +33,7 @@
 - **改搜索行为或安全边界**：先读 web-search 子 spec，再改 `packages/pi-web-search`；验证 `npm --workspace @bytetrue/pi-web-search test`。
 - **改 models.json 管理体验**：先读 vendor 子 spec；共享语义在 config / model-source / web-modal 三层，不要只改 TUI 或只改 Web。
 - **改 background terminal / 本地 PTY**：先读 background-terminal 子 spec，再改 `packages/pi-background-terminal`；至少验证 typecheck、test、pack dry-run 与当前 session smoke。
+- **发 background terminal npm 版**：bump `packages/pi-background-terminal/package.json` 版本后，push tag `pi-background-terminal-v<version>`；GitHub Actions `release.yml` 走 npm Trusted Publishing 自动发布。
 - **查“以前为什么这么定”**：closed epic/issue 在 `.cs/epics/`、`.cs/issues/`；完整旧 design/review 在 archive。
 
 ## 架构落点
@@ -96,5 +97,6 @@
 - 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
 - background terminal 关闭记录：`.cs/issues/2026/07/23/closed-background-terminal-package.md`
 - Pi 本地包加载坑点：`.cs/notes/pi-local-package-loading.md`
+- 自动发布工作流：`.github/workflows/release.yml`
 - 迁移映射：`.cs/archive/MIGRATION.md`
 - 旧体系全量：`.cs/archive/codestable-legacy/`

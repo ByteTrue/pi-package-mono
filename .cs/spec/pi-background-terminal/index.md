@@ -39,6 +39,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
 | 看当前 session 全貌 | `pty_list` |
 | 真正停掉或删掉 session | `pty_kill` |
 | 在浏览器里盯多条 PTY 输出 | `/pty-open-background-spy` |
+| 发 npm 版 | push tag `pi-background-terminal-v<version>`，由 repo `release.yml` + npm Trusted Publishing 自动发布 |
 
 ## 子系统地图
 
@@ -81,4 +82,5 @@ Extension entry
 - 生命周期：`packages/pi-background-terminal/src/pty/session-lifecycle.ts`
 - 通知：`packages/pi-background-terminal/src/pty/notification-manager.ts`
 - Web monitor：`packages/pi-background-terminal/src/web/server/server.ts`
+- 自动发布工作流：`.github/workflows/release.yml`
 - closed issue：`.cs/issues/2026/07/23/closed-background-terminal-package.md`

@@ -3,6 +3,7 @@ name: Release
 # Publish packages to npm when a version tag is pushed.
 #
 # Package-scoped tags publish one workspace (e.g. pi-web-search-v0.1.1).
+# Supported package tags: pi-vendor-v*, pi-web-search-v*, pi-image-gen-v*, pi-background-terminal-v*.
 # The legacy v* tag publishes every workspace whose current version isn't already on npm.
 #
 # Uses npm Trusted Publishing (OIDC) — no NPM_TOKEN needed. Each package must
@@ -11,7 +12,7 @@ name: Release
 # are generated automatically.
 on:
   push:
-    tags: ["v*", "pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*"]
+    tags: ["v*", "pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*", "pi-background-terminal-v*"]
 
 jobs:
   publish:
@@ -37,6 +38,7 @@ jobs:
             pi-vendor-v*) packages=(packages/pi-vendor/) ;;
             pi-web-search-v*) packages=(packages/pi-web-search/) ;;
             pi-image-gen-v*) packages=(packages/pi-image-gen/) ;;
+            pi-background-terminal-v*) packages=(packages/pi-background-terminal/) ;;
             v*) packages=(packages/*/) ;;
             *) echo "Unsupported release tag: $tag"; exit 1 ;;
           esac
