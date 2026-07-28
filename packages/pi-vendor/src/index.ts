@@ -45,7 +45,7 @@ export {
 } from "./config-document.js";
 export type { ModelEnrichmentAmbiguous, ModelEnrichmentReady, ModelEnrichmentResult } from "./model-source/enrich.js";
 export { enrichModelId } from "./model-source/enrich.js";
-export { enrichModelForWeb, enrichModelForTui } from "./model-source/web-enrich.js";
+export { enrichModelForTui } from "./model-source/web-enrich.js";
 export type {
 	OfficialModelChoice,
 	ThinkingLevel,
@@ -99,11 +99,6 @@ export {
 	templateLabel,
 } from "./model-source/templates.js";
 
-import { createSessionShutdownHandler } from "./web/server/session.js";
-export { startVendorWebSession, openBrowser, getActiveSession, clearActiveSession, createSessionShutdownHandler } from "./web/server/session.js";
-export type { VendorWebResult, VendorWebSession, WebSessionPhase, WebSessionState } from "./web/server/server.js";
 export default async function registerVendor(pi: ExtensionAPI): Promise<void> {
 	registerVendorCommand(pi);
-	const onShutdown = createSessionShutdownHandler();
-	pi.on("session_shutdown", onShutdown);
 }

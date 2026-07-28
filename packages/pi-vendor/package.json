@@ -33,10 +33,6 @@
     ]
   },
   "scripts": {
-    "build:web": "node src/web/build.mjs",
-    "dev:web": "node scripts/dev-web.mjs",
-    "prepack": "npm run build:web",
-    "pack-smoke": "node scripts/pack-smoke.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -46,7 +42,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "esbuild": "^0.27.7",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
   }

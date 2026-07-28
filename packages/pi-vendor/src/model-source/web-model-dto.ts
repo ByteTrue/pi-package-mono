@@ -81,10 +81,6 @@ export type OfficialModelChoice = {
 	model: WebModelConfig;
 };
 
-export type WebModelEnrichmentResult =
-	| { kind: "ready"; source: "official" | "template" | "default"; model: WebModelConfig; warning?: string }
-	| { kind: "official-candidates"; modelId: string; candidates: OfficialModelChoice[] };
-
 // -- allowed key sets for recursive reconstruction --
 
 const MODEL_ALLOWED: ReadonlySet<string> = new Set([

@@ -6,13 +6,11 @@ import type { QuickUI } from "./quick-adapter.js";
 export type RootAction =
 	| "add-model"
 	| "add-provider"
-	| "open-web"
 	| "cancel";
 
 const ROOT_CHOICES: readonly { value: RootAction; label: string }[] = [
 	{ value: "add-model", label: "Add model" },
 	{ value: "add-provider", label: "Add provider" },
-	{ value: "open-web", label: "Open full manager in browser" },
 	{ value: "cancel", label: "Cancel" },
 ];
 

@@ -21,15 +21,6 @@ describe("showRootMenu", () => {
 		expect(result).toBe("add-provider");
 	});
 
-	it("returns open-web when selected", async () => {
-		const ui = createScriptedQuickUI({
-			select: (_msg) => "open-web",
-		});
-
-		const result = await showRootMenu(ui);
-		expect(result).toBe("open-web");
-	});
-
 	it("returns cancel when selected", async () => {
 		const ui = createScriptedQuickUI({
 			select: (_msg) => "cancel",
