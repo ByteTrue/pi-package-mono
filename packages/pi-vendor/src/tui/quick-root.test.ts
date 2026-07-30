@@ -21,15 +21,6 @@ describe("showRootMenu", () => {
 		expect(result).toBe("add-provider");
 	});
 
-	it("returns cancel when selected", async () => {
-		const ui = createScriptedQuickUI({
-			select: (_msg) => "cancel",
-		});
-
-		const result = await showRootMenu(ui);
-		expect(result).toBe("cancel");
-	});
-
 	it("returns null on Esc (cancel)", async () => {
 		const ui = createScriptedQuickUI({
 			select: (_msg) => null,
@@ -48,6 +39,8 @@ describe("showRootMenu", () => {
 		expect(ui.calls).toHaveLength(1);
 		expect(ui.calls[0]!.kind).toBe("select");
 		expect(ui.calls[0]!.message).toBe("Manage providers and models");
+		// Two actions only; Esc is the way out.
+		expect(ui.calls[0]!.choices).toEqual(["add-provider", "add-model"]);
 	});
 });
 

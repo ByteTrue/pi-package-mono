@@ -1,13 +1,11 @@
 // Quick add-provider flow for /vendor TUI.
-// Implements roadmap §4.7: minimal provider key/baseUrl/api/apiKey/first-model flow.
+// One straight line: key → baseUrl → api → apiKey → one model → save.
+// The api key is collected before the model step because listing upstream
+// models needs it.
 
-import type { ModelsJson, ProviderConfig } from "../models-json.js";
 import { createProvider } from "../config-document.js";
-import { discoverModelIds } from "../model-source/bounded-discover.js";
-import { enrichModelForTui } from "../model-source/web-enrich.js";
-import { searchOfficialModels } from "../model-source/catalog-search.js";
-import type { OfficialModelChoice } from "../model-source/web-model-dto.js";
-import type { ProviderModelConfig } from "../models-json.js";
+import type { ModelsJson, ProviderConfig } from "../models-json.js";
+import { acquireOneModel, type AcquireOptions } from "./model-pick.js";
 import type { QuickUI } from "./quick-adapter.js";
 
 export type AddProviderResult =
@@ -99,239 +97,39 @@ async function acquireApiKey(ui: QuickUI): Promise<string | null> {
 	}
 }
 
-type ProviderDraftFields = {
-	key: string;
-	baseUrl: string;
-	api: string;
-	apiKey: string;
-};
-
-function isCommandBacked(value: string): boolean {
-	return value.startsWith("!");
-}
-
-type ModelAcquireResult =
-	| { kind: "model"; model: ProviderModelConfig }
-	| { kind: "cancelled" }
-	| null; // null = go back
-
-async function acquireFirstModel(
+/**
+ * Create one provider with exactly one model. Esc at any step cancels with
+ * zero writes; to add more models, run the flow again or ask the agent.
+ */
+export async function runAddProviderFlow(
 	ui: QuickUI,
-	draft: ProviderDraftFields,
-): Promise<ModelAcquireResult> {
-	const commandRestricted = isCommandBacked(draft.apiKey);
-
-	const sourceChoices: { value: string; label: string }[] = [
-		{ value: "catalog", label: "Search or enter model id" },
-		{ value: "custom", label: "Enter custom id" },
-	];
-
-	if (!commandRestricted) {
-		sourceChoices.push({ value: "import", label: "Import from /models" });
-	}
-
-	const source = await ui.select({
-		message: "How would you like to add the first model?",
-		choices: sourceChoices as { value: string; label: string }[],
-		default: "catalog",
-	});
-	if (source === null) return null;
-
-	switch (source) {
-		case "catalog":
-			return acquireFromCatalog(ui);
-		case "custom":
-			return acquireCustom(ui);
-		case "import":
-			return acquireFromImport(ui, draft);
-		default:
-			return null;
-	}
-}
-
-async function acquireFromCatalog(ui: QuickUI): Promise<ModelAcquireResult> {
-	const query = await ui.input({
-		message: "Search official model catalog or enter custom id:",
-		placeholder: "e.g. gpt-4o, claude-sonnet-4-5, or custom-id",
-	});
-	if (!query) return { kind: "cancelled" };
-
-	const trimmed = query.trim();
-	if (!trimmed) return null;
-
-	const results = await searchOfficialModels(trimmed, 25);
-
-	if (results.length > 0) {
-		const providers = new Set(results.map((r) => r.provider));
-		if (providers.size > 1) {
-			const providerChoice = await ui.select({
-				message: `Multiple providers found for "${trimmed}". Select source:`,
-				choices: [...providers].map((p) => ({ value: p, label: p })),
-			});
-			if (!providerChoice) return { kind: "cancelled" };
-			const filtered = results.filter((r) => r.provider === providerChoice);
-			if (filtered.length > 0) return buildModelFromChoice(filtered[0]!);
-		}
-
-		const selected = await ui.select({
-			message: "Select model:",
-			choices: results.map((r) => ({
-				value: r.modelId,
-				label: `${r.provider}/${r.modelId}${r.model.name ? ` - ${r.model.name}` : ""}`,
-			})),
-		});
-		if (!selected) return { kind: "cancelled" };
-		const choice = results.find((r) => r.modelId === selected);
-		if (choice) return buildModelFromChoice(choice);
-	}
-
-	// No catalog results — treat as custom id with enrichment
-	const enriched = await enrichModelForTui(trimmed);
-	if (enriched.kind === "official-ambiguous") {
-		ui.notify(`No catalog entries found for "${trimmed}". Using defaults.`, "warning");
-		return { kind: "model", model: { id: trimmed } };
-	}
-
-	return { kind: "model", model: enriched.model };
-}
-
-function buildModelFromChoice(choice: OfficialModelChoice): ModelAcquireResult {
-	const model: ProviderModelConfig = {
-		id: choice.model.id,
-		name: choice.model.name,
-		api: choice.model.api,
-		reasoning: choice.model.reasoning,
-		thinkingLevelMap: choice.model.thinkingLevelMap,
-		input: choice.model.input,
-		// ponytail: skip cost field mapping, add when ProviderModelConfig supports WebCost
-		contextWindow: choice.model.contextWindow,
-		maxTokens: choice.model.maxTokens,
-		compat: choice.model.compat as ProviderModelConfig["compat"],
-	};
-	return { kind: "model", model };
-}
-
-async function acquireCustom(ui: QuickUI): Promise<ModelAcquireResult> {
-	const id = await ui.input({
-		message: "Enter model id:",
-		placeholder: "e.g. my-custom-model",
-	});
-	if (!id) return { kind: "cancelled" };
-
-	const trimmed = id.trim();
-	if (!trimmed) return null;
-
-	const enriched = await enrichModelForTui(trimmed);
-	if (enriched.kind === "official-ambiguous") {
-		ui.notify(`Using default configuration for "${trimmed}".`, "info");
-	}
-
-	if (enriched.kind === "ready") {
-		return { kind: "model", model: enriched.model };
-	}
-
-	return { kind: "model", model: { id: trimmed } };
-}
-
-async function acquireFromImport(
-	ui: QuickUI,
-	draft: ProviderDraftFields,
-): Promise<ModelAcquireResult> {
-	// For new providers, call discoverModelIds directly with draft config
-	const providerConfig = {
-		baseUrl: draft.baseUrl,
-		apiKey: draft.apiKey,
-		headers: undefined as Record<string, string> | undefined,
-	};
-
-	ui.notify("Discovering models...", "info");
-
-	let ids: string[];
-	try {
-		ids = await discoverModelIds(providerConfig, {});
-	} catch (err) {
-		ui.notify(`Failed to discover models: ${err instanceof Error ? err.message : String(err)}`, "error");
-		return null;
-	}
-
-	if (ids.length === 0) {
-		ui.notify("No models found at the provider's /models endpoint.", "warning");
-		return null;
-	}
-
-	const selected = await ui.select({
-		message: `Found ${ids.length} models. Select one to import:`,
-		choices: ids.slice(0, 100).map((id) => ({ value: id, label: id })),
-	});
-	if (!selected) return { kind: "cancelled" };
-
-	return { kind: "model", model: { id: selected } };
-}
-
-export async function runAddProviderFlow(ui: QuickUI, models: ModelsJson): Promise<AddProviderResult> {
-	// Step 1: Provider key (must be unique)
+	models: ModelsJson,
+	options?: AcquireOptions,
+): Promise<AddProviderResult> {
 	const key = await acquireProviderKey(ui, models);
 	if (key === null) return { kind: "cancelled" };
 
-	// Step 2: Base URL
 	const baseUrl = await acquireBaseUrl(ui);
 	if (baseUrl === null) return { kind: "cancelled" };
 
-	// Step 3: API format
 	const api = await acquireApiFormat(ui);
 	if (api === null) return { kind: "cancelled" };
 
-	// Step 4: API key
 	const apiKey = await acquireApiKey(ui);
 	if (apiKey === null) return { kind: "cancelled" };
 
-	const draft: ProviderDraftFields = { key, baseUrl, api, apiKey };
+	// No initialProvider: this provider is not on disk, so a `!command` key is
+	// not yet trusted and discovery is skipped for it.
+	const model = await acquireOneModel(ui, { baseUrl, api, apiKey }, options);
+	if (model === null) return { kind: "cancelled" };
 
-	// Step 5: First model — loop until save or cancel
-	// Accumulate models across add-another; save once with all models.
-	let accumulatedModels: ProviderModelConfig[] = [];
-	for (;;) {
-		const modelResult = await acquireFirstModel(ui, draft);
-		if (modelResult === null) continue; // back to model source
-		if (modelResult.kind === "cancelled") continue;
-
-		// Inherit provider api if model api is missing
-		if (!modelResult.model.api) {
-			modelResult.model = { ...modelResult.model, api: draft.api };
-		}
-
-		accumulatedModels = [...accumulatedModels, modelResult.model];
-
-		// Build provider with all accumulated models
-		const providerConfig: ProviderConfig = {
-			baseUrl: draft.baseUrl,
-			api: draft.api,
-			apiKey: draft.apiKey,
-			models: accumulatedModels,
-		};
-
-		const draftModels = { ...models, providers: { ...(models.providers ?? {}) } };
-		const createResult = createProvider(draftModels, draft.key, providerConfig);
-		if (!createResult.ok) {
-			ui.notify(`Cannot create provider: ${createResult.error.message}`, "error");
-			accumulatedModels = accumulatedModels.slice(0, -1); // rollback duplicate addition
-			continue;
-		}
-
-		// Summary
-		const modelList = accumulatedModels.map((m) => m.id).join(", ");
-		const summary = await ui.select({
-			message: `Provider "${draft.key}" with ${accumulatedModels.length} model(s): ${modelList}. What next?`,
-			choices: [
-				{ value: "save", label: "Save" },
-				{ value: "add-another", label: "Add another model" },
-				{ value: "cancel", label: "Cancel" },
-			],
-			default: "save",
-		});
-		if (summary === null || summary === "cancel") return { kind: "cancelled" };
-		if (summary === "add-another") continue;
-
-		return { kind: "saved", models: createResult.value };
+	const providerConfig: ProviderConfig = { baseUrl, api, apiKey, models: [model] };
+	const draft = { ...models, providers: { ...(models.providers ?? {}) } };
+	const created = createProvider(draft, key, providerConfig);
+	if (!created.ok) {
+		ui.notify(`Cannot create provider: ${created.error.message}`, "error");
+		return { kind: "cancelled" };
 	}
+
+	return { kind: "saved", models: created.value };
 }

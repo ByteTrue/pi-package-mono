@@ -1,5 +1,6 @@
 {
   "packages": [
-    "../packages/pi-background-terminal"
+    "../packages/pi-background-terminal",
+    "../packages/pi-vendor"
   ]
 }

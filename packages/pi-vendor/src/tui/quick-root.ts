@@ -4,27 +4,26 @@
 import type { QuickUI } from "./quick-adapter.js";
 
 export type RootAction =
-	| "add-model"
 	| "add-provider"
-	| "cancel";
+	| "add-model";
 
+// Add provider first: cold start is the only path that must work without the agent.
 const ROOT_CHOICES: readonly { value: RootAction; label: string }[] = [
-	{ value: "add-model", label: "Add model" },
 	{ value: "add-provider", label: "Add provider" },
-	{ value: "cancel", label: "Cancel" },
+	{ value: "add-model", label: "Add model" },
 ];
 
 /**
  * Show the root /vendor menu.
- * - Default selection is "add-model"
- * - Esc/Cancel returns null (no write)
+ * - Default selection is "add-provider"
+ * - Esc returns null (no write)
  * - Returns the selected action for dispatch
  */
 export async function showRootMenu(ui: QuickUI): Promise<RootAction | null> {
 	return ui.select<RootAction>({
 		message: "Manage providers and models",
 		choices: ROOT_CHOICES,
-		default: "add-model",
+		default: "add-provider",
 	});
 }
 

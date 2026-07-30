@@ -3,8 +3,6 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "
 import { dirname } from "node:path";
 import { TextDecoder } from "node:util";
 
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-
 import { getModelsJsonPath } from "./models-json.js";
 import type { ModelsJson } from "./models-json.js";
 
@@ -48,7 +46,13 @@ export class ConfigCoreError extends Error {
 export type PiOracle = (path: string) => string | undefined;
 
 type ConfigCoreDependencies = {
-	oracle: PiOracle;
+	/**
+	 * Optional pre-write compatibility check. Production omits it: Pi 0.82 removed
+	 * `AuthStorage` and `ModelRegistry.create`, so a temp-file oracle cannot be built
+	 * against the running Pi. The authoritative verdict is the caller's post-save
+	 * `modelRegistry.refresh()` + `getError()`, which works on every version.
+	 */
+	oracle?: PiOracle;
 	readFile: typeof readFileSync;
 	writeFile: typeof writeFileSync;
 	rename: typeof renameSync;
@@ -137,14 +141,6 @@ function parseSnapshot(path: string, deps: ConfigCoreDependencies): ModelsSnapsh
 	return { models: parsed as ModelsJson, revision: revisionFromBytes(bytes) };
 }
 
-function defaultOracle(path: string): string | undefined {
-	try {
-		return ModelRegistry.create(AuthStorage.inMemory(), path).getError();
-	} catch (error) {
-		throw error instanceof Error ? error : new Error("validator unavailable");
-	}
-}
-
 function canonicalBytes(models: ModelsJson): Buffer {
 	try {
 		return Buffer.from(`${JSON.stringify(models, null, 2)}\n`, "utf8");
@@ -161,6 +157,9 @@ function validateWithOracle(models: ModelsJson, path: string, deps: ConfigCoreDe
 	const localIssues = validateModelsJson(models);
 	if (localIssues.length > 0) throw new ConfigCoreError("invalid_config", "Models configuration is invalid", { issues: localIssues });
 
+	const oracle = deps.oracle;
+	if (!oracle) return;
+
 	const temp = tempPath(path, "oracle");
 	try {
 		const bytes = canonicalBytes(models);
@@ -168,7 +167,7 @@ function validateWithOracle(models: ModelsJson, path: string, deps: ConfigCoreDe
 		deps.writeFile(temp, bytes, { encoding: "utf8", mode: 0o600 });
 		let oracleError: string | undefined;
 		try {
-			oracleError = deps.oracle(temp);
+			oracleError = oracle(temp);
 		} catch {
 			throw new ConfigCoreError("validator_unavailable", "Models validator is unavailable");
 		}
@@ -221,7 +220,6 @@ function commitWithDependencies(
 }
 
 const productionDependencies: ConfigCoreDependencies = {
-	oracle: defaultOracle,
 	readFile: readFileSync,
 	writeFile: writeFileSync,
 	rename: renameSync,

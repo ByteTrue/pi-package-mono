@@ -1,185 +1,87 @@
 import { describe, expect, it } from "vitest";
-import { runAddModelFlow } from "./quick-add-model.js";
 import { createScriptedQuickUI } from "./quick-adapter.js";
+import { runAddModelFlow } from "./quick-add-model.js";
 import type { ModelsJson } from "../models-json.js";
 
-function makeModels(providers?: Record<string, any>): ModelsJson {
-	return { providers: providers ?? {} };
+// Hermetic: no official catalog, no catalog search hits.
+const upstream = {
+	enrich: { catalog: null, templates: [] },
+	searchCatalog: async () => [],
+	discover: async () => ["upstream-a", "upstream-b"],
+};
+
+function models(): ModelsJson {
+	return {
+		providers: {
+			relay: {
+				baseUrl: "https://relay.test/v1",
+				api: "openai-completions",
+				apiKey: "sk-user-secret",
+				models: [{ id: "existing-model", name: "Existing" }],
+			},
+		},
+	};
 }
 
 describe("runAddModelFlow", () => {
-	it("cancels when source selection returns null", async () => {
-		const ui = createScriptedQuickUI({
-			select: (_msg) => null, // Esc at source selection
-		});
-
-		const result = await runAddModelFlow(ui, "openai", makeModels());
-		expect(result.kind).toBe("cancelled");
-	});
-
-	it("adds model via custom id and saves", async () => {
-		const ui = createScriptedQuickUI({
-			select: (msg) => {
-				if (msg.includes("How would you like")) return "custom";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-			input: (msg) => {
-				if (msg.includes("Enter model id")) return "my-model";
-				return null;
-			},
-		});
-
-		const result = await runAddModelFlow(ui, "openai", makeModels({
-			openai: { baseUrl: "https://api.openai.com/v1" },
-		}));
+	it("adds exactly one model and stops", async () => {
+		const ui = createScriptedQuickUI({ select: () => "upstream-a" });
+		const result = await runAddModelFlow(ui, "relay", models(), undefined, upstream);
 
 		expect(result.kind).toBe("saved");
-		if (result.kind === "saved") {
-			expect(result.models.providers?.openai?.models).toHaveLength(1);
-			expect(result.models.providers?.openai?.models?.[0]?.id).toBe("my-model");
-		}
+		if (result.kind !== "saved") return;
+		expect(result.models.providers?.relay?.models?.map((m) => m.id)).toEqual(["existing-model", "upstream-a"]);
+
+		// One select for the model, no "add another" loop.
+		expect(ui.calls.filter((c) => c.kind === "select")).toHaveLength(1);
 	});
 
-	it("cancels at summary without writing", async () => {
-		const ui = createScriptedQuickUI({
-			select: (msg) => {
-				if (msg.includes("How would you like")) return "custom";
-				if (msg.includes("What next")) return "cancel";
-				return null;
-			},
-			input: (msg) => {
-				if (msg.includes("Enter model id")) return "my-model";
-				return null;
-			},
+	it("asks before replacing an existing model id", async () => {
+		const ui = createScriptedQuickUI({ select: () => "existing-model", confirm: () => true });
+		const result = await runAddModelFlow(ui, "relay", models(), undefined, {
+			...upstream,
+			discover: async () => ["existing-model"],
 		});
-
-		const result = await runAddModelFlow(ui, "openai", makeModels({
-			openai: { baseUrl: "https://api.openai.com/v1" },
-		}));
-
-		expect(result.kind).toBe("cancelled");
-	});
-
-	it("adds another then saves (single commit with two models)", async () => {
-		let addAnotherCalled = false;
-		const ui = createScriptedQuickUI({
-			select: (msg) => {
-				if (msg.includes("How would you like")) return "custom";
-				if (msg.includes("What next")) {
-					if (!addAnotherCalled) {
-						addAnotherCalled = true;
-						return "add-another";
-					}
-					return "save";
-				}
-				return null;
-			},
-			input: (msg) => {
-				if (msg.includes("Enter model id")) {
-					return addAnotherCalled ? "model-2" : "model-1";
-				}
-				return null;
-			},
-		});
-
-		const result = await runAddModelFlow(ui, "openai", makeModels({
-			openai: { baseUrl: "https://api.openai.com/v1" },
-		}));
 
 		expect(result.kind).toBe("saved");
-		if (result.kind === "saved") {
-			expect(result.models.providers?.openai?.models).toHaveLength(2);
-			expect(result.models.providers?.openai?.models?.[0]?.id).toBe("model-1");
-			expect(result.models.providers?.openai?.models?.[1]?.id).toBe("model-2");
-		}
+		if (result.kind !== "saved") return;
+		expect(result.models.providers?.relay?.models).toHaveLength(1);
+		expect(ui.calls.some((c) => c.kind === "confirm")).toBe(true);
 	});
 
-	it("handles model_exists conflict with explicit confirmation", async () => {
-		let confirmCalled = false;
-		const ui = createScriptedQuickUI({
-			select: (msg) => {
-				if (msg.includes("How would you like")) return "custom";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-			input: (_msg) => "existing-model",
-			confirm: (msg) => {
-				if (msg.includes("already exists")) {
-					confirmCalled = true;
-					return true;
-				}
-				return false;
-			},
+	it("writes nothing when the replace confirmation is declined", async () => {
+		const ui = createScriptedQuickUI({ select: () => "existing-model", confirm: () => false });
+		const result = await runAddModelFlow(ui, "relay", models(), undefined, {
+			...upstream,
+			discover: async () => ["existing-model"],
 		});
 
-		const result = await runAddModelFlow(ui, "openai", makeModels({
-			openai: {
-				baseUrl: "https://api.openai.com/v1",
-				models: [{ id: "existing-model", name: "Old" }],
-			},
-		}));
+		expect(result).toEqual({ kind: "cancelled" });
+	});
 
-		expect(confirmCalled).toBe(true);
+	it("writes nothing when the model selection is escaped", async () => {
+		const ui = createScriptedQuickUI({ select: () => null });
+		const result = await runAddModelFlow(ui, "relay", models(), undefined, upstream);
+
+		expect(result).toEqual({ kind: "cancelled" });
+	});
+
+	it("refuses a provider without a base URL", async () => {
+		const broken: ModelsJson = { providers: { relay: { api: "openai-completions" } } };
+		const ui = createScriptedQuickUI({});
+		const result = await runAddModelFlow(ui, "relay", broken, undefined, upstream);
+
+		expect(result).toEqual({ kind: "cancelled" });
+		expect(ui.notifies.some((n) => n.message.includes("no base URL"))).toBe(true);
+	});
+
+	it("inherits the provider api when the model has none", async () => {
+		const ui = createScriptedQuickUI({ select: () => "upstream-a" });
+		const result = await runAddModelFlow(ui, "relay", models(), undefined, upstream);
+
 		expect(result.kind).toBe("saved");
-		if (result.kind === "saved") {
-			expect(result.models.providers?.openai?.models).toHaveLength(1);
-			expect(result.models.providers?.openai?.models?.[0]?.id).toBe("existing-model");
-		}
-	});
-
-	it("handles model_exists conflict rejection (goes back)", async () => {
-		let confirmCount = 0;
-		const ui = createScriptedQuickUI({
-			select: (msg) => {
-				if (msg.includes("How would you like")) {
-					if (confirmCount === 0) return "custom";
-					// After rejection, select source again and cancel
-					return null;
-				}
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-			input: (_msg) => "existing-model",
-			confirm: (msg) => {
-				if (msg.includes("already exists")) {
-					confirmCount++;
-					return false; // reject
-				}
-				return false;
-			},
-		});
-
-		const result = await runAddModelFlow(ui, "openai", makeModels({
-			openai: {
-				baseUrl: "https://api.openai.com/v1",
-				models: [{ id: "existing-model" }],
-			},
-		}));
-
-		expect(confirmCount).toBe(1);
-		expect(result.kind).toBe("cancelled");
-	});
-
-	it("handles empty input by going back", async () => {
-		let sourceCalls = 0;
-		const ui = createScriptedQuickUI({
-			select: (msg) => {
-				if (msg.includes("How would you like")) {
-					sourceCalls++;
-					return sourceCalls === 1 ? "custom" : null; // second call cancels
-				}
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-			input: (_msg) => "   ",
-		});
-
-		const result = await runAddModelFlow(ui, "openai", makeModels({
-			openai: { baseUrl: "https://api.openai.com/v1" },
-		}));
-
-		// Goes back to source selection, which cancels on second null
-		expect(result.kind).toBe("cancelled");
+		if (result.kind !== "saved") return;
+		const added = result.models.providers?.relay?.models?.find((m) => m.id === "upstream-a");
+		expect(added?.api).toBe("openai-completions");
 	});
 });

@@ -23,15 +23,16 @@ export type {
 	MutationResult,
 	ProviderFieldKey,
 } from "./config-document.js";
-export { createCustomInput, createCustomSelect } from "./tui/custom-select.js";
-export { customInput, customSelect, promptInput, promptJsonObject, selectValue, VENDOR_OVERLAY_OPTIONS } from "./tui/vendor-ui.js";
-export type { SelectResult } from "./tui/vendor-ui.js";
 export type { QuickUI } from "./tui/quick-adapter.js";
 export { createProductionQuickUI, createScriptedQuickUI } from "./tui/quick-adapter.js";
 export { showRootMenu, supportsInteractiveUI } from "./tui/quick-root.js";
 export type { RootAction } from "./tui/quick-root.js";
 export { runAddModelFlow } from "./tui/quick-add-model.js";
 export type { AddModelResult } from "./tui/quick-add-model.js";
+export { runAddProviderFlow } from "./tui/quick-add-provider.js";
+export type { AddProviderResult } from "./tui/quick-add-provider.js";
+export { acquireOneModel, pickModelId, resolveModelConfig, stripTrailingV1 } from "./tui/model-pick.js";
+export type { AcquireOptions, ProviderTarget } from "./tui/model-pick.js";
 export {
 	addModel,
 	classifyConfigValue,

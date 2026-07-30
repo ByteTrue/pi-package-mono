@@ -1,413 +1,131 @@
-import { describe, expect, it, vi } from "vitest";
-import { runAddProviderFlow } from "./quick-add-provider.js";
+import { describe, expect, it } from "vitest";
 import { createScriptedQuickUI } from "./quick-adapter.js";
-import * as catalogSearch from "../model-source/catalog-search.js";
-import * as webEnrich from "../model-source/web-enrich.js";
-import * as boundedDiscover from "../model-source/bounded-discover.js";
+import { runAddProviderFlow } from "./quick-add-provider.js";
 import type { ModelsJson } from "../models-json.js";
 
-vi.mock("../model-source/catalog-search.js");
-vi.mock("../model-source/web-enrich.js");
-vi.mock("../model-source/bounded-discover.js");
+const NO_CATALOG = { catalog: null, templates: [] };
 
-function makeModels(providers?: Record<string, unknown>): ModelsJson {
-	return { providers: providers as ModelsJson["providers"] };
+/**
+ * Answer each prompt by message substring exactly once; every repeat (and any
+ * unlisted prompt) returns null, so a rejected answer ends the flow instead of
+ * spinning the re-ask loop forever.
+ */
+function scripted(answers: Record<string, string | null>) {
+	const remaining = new Map(Object.entries(answers));
+	const pick = (message: string): string | null => {
+		for (const [needle, value] of remaining) {
+			if (message.includes(needle)) {
+				remaining.delete(needle);
+				return value;
+			}
+		}
+		return null;
+	};
+	return createScriptedQuickUI({ input: pick, select: pick });
 }
 
+const HAPPY_PATH = {
+	"Provider key": "relay",
+	"Base URL": "https://relay.test/v1",
+	"API format": "openai-completions",
+	"API key": "sk-user-secret",
+	"Select model": "upstream-b",
+};
+
+// Hermetic: no official catalog, no catalog search hits.
+const upstream = {
+	enrich: NO_CATALOG,
+	searchCatalog: async () => [],
+	discover: async () => ["upstream-a", "upstream-b"],
+};
+
 describe("runAddProviderFlow", () => {
-	it("cancels when provider key input is null (Esc)", async () => {
-		const ui = createScriptedQuickUI({
-			input: (_msg) => null,
+	const empty: ModelsJson = { providers: {} };
+
+	it("walks one straight line and returns a single-model provider", async () => {
+		const ui = scripted(HAPPY_PATH);
+		const result = await runAddProviderFlow(ui, empty, upstream);
+
+		expect(result.kind).toBe("saved");
+		if (result.kind !== "saved") return;
+		expect(result.models.providers?.relay).toMatchObject({
+			baseUrl: "https://relay.test/v1",
+			api: "openai-completions",
+			apiKey: "sk-user-secret",
+			models: [{ id: "upstream-b" }],
 		});
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("cancelled");
+
+		// No mode selector and no "what next?" loop: exactly two selects.
+		const selects = ui.calls.filter((c) => c.kind === "select").map((c) => c.message);
+		expect(selects).toEqual(["API format:", "Select model:"]);
 	});
 
-	it("cancels when baseUrl input is null (Esc)", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				return null; // Esc at baseUrl
-			},
-		});
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("cancelled");
+	it("asks for the api key before listing upstream models", async () => {
+		const ui = scripted(HAPPY_PATH);
+		await runAddProviderFlow(ui, empty, upstream);
+
+		const order = ui.calls.map((c) => c.message);
+		expect(order.findIndex((m) => m.includes("API key"))).toBeLessThan(
+			order.findIndex((m) => m.includes("Select model")),
+		);
 	});
 
-	it("cancels when api format select is null (Esc)", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				return null;
-			},
-			select: (_msg) => null, // Esc at api format
-		});
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("cancelled");
+	it("falls back to a typed model id when the provider has no /models", async () => {
+		const ui = scripted({ ...HAPPY_PATH, "Model id": "hand-typed" });
+		const result = await runAddProviderFlow(ui, empty, { ...upstream, discover: async () => [] });
+
+		expect(result.kind).toBe("saved");
+		if (result.kind !== "saved") return;
+		// No official template: safe defaults, and the user is warned about them.
+		expect(result.models.providers?.relay?.models).toEqual([
+			{ id: "hand-typed", name: "hand-typed", api: "openai-completions", reasoning: false, input: ["text"], contextWindow: 128000, maxTokens: 16384 },
+		]);
+		expect(ui.notifies.some((n) => n.level === "warning" && n.message.includes("safe defaults"))).toBe(true);
 	});
 
-	it("cancels when apiKey input is null (Esc)", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return null;
-				return null;
-			},
-			select: (_msg) => "openai-completions",
-		});
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("cancelled");
-	});
+	it("rejects a provider key that already exists", async () => {
+		const existing: ModelsJson = { providers: { relay: { baseUrl: "https://old.test", api: "openai-completions" } } };
+		const ui = scripted(HAPPY_PATH);
+		const result = await runAddProviderFlow(ui, existing, upstream);
 
-	it("rejects existing provider key", async () => {
-		let keyAttempts = 0;
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) {
-					keyAttempts++;
-					if (keyAttempts === 1) return "existing";
-					return null; // Esc after error notification
-				}
-				return null;
-			},
-		});
-		const result = await runAddProviderFlow(ui, makeModels({
-			existing: { baseUrl: "https://example.com" },
-		}));
+		// The key prompt re-asks, gets the same answer, and Esc is never reached,
+		// so the flow must not fall through to a write.
 		expect(result.kind).toBe("cancelled");
-		// Should show error notification
 		expect(ui.notifies.some((n) => n.message.includes("already exists"))).toBe(true);
 	});
 
-	it("rejects empty provider key with warning and retries", async () => {
-		let keyCalls = 0;
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) {
-					keyCalls++;
-					if (keyCalls === 1) return "   "; // whitespace only
-					if (keyCalls === 2) return "valid-key";
-					return null;
-				}
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-			if (msg.includes("API key")) return "sk-test";
-			if (msg.includes("Search")) return "gpt-4o";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "catalog";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
+	it.each([
+		["Provider key", {}],
+		["Base URL", { "Provider key": "relay" }],
+		["API format", { "Provider key": "relay", "Base URL": "https://relay.test/v1" }],
+		["API key", { "Provider key": "relay", "Base URL": "https://relay.test/v1", "API format": "openai-completions" }],
+	])("writes nothing when Esc is pressed at %s", async (_step, answers) => {
+		const ui = scripted(answers as Record<string, string>);
+		const result = await runAddProviderFlow(ui, empty, upstream);
 
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([]);
-		vi.mocked(webEnrich.enrichModelForTui).mockResolvedValue({
-			kind: "ready",
-			model: { id: "gpt-4o", name: "GPT-4o" },
-		} as any);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		expect(ui.notifies.some((n) => n.message.includes("cannot be empty"))).toBe(true);
+		expect(result).toEqual({ kind: "cancelled" });
 	});
 
-	it("rejects invalid baseUrl", async () => {
-		let urlCalls = 0;
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) {
-					urlCalls++;
-					if (urlCalls === 1) return "not-a-url";
-					if (urlCalls === 2) return "ftp://bad.com";
-					if (urlCalls === 3) return "https://user:pass@example.com";
-					return "https://api.example.com/v1";
-				}
-				if (msg.includes("API key")) return "sk-test";
-				if (msg.includes("Search")) return "gpt-4o";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "catalog";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
+	it("writes nothing when Esc is pressed at the model selection", async () => {
+		const ui = scripted({ ...HAPPY_PATH, "Select model": null });
+		const result = await runAddProviderFlow(ui, empty, upstream);
 
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([]);
-		vi.mocked(webEnrich.enrichModelForTui).mockResolvedValue({
-			kind: "ready",
-			model: { id: "gpt-4o" },
-		} as any);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		// Should have seen error notifications for bad URLs
-		const errorNotifies = ui.notifies.filter((n) => n.level === "error");
-		expect(errorNotifies.length).toBeGreaterThanOrEqual(2); // not-a-url + ftp + userinfo
+		expect(result).toEqual({ kind: "cancelled" });
 	});
 
-	it("saves minimal provider with catalog model", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return "sk-test";
-				if (msg.includes("Search")) return "gpt-4o";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "catalog";
-				if (msg.includes("Select model")) return "gpt-4o";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
+	it("rejects a base URL that is not http(s)", async () => {
+		const ui = scripted({ ...HAPPY_PATH, "Base URL": "ftp://relay.test" });
+		const result = await runAddProviderFlow(ui, empty, upstream);
 
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([{
-			provider: "openai",
-			modelId: "gpt-4o",
-			model: { id: "gpt-4o", name: "GPT-4o", api: "openai-completions" },
-		} as any]);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		if (result.kind !== "saved") throw new Error("unexpected");
-		expect(result.models.providers).toBeDefined();
-		expect(result.models.providers!["my-provider"]).toBeDefined();
-		const provider = result.models.providers!["my-provider"]!;
-		expect(provider.baseUrl).toBe("https://api.example.com/v1");
-		expect(provider.api).toBe("openai-completions");
-		expect(provider.apiKey).toBe("sk-test");
-		expect(provider.models).toHaveLength(1);
-		expect(provider.models![0]!.id).toBe("gpt-4o");
-	});
-
-	it("saves with custom api format and custom model id", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.anthropic.com/v1";
-				if (msg.includes("Custom API")) return "anthropic-messages";
-				if (msg.includes("API key")) return "sk-ant-test";
-				if (msg.includes("Enter model id")) return "claude-sonnet-4-5";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "_custom";
-				if (msg.includes("How would you like")) return "custom";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
-
-		vi.mocked(webEnrich.enrichModelForTui).mockResolvedValue({
-			kind: "ready",
-			model: { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-		} as any);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		if (result.kind !== "saved") throw new Error("unexpected");
-		const provider = result.models.providers!["my-provider"]!;
-		expect(provider.api).toBe("anthropic-messages");
-		expect(provider.models![0]!.id).toBe("claude-sonnet-4-5");
-	});
-
-	it("imports models via discoverModelIds for non-command provider", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return "sk-test";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "import";
-				if (msg.includes("Select one to import")) return "model-a";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
-
-		vi.mocked(boundedDiscover.discoverModelIds).mockResolvedValue(["model-a", "model-b", "model-c"]);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		if (result.kind !== "saved") throw new Error("unexpected");
-		const provider = result.models.providers!["my-provider"]!;
-		expect(provider.models![0]!.id).toBe("model-a");
-	});
-
-	it("does not offer import for command-backed apiKey", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return "!get-api-key my-provider";
-				if (msg.includes("Search")) return "gpt-4o";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "catalog";
-				if (msg.includes("Select model")) return "gpt-4o";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
-
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([{
-			provider: "openai",
-			modelId: "gpt-4o",
-			model: { id: "gpt-4o", name: "GPT-4o" },
-		} as any]);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		if (result.kind !== "saved") throw new Error("unexpected");
-		// Verify import was never offered — no "Import from" in select messages
-		const selectMessages = ui.calls.filter((c) => c.kind === "select").map((c) => c.message);
-		expect(selectMessages.some((m) => m.includes("Import"))).toBe(false);
-	});
-
-	it("cancels at summary without writing", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return "sk-test";
-				if (msg.includes("Search")) return "gpt-4o";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "catalog";
-				if (msg.includes("Select model")) return "gpt-4o";
-				if (msg.includes("What next")) return "cancel";
-				return null;
-			},
-		});
-
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([{
-			provider: "openai",
-			modelId: "gpt-4o",
-			model: { id: "gpt-4o", name: "GPT-4o" },
-		} as any]);
-
-		const result = await runAddProviderFlow(ui, makeModels());
 		expect(result.kind).toBe("cancelled");
+		expect(ui.notifies.some((n) => n.message.includes("http or https"))).toBe(true);
 	});
 
-	it("add another model accumulates", async () => {
-		let modelRound = 0;
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return "sk-test";
-				if (msg.includes("Search")) return modelRound === 0 ? "gpt-4o" : "gpt-4o-mini";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) return "catalog";
-				if (msg.includes("Select model")) return modelRound === 0 ? "gpt-4o" : "gpt-4o-mini";
-				if (msg.includes("What next")) {
-					modelRound++;
-					if (modelRound === 1) return "add-another";
-					return "save";
-				}
-				return null;
-			},
-		});
+	it("rejects a base URL carrying credentials", async () => {
+		const ui = scripted({ ...HAPPY_PATH, "Base URL": "https://user:pw@relay.test/v1" });
+		const result = await runAddProviderFlow(ui, empty, upstream);
 
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([
-			{ provider: "openai", modelId: "gpt-4o", model: { id: "gpt-4o", name: "GPT-4o" } } as any,
-			{ provider: "openai", modelId: "gpt-4o-mini", model: { id: "gpt-4o-mini", name: "GPT-4o Mini" } } as any,
-		]);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		if (result.kind !== "saved") throw new Error("unexpected");
-		// Both models accumulated across add-another
-		const provider = result.models.providers!["my-provider"]!;
-		expect(provider.models).toHaveLength(2);
-		expect(provider.models!.map((m) => m.id)).toEqual(["gpt-4o", "gpt-4o-mini"]);
-		expect(modelRound).toBe(2);
-	});
-
-
-	it("handles empty model discovery with warning", async () => {
-		let importAttempted = false;
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.example.com/v1";
-				if (msg.includes("API key")) return "sk-test";
-				if (msg.includes("Search")) return "gpt-4o";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "openai-completions";
-				if (msg.includes("How would you like")) {
-					if (!importAttempted) {
-						importAttempted = true;
-						return "import";
-					}
-					return "catalog";
-				}
-				if (msg.includes("Select model")) return "gpt-4o";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
-
-		vi.mocked(boundedDiscover.discoverModelIds).mockResolvedValue([]);
-		vi.mocked(catalogSearch.searchOfficialModels).mockResolvedValue([{
-			provider: "openai",
-			modelId: "gpt-4o",
-			model: { id: "gpt-4o", name: "GPT-4o" },
-		} as any]);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		expect(ui.notifies.some((n) => n.message.includes("No models found"))).toBe(true);
-	});
-
-	it("inherits provider api when model api is missing", async () => {
-		const ui = createScriptedQuickUI({
-			input: (msg) => {
-				if (msg.includes("Provider key")) return "my-provider";
-				if (msg.includes("Base URL")) return "https://api.anthropic.com/v1";
-				if (msg.includes("API key")) return "sk-test";
-				if (msg.includes("Enter model id")) return "claude-sonnet";
-				return null;
-			},
-			select: (msg) => {
-				if (msg.includes("API format")) return "anthropic-messages";
-				if (msg.includes("How would you like")) return "custom";
-				if (msg.includes("What next")) return "save";
-				return null;
-			},
-		});
-
-		vi.mocked(webEnrich.enrichModelForTui).mockResolvedValue({
-			kind: "ready",
-			model: { id: "claude-sonnet" }, // no api
-		} as any);
-
-		const result = await runAddProviderFlow(ui, makeModels());
-		expect(result.kind).toBe("saved");
-		if (result.kind !== "saved") throw new Error("unexpected");
-		const provider = result.models.providers!["my-provider"]!;
-		expect(provider.models![0]!.api).toBe("anthropic-messages");
+		expect(result.kind).toBe("cancelled");
+		expect(ui.notifies.some((n) => n.message.includes("username or password"))).toBe(true);
 	});
 });
