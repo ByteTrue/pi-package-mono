@@ -3,9 +3,12 @@ kind: epic
 title: pi-vendor Web 产品化升级
 status: closed
 created: 2026-07-14
+superseded_by: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
 
 # pi-vendor Web 产品化升级
+
+> **Superseded（2026-07-29）**：该 Web/双界面产品承诺已被 AI-first epic 取代；记录仅保留历史证据，当前实现不再包含 Web surface。
 
 ## 这个 Epic 要改变什么
 

@@ -2,7 +2,7 @@
 kind: issue
 title: "删掉 pi-vendor 的 Web 与死码"
 type: chore
-status: open
+status: closed
 created: 2026-07-29
 epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
@@ -111,3 +111,10 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 本 repo `.pi/settings.json` 只加载本地 `pi-background-terminal`；`@bytetrue/pi-vendor` 是全局装的已发布 0.2.2。当前 Pi session 里的 `/vendor` 跑的是**带 Web 的published 版本**，不是本工作树。要真机验证得先改 settings 加载本地包并停用全局包（否则按 `.cs/notes/pi-local-package-loading.md` 会 tool 冲突），再 reload Pi。
 
 切片 2 会重写整个 TUI，届时必须真机验证。为中间态单独做一次 settings 切换 + reload 收益很低，故推迟。切片 1 改动本身由 typecheck + 153 测试 + registration smoke + pack dry-run 覆盖。
+
+## 关闭结论
+
+- Web runtime、SecretRef/mask、生成资产、Web scripts 与专属依赖已全部删除；CI 的 Web build/pack-smoke 残留也在最终 review 中移除。
+- `model-list.ts`、6 个空壳 re-export 与后续孤立的 Web DTO/adapter 均确认无消费者后删除或收口。
+- 包最终 `npm pack --dry-run` 只含 extension source、Skill、key helper 与 README，无 Web 资产。
+- 切片 1 提交：`3095439`。后续 TUI/Skill 收口见同 epic 的关闭 issues。

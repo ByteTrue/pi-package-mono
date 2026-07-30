@@ -5,9 +5,12 @@ type: feature
 status: closed
 created: 2026-07-14
 epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
+superseded_by: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
 
 # Web 模型表单常用字段
+
+> **Superseded（2026-07-29）**：该 Web/双界面产品承诺已被 AI-first epic 取代；记录仅保留历史证据，当前实现不再包含 Web surface。
 
 ## 目标
 

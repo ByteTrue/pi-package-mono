@@ -5,9 +5,12 @@ type: feature
 status: closed
 created: 2026-07-12
 epic: ".cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md"
+superseded_by: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
 
 # TUI 快捷流
+
+> **Superseded（2026-07-29）**：该双界面/Web/TUI 产品形态已被 AI-first epic 取代；记录仅保留历史证据。
 
 ## 目标
 

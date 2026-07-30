@@ -15,19 +15,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Web assets must be built and committed/generated clean before pack smoke.
-      - run: npm --workspace @bytetrue/pi-vendor run build:web
-      - name: Generated web assets clean
-        run: |
-          if [ -n "$(git status --porcelain -- packages/pi-vendor/src/web/assets)" ]; then
-            echo "Generated web assets dirty after build:web:"
-            git status --porcelain -- packages/pi-vendor/src/web/assets
-            exit 1
-          fi
       # Type-check any workspace that defines a `typecheck` script.
       - run: npm run typecheck --workspaces --if-present
       # Run every workspace's test suite (vitest).
       - run: npm test
-      # Each distributable package must build, pack, and load after a production-only install.
-      - run: node packages/pi-vendor/scripts/pack-smoke.mjs
+      # Verify the source-loaded vendor extension and bundled skill are publishable.
+      - run: npm --workspace @bytetrue/pi-vendor pack --dry-run
       - run: node packages/pi-image-gen/scripts/pack-smoke.mjs

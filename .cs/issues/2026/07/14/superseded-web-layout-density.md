@@ -5,13 +5,16 @@ type: feature
 status: superseded
 created: 2026-07-14
 epic: ".cs/epics/2026/07/14/vendor-web-productization/spec.md"
+superseded_by: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
 
 # Web 布局与信息密度
 
+> **Superseded（2026-07-29）**：该双界面/Web/TUI 产品形态已被 AI-first epic 取代；记录仅保留历史证据。
+
 ## 结论
 
-本 issue 的局部布局/密度目标已被 `.cs/issues/2026/07/15/open-web-visual-redesign.md` 的全表面视觉重设计取代。保留此记录以说明范围迁移；不在这里继续设计或实现。
+本 issue 的局部布局/密度目标已被 `.cs/issues/2026/07/15/closed-web-visual-redesign.md` 的全表面视觉重设计取代。保留此记录以说明范围迁移；不在这里继续设计或实现。
 
 ## 归属
 
@@ -56,7 +59,7 @@ Web 已有 catalog/enrich API 与旁路 Official Catalog UI，但未接入模型
 
 ## 关闭回写
 
-- 取代者：`.cs/issues/2026/07/15/open-web-visual-redesign.md`
+- 取代者：`.cs/issues/2026/07/15/closed-web-visual-redesign.md`
 - epic：当前推进已标注本 issue 为 superseded
 
 ## 关闭结论

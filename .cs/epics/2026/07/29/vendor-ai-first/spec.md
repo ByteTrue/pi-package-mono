@@ -1,7 +1,7 @@
 ---
 kind: epic
 title: pi-vendor 转向 AI-first
-status: open
+status: closed
 created: 2026-07-29
 ---
 
@@ -17,7 +17,7 @@ created: 2026-07-29
 - TUI 缩成两条直线，只服务"冷启动"和"一次性单发"
 - **删掉整个 Web**（8,908 行，占包 59%）以及只为浏览器边界存在的 `SecretRef` / `mask`
 
-体量预期：15,096 → ~4,300 行（约删 71%）。
+终态：`src/` 15,096 → 5,745 行（删除 9,351 行，约 62%）；比预估多保留的是经验证仍有消费者的 config/model-source 安全 core 与新增 tools/tests。
 
 ## 为什么现在做
 
@@ -58,12 +58,12 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 1. Provider key
 2. Base URL
 3. API 类型（4 选 1 + Custom）
-4. API key（输入 → 明文入库）
+4. API key（输入 → literal encoding 后入库）
 5. GET {baseUrl}/models          ← 用第 4 步的 key，故 key 必须先于发现
    ├─ 成功 → 列出全部上游 id，选一个
    └─ 失败 → 退回手输 model id（命中官方 catalog 就套模板）
-6. 解析官方模板：0 候选 → 最小条目 {id}；1 候选 → 自动；多候选 → 一个 select
-7. oracle 校验 + 原子写 + registry refresh
+6. 解析官方模板：0 候选 → 明确 warning 后写 TUI safe defaults；1 候选 → 自动；多候选 → 一个 select
+7. 本地校验 + 原子写 + awaited registry refresh/getError
 ```
 
 `Add model` = 先选 provider，然后从第 5 步接上，同一段代码。Esc 任意时刻零写入。
@@ -74,12 +74,12 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 - **不出写动词。** AI 已有 `edit`，再造 apply 动词是重复。代价是失去写路径的原子性保证；单用户配置文件可接受。
 - **手动路径只保留 AI 结构上做不到的事。** 冷启动（没有模型就没有 AI）是唯一硬约束；List 归 Pi 自己的 `/model`；批量与删除归 AI。
 - **`SecretRef` 随浏览器一起消失。** 已验证它在 `src/web/` 之外零引用。替代品是 SKILL.md 里一条规则：可以读 `models.json`，但输出里永不复现 apiKey 的值。
-- **密钥明文入库**（owner 决策）。录入走 owner 自己终端跑的命令，key 从不经过 AI。不采用 Pi 支持的 `!command` / `$VAR` 引用形态；需要时由 AI 按需改。
+- **密钥 literal 入库**（owner 决策）。录入走 owner 自己终端跑的 bundled helper，key 从不经过 AI；普通值明文，Pi 元字符按 `$` → `$$`、开头 `!` → `$!` 编码，避免环境展开/命令执行。不强制 `!command` / `$VAR` 引用形态；需要时由 AI 按需改。
 - **一次只加一个**，所以不需要多选组件（`ctx.ui` 本来也没有多选）。
 
 ## 统一语言
 
-- **只读动词**：包对 AI 暴露的三个无副作用能力；与"写"严格区分。
+- **只读动词**：包对 AI 暴露的三个不写 `models.json` 的能力；validate 允许刷新当前 session 的内存 registry，与配置“写”严格区分。
 - **官方模板**：active Pi runtime catalog 里的某个 provider 下的 model 配置，作为元数据来源。
 - **目标 provider** vs **官方源 provider**：前者是 `models.json` 里被编辑的 key，后者是模板来源；二者常不同，永不互相替代。
 - **冷启动**：`models.json` 无可用模型、AI 不可用的状态。
@@ -90,16 +90,16 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 
 | # | Issue | 状态 |
 |---|---|---|
-| 1 | `.cs/issues/2026/07/29/open-vendor-drop-web.md` — 删 Web 与死码 | open |
-| 2 | `.cs/issues/2026/07/29/open-vendor-tui-linear.md` — TUI 两条直线 | open |
-| 3 | `.cs/issues/2026/07/29/open-vendor-skill-verbs.md` — skill + 三个只读动词 | open |
-| 4 | `.cs/issues/2026/07/29/open-vendor-spec-rewrite.md` — spec / superseded / README | open |
+| 1 | `.cs/issues/2026/07/29/closed-vendor-drop-web.md` — 删 Web 与死码 | closed |
+| 2 | `.cs/issues/2026/07/29/closed-vendor-tui-linear.md` — TUI 两条直线 | closed |
+| 3 | `.cs/issues/2026/07/29/closed-vendor-skill-verbs.md` — skill + 三个只读动词 | closed |
+| 4 | `.cs/issues/2026/07/29/closed-vendor-spec-rewrite.md` — spec / superseded / README | closed |
 
 顺序即依赖顺序：先在干净树上删，再重写 TUI，再加 skill 与动词，最后收规格。
 
 ### 剩余阻碍
 
-无。
+无。npm 发版仍需 owner 另行授权。
 
 ## 暂不推进范围
 
@@ -114,19 +114,25 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 1. 放弃"不用 AI 也能管全部"的产品承诺。
 2. 删 Web，不保留不冻结。
 3. 不做 TUI List。
-4. apiKey 明文写入 `models.json`；AI 给改写命令，key 不经过 AI。
+4. apiKey 作为 literal 写入 `models.json`；AI 给 bundled helper 命令，key 不经过 AI；Pi 元字符必须编码后落盘。
 5. mutation 归 AI 的 `edit`，包内不出写动词。
 6. 根菜单两项，Esc 取消。
 7. 每次添加只加一个。
 8. 零模型状态下 Pi TUI 可跑斜杠命令（owner 确认）。
 9. anthropic `/v1` override 规则照搬 owner skill，不需再核。
 
-## 关闭条件
+## 关闭条件与证据
 
-- `src/web/` 与 `SecretRef` / `mask` 全部移除，构建步骤与生成产物消失
-- TUI 两条直线可用：模板候选 0/1/多 三分支、`/models` 失败回退、恰好一次 commit + refresh、Esc 零写入
-- `skills/pi-vendor/SKILL.md` 与三个只读动词真机跑通增 / 改 / 删 + 一次审计
-- `.cs/spec/pi-vendor/index.md` 重写完成，历史 Web 结论标 superseded，README 与实现一致
+- `src/web/`、SecretRef/mask、Web scripts/assets/CI 步骤已全部移除；pack dry-run 无 Web 产物。
+- TUI 两条直线已实现；owner 真机确认 Add model，`opus` fuzzy + 完整候选 + 10 行分页按反馈修正；Esc/commit/refresh 与 provider flow 由 scripted tests 覆盖。
+- `skills/pi-vendor/SKILL.md`、三个 read-only-file tools 与 key helper 已打包；Pi RPC 真实发现 `skill:pi-vendor`；tools/key/catalog/resolver 有聚焦测试。
+- project spec / README 已重写，旧 Web epics/issues 标 superseded，内部 export/Web 命名与 CI 收口。
+- package typecheck、21 files / 191 tests、pack dry-run、active Pi 0.82 catalog probe、真实 extension/skill discovery通过。
+- 独立 reviewer 经 changes-requested 修复后最终 verdict：blocking=0、important=0。
+
+## 关闭结论
+
+AI-first 转向完成。日常 CRUD 的唯一产品入口是 bundled Skill + AI edit；包只保留 catalog/discover/validate 三个不写配置文件的工具与零模型冷启动 TUI。Web 产品承诺正式作废但历史证据保留。未执行 npm 发布。
 
 ## 合并回 Project Spec 的候选
 

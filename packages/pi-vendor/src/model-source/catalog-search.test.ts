@@ -24,9 +24,17 @@ const { loadOfficialCatalog } = await import("./official-catalog.js");
 const mockLoad = loadOfficialCatalog as ReturnType<typeof vi.fn>;
 
 describe("searchOfficialModels", () => {
-	it("returns empty when catalog is unavailable", async () => {
+	it("fails visibly when catalog is unavailable", async () => {
 		mockLoad.mockResolvedValue(null);
-		await expect(searchOfficialModels("gpt-4o")).resolves.toEqual([]);
+		await expect(searchOfficialModels("gpt-4o")).rejects.toMatchObject({ code: "catalog_unavailable" });
+	});
+
+	it("fails visibly when a matching catalog entry has unknown fields", async () => {
+		mockLoad.mockResolvedValue({ openai: { test: { id: "test", futureField: true } } });
+		await expect(searchOfficialModels("test")).rejects.toMatchObject({ code: "catalog_unavailable" });
+
+		mockLoad.mockResolvedValue({ openai: { test: { id: "test", thinkingLevelMap: { future: "value" } } } });
+		await expect(searchOfficialModels("test")).rejects.toMatchObject({ code: "catalog_unavailable" });
 	});
 
 	it("finds models by exact id match", async () => {

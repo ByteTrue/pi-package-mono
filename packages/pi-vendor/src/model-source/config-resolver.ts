@@ -6,7 +6,7 @@
 // - providerEnv truthy first, then process.env truthy, empty/missing → unresolved
 // - Command uncached; preflight all paths before any execution
 
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 
 export type CredentialPath =
 	| { kind: "apiKey" }
@@ -35,6 +35,12 @@ export type ResolveResult =
 
 // --- Template parser ---
 
+/** Encode a literal so Pi will not interpret leading ! or $ references. */
+export function encodeConfigLiteral(value: string): string {
+	const dollarsEscaped = value.replaceAll("$", () => "$$");
+	return dollarsEscaped.startsWith("!") ? `$${dollarsEscaped}` : dollarsEscaped;
+}
+
 type TemplateResult = {
 	resolved: string;
 	unresolved: boolean;
@@ -44,8 +50,8 @@ type TemplateResult = {
  * Resolve Pi-style template references in a value.
  * - $VAR or ${VAR}: resolved via providerEnv (truthy) first, then process.env (truthy)
  * - $$: literal $
- * - $!: literal $!
- * - Malformed/unclosed: literal
+ * - $!: literal !
+ * - Invalid/unclosed references remain literal
  * - Whitespace in literal text is preserved
  */
 function resolveTemplate(
@@ -74,9 +80,9 @@ function resolveTemplate(
 			continue;
 		}
 
-		// $! → literal $!
+		// $! → literal !
 		if (next === "!") {
-			result += "$!";
+			result += "!";
 			i += 2;
 			continue;
 		}
@@ -91,6 +97,11 @@ function resolveTemplate(
 				continue;
 			}
 			const varName = value.slice(i + 2, close);
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(varName)) {
+				result += value.slice(i, close + 1);
+				i = close + 1;
+				continue;
+			}
 			const resolved = resolveEnv(varName, providerEnv, processEnv);
 			if (resolved !== undefined) {
 				result += resolved;
@@ -101,8 +112,13 @@ function resolveTemplate(
 			continue;
 		}
 
-		// $VAR form (greedy: alphanumeric + underscore)
-		let j = i + 1;
+		// $VAR form (must start with a letter or underscore)
+		if (!/[a-zA-Z_]/.test(next)) {
+			result += "$";
+			i++;
+			continue;
+		}
+		let j = i + 2;
 		while (j < value.length && /[a-zA-Z0-9_]/.test(value[j]!)) {
 			j++;
 		}
@@ -145,49 +161,60 @@ function commandBody(value: string): string {
 
 // --- Production command runner ---
 
-export function createProductionCommandRunner(
-	shellCmd: string = process.execPath,
-): CommandRunner {
-	return (commandBody: string, options: {
-		signal: AbortSignal;
-		timeoutMs: number;
-		maxStdoutBytes: number;
-	}): Promise<string> => {
-		return new Promise<string>((resolve, reject) => {
-			const child = execFile(shellCmd, ["-e", commandBody], {
-				timeout: options.timeoutMs,
+export function createProductionCommandRunner(): CommandRunner {
+	return (commandBody, options) => new Promise<string>((resolve, reject) => {
+		const shell = process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
+		const args = process.platform === "win32"
+			? ["/d", "/s", "/c", commandBody]
+			: ["-c", commandBody];
+		let settled = false;
+		let stdoutBytes = 0;
+		const chunks: Buffer[] = [];
+		let child: ReturnType<typeof spawn>;
+
+		const finish = (error?: Error, value?: string): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			if (error) reject(error);
+			else resolve(value ?? "");
+		};
+
+		try {
+			child = spawn(shell, args, {
+				stdio: ["ignore", "pipe", "ignore"],
+				windowsHide: true,
 				signal: options.signal,
-				maxBuffer: options.maxStdoutBytes,
-				encoding: "utf-8",
 			});
+		} catch {
+			reject(new Error("Command execution failed"));
+			return;
+		}
 
-			let stdout = "";
-			child.stdout?.on("data", (chunk: string) => {
-				stdout += chunk;
-				if (Buffer.byteLength(stdout, "utf-8") > options.maxStdoutBytes) {
-					child.kill();
-					reject(new Error("Command output exceeded maximum size"));
-				}
-			});
+		const timer = setTimeout(() => {
+			child.kill();
+			finish(new Error("Command timed out"));
+		}, options.timeoutMs);
+		timer.unref?.();
 
-			child.on("error", (err: NodeJS.ErrnoException) => {
-				if (err.name === "AbortError" || err.code === "ABORT_ERR") {
-					reject(new Error("Command aborted"));
-				} else {
-					reject(new Error("Command execution failed"));
-				}
-			});
-
-			child.on("close", (code) => {
-				if (code === 0) {
-					resolve(stdout.replace(/\r?\n$/, ""));
-				} else if (code !== null) {
-					reject(new Error("Command execution failed"));
-				}
-				// If code is null (killed by signal), it was already handled in 'error'
-			});
+		child.stdout!.on("data", (chunk: Buffer | string) => {
+			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			stdoutBytes += buffer.length;
+			if (stdoutBytes > options.maxStdoutBytes) {
+				child.kill();
+				finish(new Error("Command output exceeded maximum size"));
+				return;
+			}
+			chunks.push(buffer);
 		});
-	};
+		child.on("error", () => finish(new Error(options.signal.aborted ? "Command aborted" : "Command execution failed")));
+		child.on("close", (code) => {
+			if (settled) return;
+			if (options.signal.aborted) return finish(new Error("Command aborted"));
+			if (code !== 0) return finish(new Error("Command execution failed"));
+			finish(undefined, Buffer.concat(chunks).toString("utf8").trim());
+		});
+	});
 }
 
 // --- Main resolver ---
@@ -211,7 +238,9 @@ export async function resolveConfigValue(
 				timeoutMs: 10_000,
 				maxStdoutBytes: 64 * 1024,
 			});
-			return { kind: "resolved", value: output, source: "command" };
+			return output === ""
+				? { kind: "unresolved", reason: "Command execution failed" }
+				: { kind: "resolved", value: output, source: "command" };
 		} catch (err) {
 			return { kind: "unresolved", reason: "Command execution failed" };
 		}

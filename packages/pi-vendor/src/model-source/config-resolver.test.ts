@@ -3,9 +3,27 @@ import {
 	allCommandsTrusted,
 	collectCommandPaths,
 	createProductionCommandRunner,
+	encodeConfigLiteral,
 	preflightCommandTrust,
 	resolveConfigValue,
 } from "./config-resolver.js";
+
+describe("encodeConfigLiteral", () => {
+	it("round-trips leading exclamation marks and dollar references as literals", async () => {
+		const context = {
+			path: { kind: "apiKey" as const },
+			providerEnv: {},
+			processEnv: { HOME: "/expanded" },
+			signal: new AbortController().signal,
+			runCommand: vi.fn(),
+		};
+		await expect(resolveConfigValue(encodeConfigLiteral("!literal"), context))
+			.resolves.toMatchObject({ kind: "resolved", value: "!literal" });
+		await expect(resolveConfigValue(encodeConfigLiteral("prefix$HOME"), context))
+			.resolves.toMatchObject({ kind: "resolved", value: "prefix$HOME" });
+		expect(context.runCommand).not.toHaveBeenCalled();
+	});
+});
 
 describe("resolveConfigValue", () => {
 	const fakeRunner = vi.fn<(_body: string, _opts: any) => Promise<string>>();
@@ -62,9 +80,16 @@ describe("resolveConfigValue", () => {
 		expect(result).toEqual({ kind: "resolved", value: "cost$100", source: "env" });
 	});
 
-	it("handles $! as literal $!", async () => {
+	it("handles $! as a literal exclamation mark", async () => {
 		const result = await resolveConfigValue("cmd$!bang", defaultCtx);
-		expect(result).toEqual({ kind: "resolved", value: "cmd$!bang", source: "env" });
+		expect(result).toEqual({ kind: "resolved", value: "cmd!bang", source: "env" });
+	});
+
+	it("keeps invalid references and dollar punctuation literal", async () => {
+		expect(await resolveConfigValue("${BAD-NAME}", defaultCtx))
+			.toEqual({ kind: "resolved", value: "${BAD-NAME}", source: "env" });
+		expect(await resolveConfigValue("cost$-value", defaultCtx))
+			.toEqual({ kind: "resolved", value: "cost$-value", source: "env" });
 	});
 
 	it("handles unclosed ${ as literal", async () => {
@@ -96,6 +121,46 @@ describe("resolveConfigValue", () => {
 		fakeRunner.mockRejectedValueOnce(new Error("fail"));
 		const result = await resolveConfigValue("!bad-command", defaultCtx);
 		expect(result).toEqual({ kind: "unresolved", reason: "Command execution failed" });
+	});
+
+	it("returns unresolved on empty command output", async () => {
+		fakeRunner.mockResolvedValueOnce("");
+		const result = await resolveConfigValue("!empty-command", defaultCtx);
+		expect(result).toEqual({ kind: "unresolved", reason: "Command execution failed" });
+	});
+});
+
+describe("createProductionCommandRunner", () => {
+	const nodeCommand = (source: string): string => `${JSON.stringify(process.execPath)} -e ${JSON.stringify(source)}`;
+	const options = (overrides: Partial<{ signal: AbortSignal; timeoutMs: number; maxStdoutBytes: number }> = {}) => ({
+		signal: new AbortController().signal,
+		timeoutMs: 2_000,
+		maxStdoutBytes: 64 * 1024,
+		...overrides,
+	});
+
+	it("executes shell commands and trims stdout", async () => {
+		const run = createProductionCommandRunner();
+		await expect(run(nodeCommand("process.stdout.write('  shell-ok\\n')"), options()))
+			.resolves.toBe("shell-ok");
+	});
+
+	it("rejects nonzero exit and oversized stdout", async () => {
+		const run = createProductionCommandRunner();
+		await expect(run(nodeCommand("process.exit(2)"), options())).rejects.toThrow("Command execution failed");
+		await expect(run(nodeCommand("process.stdout.write('x'.repeat(65537))"), options()))
+			.rejects.toThrow("maximum size");
+	});
+
+	it("settles on timeout and abort", async () => {
+		const run = createProductionCommandRunner();
+		const wait = nodeCommand("setTimeout(() => {}, 5000)");
+		await expect(run(wait, options({ timeoutMs: 20 }))).rejects.toThrow("timed out");
+
+		const controller = new AbortController();
+		const pending = run(wait, options({ signal: controller.signal }));
+		controller.abort();
+		await expect(pending).rejects.toThrow("aborted");
 	});
 });
 

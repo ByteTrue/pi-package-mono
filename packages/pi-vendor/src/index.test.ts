@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 import registerVendor from "./index.js";
 
 describe("registerVendor", () => {
-	it("registers only the /vendor command and no lifecycle hooks", async () => {
+	it("registers /vendor and the three read-only tools with no lifecycle hooks", async () => {
 		const commands: string[] = [];
+		const tools: string[] = [];
 		const events: string[] = [];
 		const pi = {
 			registerCommand: (name: string) => commands.push(name),
+			registerTool: (tool: { name: string }) => tools.push(tool.name),
 			on: (event: string) => events.push(event),
 		};
 
 		await registerVendor(pi as never);
 
 		expect(commands).toEqual(["vendor"]);
-		// Web session runtime is gone, so there is nothing to clean up on shutdown.
+		expect(tools).toEqual(["vendor_catalog_search", "vendor_validate", "vendor_discover"]);
 		expect(events).toEqual([]);
 	});
 });

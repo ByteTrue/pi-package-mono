@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { toWebModelConfig } from "./web-model-dto.js";
+import { toCatalogModelTemplate } from "./catalog-model-dto.js";
 
-describe("toWebModelConfig closed mapper", () => {
+describe("toCatalogModelTemplate closed mapper", () => {
 	it("returns minimal config for an id-only object", () => {
-		expect(toWebModelConfig({ id: "gpt-4o" })).toMatchObject({ id: "gpt-4o" });
+		expect(toCatalogModelTemplate({ id: "gpt-4o" })).toMatchObject({ id: "gpt-4o" });
 	});
 
 	it("returns undefined when id is missing", () => {
-		expect(toWebModelConfig({})).toBeUndefined();
-		expect(toWebModelConfig({ name: "no-id" })).toBeUndefined();
+		expect(toCatalogModelTemplate({})).toBeUndefined();
+		expect(toCatalogModelTemplate({ name: "no-id" })).toBeUndefined();
 	});
 
 	it("strips routing fields: provider, baseUrl, headers, apiKey, authHeader", () => {
-		const config = toWebModelConfig({
+		const config = toCatalogModelTemplate({
 			id: "claude",
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com/v1",
@@ -30,38 +30,42 @@ describe("toWebModelConfig closed mapper", () => {
 		expect(config!.name).toBe("Claude");
 	});
 
-	it("strips unknown top-level fields", () => {
-		const config = toWebModelConfig({
-			id: "test",
-			unknownField: "secret",
-			routing: { foo: "bar" },
-			nestedArray: [1, 2, 3],
-		});
-		expect(config).toBeDefined();
-		expect(config!).not.toHaveProperty("unknownField");
-		expect(config!).not.toHaveProperty("routing");
-		expect(config!).not.toHaveProperty("nestedArray");
+	it("fails loudly on unknown top-level fields", () => {
+		expect(() => toCatalogModelTemplate({ id: "test", futureField: true }))
+			.toThrow("model.futureField");
 	});
 
-	it("strips unknown compat fields", () => {
-		const config = toWebModelConfig({
+	it("fails loudly on unknown compat fields", () => {
+		expect(() => toCatalogModelTemplate({
+			id: "test",
+			compat: { supportsReasoningEffort: true, futureCompat: true },
+		})).toThrow("compat.futureCompat");
+	});
+
+	it("preserves current Pi 0.82 compat fields", () => {
+		const config = toCatalogModelTemplate({
 			id: "test",
 			compat: {
-				supportsReasoningEffort: true,
-				openRouterRouting: { model: "openai/gpt-4o" },
-				vercelGatewayRouting: { model: "gpt-4o" },
-				unknownCompat: "danger",
+				supportsStrictTools: true,
+				supportsOpenAIGrammarTools: true,
+				supportsToolSearch: true,
+				supportsExplicitPromptCacheMode: true,
+				deferredToolsMode: "kimi",
+				sessionAffinityFormat: "openrouter",
 			},
 		});
-		expect(config!.compat).toBeDefined();
-		expect(config!.compat!.supportsReasoningEffort).toBe(true);
-		expect(config!.compat).not.toHaveProperty("openRouterRouting");
-		expect(config!.compat).not.toHaveProperty("vercelGatewayRouting");
-		expect(config!.compat).not.toHaveProperty("unknownCompat");
+		expect(config!.compat).toEqual({
+			supportsStrictTools: true,
+			supportsOpenAIGrammarTools: true,
+			supportsToolSearch: true,
+			supportsExplicitPromptCacheMode: true,
+			deferredToolsMode: "kimi",
+			sessionAffinityFormat: "openrouter",
+		});
 	});
 
 	it("preserves characterized-safe fields: cost.tiers, zaiToolStream, supportsTemperature, allowEmptySignature", () => {
-		const config = toWebModelConfig({
+		const config = toCatalogModelTemplate({
 			id: "test",
 			cost: {
 				input: 3,
@@ -87,7 +91,7 @@ describe("toWebModelConfig closed mapper", () => {
 	});
 
 	it("preserves safe compat fields and validates enum types", () => {
-		const config = toWebModelConfig({
+		const config = toCatalogModelTemplate({
 			id: "test",
 			compat: {
 				supportsStore: true,
@@ -113,7 +117,7 @@ describe("toWebModelConfig closed mapper", () => {
 	});
 
 	it("rejects invalid enum values", () => {
-		const config = toWebModelConfig({
+		const config = toCatalogModelTemplate({
 			id: "test",
 			compat: {
 				maxTokensField: "bogus",
@@ -126,7 +130,7 @@ describe("toWebModelConfig closed mapper", () => {
 	});
 
 	it("maps chatTemplateKwargs with safe values", () => {
-		const config = toWebModelConfig({
+		const config = toCatalogModelTemplate({
 			id: "test",
 			compat: {
 				chatTemplateKwargs: {
@@ -149,30 +153,24 @@ describe("toWebModelConfig closed mapper", () => {
 		});
 	});
 
-	it("returns undefined compat when all chatTemplateKwargs are invalid", () => {
-		const config = toWebModelConfig({
+	it("fails loudly when a chatTemplateKwarg has an unsupported shape", () => {
+		expect(() => toCatalogModelTemplate({
 			id: "test",
 			compat: {
 				chatTemplateKwargs: {
 					badVar: { $var: "unknown.var" },
-					extraKeys: { $var: "thinking.enabled", unknownKey: true },
-					noVar: {},
-					wrongType: { $var: 123 },
 				},
 			},
-		});
-		// compat itself is undefined when all fields are rejected
-		expect(config!.compat).toBeUndefined();
+		})).toThrow("compat.chatTemplateKwargs.badVar");
 	});
 
-	it("maps thinkingLevelMap with known levels", () => {
-		const config = toWebModelConfig({
+	it("maps known thinking levels and fails loudly on unknown ones", () => {
+		const config = toCatalogModelTemplate({
 			id: "test",
 			thinkingLevelMap: {
 				off: "disabled",
 				low: null,
 				medium: "balanced",
-				unknown: "should-be-stripped",
 			},
 		});
 		expect(config!.thinkingLevelMap).toMatchObject({
@@ -180,30 +178,27 @@ describe("toWebModelConfig closed mapper", () => {
 			low: null,
 			medium: "balanced",
 		});
-		expect(config!.thinkingLevelMap).not.toHaveProperty("unknown");
+		expect(() => toCatalogModelTemplate({ id: "test", thinkingLevelMap: { future: "value" } }))
+			.toThrow("thinkingLevelMap.future");
 	});
 
-	it("serializes to JSON without forbidden keys (recursive scan)", () => {
-		const config = toWebModelConfig({
+	it("serializes to JSON without forbidden routing keys", () => {
+		const config = toCatalogModelTemplate({
 			id: "gpt-4o",
 			apiKey: "sk-secret",
 			headers: { Authorization: "Bearer x" },
 			baseUrl: "https://api.openai.com/v1",
 			provider: "openai",
 			authHeader: true,
-			openRouterRouting: { model: "openai/gpt-4o" },
 			name: "GPT-4o",
-			cost: { input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5, unknownCost: "x" },
+			cost: { input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5 },
 			compat: {
 				supportsReasoningEffort: true,
 				zaiToolStream: true,
-				openRouterRouting: { model: "x" },
-				vercelGatewayRouting: { model: "y" },
 			},
 		});
 		const json = JSON.stringify(config);
-		const forbidden = ["apiKey", "baseUrl", "headers", "authHeader", "provider",
-			"openRouterRouting", "vercelGatewayRouting", "unknownCost"];
+		const forbidden = ["apiKey", "baseUrl", "headers", "authHeader", "provider"];
 		for (const key of forbidden) {
 			expect(json).not.toContain(`"${key}"`);
 		}

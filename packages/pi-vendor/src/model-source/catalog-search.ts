@@ -1,5 +1,5 @@
 import { loadOfficialCatalog } from "./official-catalog.js";
-import { type OfficialModelChoice, toWebModelConfig } from "./web-model-dto.js";
+import { CatalogShapeError, type OfficialModelChoice, toCatalogModelTemplate } from "./catalog-model-dto.js";
 import { ModelSourceError } from "./model-source-error.js";
 
 const MAX_QUERY_BYTES = 512;
@@ -21,7 +21,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * - Query is matched case-insensitively against `modelId` and `name`.
  * - Query must be ≤512 UTF-8 bytes; invalid input throws `ModelSourceError("invalid_request")`.
  * - `limit` defaults to 50 and is clamped to 1–100.
- * - Catalog unavailable returns an empty array (no throw).
+ * - Catalog unavailable or schema drift throws `ModelSourceError("catalog_unavailable")`.
  * - Results are ordered by: exact modelId match first, then prefix matches, then
  *   substring matches; within each group, first-seen catalog order is preserved.
  */
@@ -36,7 +36,7 @@ export async function searchOfficialModels(
 	const effectiveLimit = Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, limit ?? DEFAULT_LIMIT));
 
 	const catalog = await loadOfficialCatalog();
-	if (!catalog) return [];
+	if (!catalog) throw new ModelSourceError("catalog_unavailable", "Official model catalog is unavailable");
 
 	const lowerQuery = query.toLowerCase();
 	const exact: OfficialModelChoice[] = [];
@@ -58,7 +58,15 @@ export async function searchOfficialModels(
 
 			if (!(idExact || nameExact || idPrefix || namePrefix || idContains || nameContains)) continue;
 
-			const model = toWebModelConfig(raw);
+			let model;
+			try {
+				model = toCatalogModelTemplate(raw);
+			} catch (error) {
+				if (error instanceof CatalogShapeError) {
+					throw new ModelSourceError("catalog_unavailable", "Official model catalog uses unsupported fields");
+				}
+				throw error;
+			}
 			if (!model) continue;
 
 			const entry: OfficialModelChoice = { provider, modelId, model };

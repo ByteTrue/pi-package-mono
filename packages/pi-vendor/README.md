@@ -1,19 +1,15 @@
 # @bytetrue/pi-vendor
 
-Manage custom providers and models for the [pi coding agent](https://pi.dev) in `models.json`.
+AI-first provider and model configuration for the [Pi coding agent](https://pi.dev).
 
-Path: `$PI_CODING_AGENT_DIR/models.json` or `~/.pi/agent/models.json`.
+- The bundled `pi-vendor` skill handles routine `models.json` inspection, CRUD, discovery, and audits.
+- Three read-only tools provide the active Pi catalog, safe `/models` discovery, and runtime validation.
+- `/vendor` is a minimal cold-start TUI that adds one provider or one model per run.
+
+Configuration path: `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.json` by default.
 
 [![npm version](https://img.shields.io/npm/v/@bytetrue/pi-vendor?style=flat-square)](https://www.npmjs.com/package/@bytetrue/pi-vendor)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](../../LICENSE)
-
-## Features
-
-- **Quick TUI workflows** — `/vendor` for high-frequency add-model / add-provider paths
-- **Full Web manager** — `/vendor web` opens a one-shot local browser modal for complete provider + model management
-- **Shared config core** — mutations and Pi `ModelRegistry` compatibility oracle used by both surfaces
-- **Opaque keep-value secrets** — known secret paths leave the browser as refs; raw values stay server-side
-- **Bounded discovery** — optional OpenAI-compatible `/models` import with deadlines, body limits, and command-trust preflight
 
 ## Install
 
@@ -21,96 +17,68 @@ Path: `$PI_CODING_AGENT_DIR/models.json` or `~/.pi/agent/models.json`.
 pi install npm:@bytetrue/pi-vendor
 ```
 
-Or from a local monorepo checkout:
+Or install a local checkout:
 
 ```bash
 pi install /absolute/path/to/pi-package-mono/packages/pi-vendor
 ```
 
-Peer: `@earendil-works/pi-coding-agent` `>=0.79.10`.
+Restart or reload Pi after installation. The package requires `@earendil-works/pi-coding-agent >=0.79.10`.
 
-## Quick TUI workflows
+## Ask the AI
 
-Run `/vendor` in an interactive Pi TUI session:
+The package installs `skills/pi-vendor/SKILL.md`; Pi discovers it automatically. Ask naturally, for example:
 
-1. **Add model** — pick an existing provider, choose catalog / custom / import, confirm conflicts, then **Save** (one commit) or **Add another** / **Cancel** (zero commit)
-2. **Add provider** — shortest wizard: key → baseUrl → api format → apiKey → first model → summary → Save
-3. **Open full manager** — launches the Web modal
-4. **Cancel** — Esc returns to the parent step; root Cancel writes nothing
+- “Add `claude-opus-4-5` to provider `my-gateway` using Anthropic's official template.”
+- “Discover the models exposed by `my-gateway`.”
+- “Update this provider's base URL without changing its API key.”
+- “Audit my Pi model configuration.”
+- “Remove model `old-model` from provider `local`.”
 
-Non-interactive environments fail fast (no silent file writes).
+The skill edits `models.json` with the AI's normal file tools. There is deliberately no general-purpose mutation tool: changes stay inspectable and narrow.
 
-## Full Web manager
+### API keys
 
-Run `/vendor web` (or choose **Open full manager** from the root menu).
+Never paste an API key into chat. For key entry or rotation, the skill gives you a command for its bundled `set-api-key.mjs` script. The script:
 
-Lifecycle (one-shot modal, no daemon):
+- prompts in your terminal without echoing the key;
+- updates only the selected provider's `apiKey`;
+- writes atomically with file mode `0600`;
+- never places the key in the command line or assistant response.
 
-1. Pi starts a loopback server on `127.0.0.1` with a random port and bearer token
-2. Browser opens a capability URL; edits stay in memory as a draft
-3. **Save** validates, checks revision, hydrates opaque secrets, atomic write, then closes the server
-4. **Cancel** / Esc in Pi discards the draft and closes the server
+Keys are stored as literals in `models.json`, matching Pi's native configuration. When a key contains Pi metacharacters, the package writes Pi's escaped form (`$` as `$$`, leading `!` as `$!`) so it cannot be expanded or executed. Protect the file accordingly.
 
-If the browser tab is closed without Cancel, return to Pi and press **Esc** so the session can settle.
+## Cold-start TUI
 
-## How Save / Cancel works
+Run `/vendor` when no working model is available or when you prefer a manual path:
 
-| Action | Disk write | Session |
-|---|---|---|
-| TUI **Save** | Exactly one conditional commit + registry refresh | ends |
-| TUI **Cancel** / Esc / Add another (without Save) | Zero | continues or ends without write |
-| Web **Save** | One `PUT /api/config` with revision; `409` on conflict | settles after response finishes |
-| Web **Cancel** | Zero | settles cancelled |
+- **Add provider** — provider key → base URL → API format → API key → discover or enter one model → save.
+- **Add model** — select an existing provider → discover or enter one model → save.
 
-Revision format is optimistic (`sha256:…`), not a cross-process lock.
+Each run adds exactly one provider/model and ends. Run `/vendor` again for another. Model candidate lists show at most ten rows; use `←`/`→` to page and `↑`/`↓` to move.
 
-## Credentials and opaque keep-value
+`Esc` cancels without writing. Successful saves use an atomic `0600` write, refresh Pi's active model registry, and report any runtime validation error.
 
-- Existing secrets are sent to the browser as opaque refs (`pi-vendor-secret:…`), not raw values
-- Save hydrates only exact path + matching base revision; moved/copied/fabricated refs fail closed
-- New literal secrets you type in the browser are written on Save (they must leave the browser once)
-- Env references and command values are classified in UI; command execution only happens server-side during trusted discovery
-- Raw JSON never reveals stored secret material
+## Read-only AI tools
 
-## `/models` discovery and command trust
-
-- Discover uses `http`/`https` only, `redirect: error`, overall deadline, and a decoded body budget
-- Command-bearing `apiKey` / header values are preflighted against the initial provider snapshot; any untrusted command → zero runner/fetch calls
-- Errors use typed codes only (no URL body / statusText / command stdout leakage)
-
-## Conflicts and recovery
-
-| Situation | Recovery |
+| Tool | Purpose |
 |---|---|
-| Provider/model id already exists | Explicit overwrite confirm (no silent upsert) |
-| Web `config_changed` (409) | Close and reopen the manager |
-| `invalid_secret_ref` after rename/reorder | Re-enter or remove the secret (no implicit remap) |
-| Invalid config / validator unavailable | Draft kept; fix issues and retry |
-| Concurrent Web session | Only one active session; cancel or finish the existing one |
+| `vendor_catalog_search` | Search credential-free templates from the active Pi installation. |
+| `vendor_discover` | Resolve one configured provider safely and return upstream `/models` ids only. |
+| `vendor_validate` | Refresh the running Pi registry and report whether the current `models.json` is valid. |
 
-## Security boundaries / limitations
+Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and preflights command-backed credentials before any privileged operation.
 
-- Loopback bind only; random port + bearer token; CSP + `Cache-Control: no-store`
-- No remote JS/CDN/fonts in the Web UI
-- Config core uses strict JSON (no BOM/comments); Pi may accept richer catalogs elsewhere
-- Unknown custom secret-bearing fields may not be masked if they are not on known paths
-- Browser tab close cannot reliably notify the server — use Esc in Pi
-- Revision checks are optimistic; extreme concurrent writers can still race between check and rename
+Tool output never includes configured API keys. Catalog results are closed, allowlisted DTOs without routing credentials or unknown passthrough fields.
 
-## Development + build / pack verification
+## Development
 
 ```bash
-npm --workspace @bytetrue/pi-vendor run build:web
 npm --workspace @bytetrue/pi-vendor run typecheck
 npm --workspace @bytetrue/pi-vendor test
-npm run typecheck --workspaces --if-present
-npm test
-node packages/pi-vendor/scripts/pack-smoke.mjs
+npm --workspace @bytetrue/pi-vendor pack --dry-run
 ```
 
-`build:web` emits `src/web/assets/{app.js,index.html,style.css}`.
-`pack-smoke` packs a real tarball, extracts it, loads runtime via jiti from the packed layout, hits state/cancel on loopback, and cleans up. It never opens a browser or writes your user config.
+The package is loaded from TypeScript source through Pi; it has no build step or generated browser assets.
 
-## Environment
-
-Set `PI_CODING_AGENT_DIR` to redirect the agent directory (tests / backups). Defaults to `~/.pi/agent`.
+Set `PI_CODING_AGENT_DIR` to an isolated directory for tests or smoke runs. Tests must not read or write the user's Pi configuration.

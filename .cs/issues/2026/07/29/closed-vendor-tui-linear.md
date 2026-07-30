@@ -2,7 +2,7 @@
 kind: issue
 title: "pi-vendor TUI 重写成两条直线"
 type: feature
-status: open
+status: closed
 created: 2026-07-29
 epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
@@ -26,7 +26,7 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ## 归属
 
 - 隶属 epic：`.cs/epics/2026/07/29/vendor-ai-first/spec.md`（切片 2）
-- 依赖：切片 1（`.cs/issues/2026/07/29/open-vendor-drop-web.md`）先删完 Web
+- 依赖：切片 1（`.cs/issues/2026/07/29/closed-vendor-drop-web.md`）先删完 Web
 
 ## 背景与证据
 
@@ -63,7 +63,7 @@ key → baseUrl → api → apiKey → "你想怎么添加第一个模型？" �
 1. Provider key
 2. Base URL
 3. API 类型（openai-completions / openai-responses / anthropic-messages / google-generative-ai / Custom…）
-4. API key（输入 → 明文写入 models.json）
+4. API key（输入 → Pi literal encoding 后写入 models.json）
 5. GET {baseUrl}/models          ← 用第 4 步的 key；故 key 必须先于发现
    ├─ 成功 → 列出全部上游 id（带输入过滤），选一个
    └─ 失败 → 退回手输 model id
@@ -210,3 +210,11 @@ workspace `node_modules` 是 0.79.10，而 owner 跑的是 0.82.1。typecheck �
 ### 未收口：index.ts 导出面
 
 `index.ts` 仍往外导出约 60 个符号，而这是个 extension 包，Pi 只用 default export。本切片只删了指向已删文件的导出，并补上了新 TUI 符号。整体收缩留给切片 3/4：先看三个只读动词需要导出什么，再一次定公开面。
+
+## 最终验证与关闭
+
+- owner 真机确认 **Add model 没问题**；`opus` 模糊搜索、完整结果集、10 行一页与左右翻页均按后续反馈落地。
+- Add provider 的 credential 保存补上 Pi literal encoding：`$` → `$$`、开头 `!` → `$!`；discovery 会解码为原始 key，避免环境展开/命令执行。
+- `ctx.modelRegistry.refresh()` 已 awaited，兼容 Pi 0.79 同步返回与 0.82 Promise 返回；生产不再静态 import 已删除的 Pi symbols。
+- `custom-select`/hjkl 已删除；超过 10 个候选用 Pi `SelectList` + 左右分页，不截断结果。
+- 切片 2 提交：`eda38a0`；最终套件由后续切片扩展到 21 files / 191 tests。

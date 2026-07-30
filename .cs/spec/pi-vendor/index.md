@@ -1,102 +1,119 @@
 # pi-vendor
 
-## 这一层是什么
+## 定位
 
-`@bytetrue/pi-vendor` 管理 pi 的自定义 provider / model 配置文件 `models.json`。交互分两层：**TUI 高频快捷**与**一次性本地 Web 完全管理**；两边共用同一套配置与模型源语义。
+`@bytetrue/pi-vendor` 是 **AI-first** 的 Pi provider/model 配置包，维护 `$PI_CODING_AGENT_DIR/models.json`（默认 `~/.pi/agent/models.json`）。
 
-Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
+日常 CRUD、审计与修复由随包分发的 `skills/pi-vendor/SKILL.md` 驱动，AI 使用普通 read/edit 工具做窄修改；包只提供三个只读工具与一个零模型也能进入的冷启动 TUI。Web 管理器、SecretRef/mask 协议、浏览器资产与 Web lifecycle 已删除。
 
-## 它负责什么
+## 用户表面
 
-- **TUI `/vendor`**：Add model / Add provider / Open Web / Cancel；Save 恰好一次 commit + registry refresh；Cancel / Esc / Add another 零写入。
-- **Web `/vendor web`**：loopback 一次性完整管理 workspace；浏览器内 draft；固定 command bar / provider rail 与独立主区；结构化全模型字段、官方模板、`/models` 导入、Raw JSON 与变更审查。只有 `Save & close` 执行校验、revision、SecretRef hydration 和原子写；Cancel / Pi Esc / session_shutdown 回收 server。
-- **Config core**：快照、局部校验、Pi `ModelRegistry` oracle、revision 条件提交、provider/model 纯 mutation（`MutationResult` / `ConfigCoreError`）。
-- **Model source core**：官方 catalog、enrich、OpenAI-compatible `/models` 发现（信任预检、截止时间、体预算、typed errors、closed DTO）。
-- **密钥**：已知 secret 路径以 opaque `SecretRef` 进浏览器；exact path + baseRevision hydration；移动/伪造 fail closed。
+### AI Skill
 
-## 它不负责什么
+Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责：
 
-- 不管理 `auth.json`、OAuth `/login`、stream 实现或扩展安装本身。
-- 不做常驻 daemon、固定端口、DB、WebSocket、多用户协作、autosave。
-- 不监听非 loopback；不引入运行时 Web 框架或远程 CDN。
-- 不把完整 Pi schema 反射成通用表单；未知字段靠 round-trip + Raw JSON。
+- 查看、增加、更新、删除、发现和审计 provider/model/modelOverrides；
+- 区分目标 provider 与官方模板来源 provider；
+- 模板有歧义时要求用户明确选择，不静默猜测；
+- 不编造 cost、context、capabilities、compat 等元数据；
+- 任何回复、diff 或工具参数都不复现 `apiKey`；
+- 修改后调用运行中 Pi 的 registry 做验证。
 
-## 统一语言
+通用 mutation tool 明确不存在：配置修改属于 AI 自己的 edit 能力。
 
-- **revision**：`sha256:<64 hex>`，乐观并发，不是跨进程锁。
-- **SecretRef**：`pi-vendor-secret:<128-bit base64url>`。
-- **MutationResult**：领域 identity 操作的判别联合结果。
-- **ConfigCoreError**：读/写/oracle 路径错误。
-- **ConflictPolicy**：`reject` | `overwrite-confirmed`；默认不隐式 upsert。
-- **first-terminal-action-wins**：saving 中 Cancel 只标记 closeAfterResponse；saving 拒绝新终端动作（409）。
-- **opaque keep-value**：浏览器不拿已有明文 known secret。
+### 三个只读工具
 
-## 使用路径
+| 工具 | 输入 | 输出/边界 |
+|---|---|---|
+| `vendor_catalog_search` | query，limit 1–100 | active Pi catalog 的 closed DTO；无 routing/credential/unknown passthrough |
+| `vendor_discover` | 已配置 provider key | 安全请求 `{baseUrl}/models`，只返回 id；错误为本地 typed code/message |
+| `vendor_validate` | 无 | `await ctx.modelRegistry.refresh()` 后的 valid/error；已知 apiKey 从错误文本中脱敏 |
 
-| 想完成的事 | 入口 |
-|---|---|
-| 快速给已有 provider 加模型 | `/vendor` → Add model |
-| 最短路径新建 provider | `/vendor` → Add provider |
-| 完整 CRUD / 官方模板 / `/models` 导入 / Raw JSON | `/vendor web` 或 TUI Open Web |
-| 在 Web 新建或编辑模型 | Models → Add model to draft → 结构化字段或官方模板 |
-| 批量导入 provider 的模型 | Models → Import from `/models` → 选择模板与模型 → Add/Replace in draft |
-| 冲突 / 陈旧 revision | Web `409 config_changed` → 关闭重开 |
-| Secret 路径失效 | 重输或删除，禁止隐式 remap |
+“只读”指不改 `models.json`；validate 会刷新当前 Pi session 的内存 registry。
 
-## Web 完整管理
+### `/vendor` 冷启动 TUI
 
-Web 是一次性的本地配置 workspace，不是常驻控制台。固定 command bar 和 provider rail；只有主 workspace 滚动。它在一个 draft 中组合 provider、模型、官方模板、导入、Raw JSON 与 review，所有写盘仍归同一个安全提交路径。
+根菜单固定两项：
 
-```text
-┌ Pi Vendor ─ draft 状态 ─────────────────────── command bar ─┐
-│ No changes: [Close]                                          │
-│ Unsaved changes: [Discard & close] [Review] [Save & close]   │
-├─ Providers（固定）──┬─ Provider workspace（独立滚动）─────────┤
-│                    │ Connection / optional settings          │
-│                    │ Models: [Import] [Add model to draft]   │
-│                    │ Raw JSON / Review                       │
-└────────────────────┴─────────────────────────────────────────┘
+1. **Add provider**：provider key → base URL → API format（4 个常用值 + Custom）→ plaintext API key → `/models` discovery / 手输 id → 官方模板候选 → 保存。
+2. **Add model**：选择已有 provider → 从 discovery / 手输 id 接入同一条选模与保存路径。
+
+每次只添加一个 provider/model，成功即结束；批量工作交给 AI。模型候选每页最多 10 行，`←/→` 翻页、`↑/↓` 移动。Esc 为零写入取消。没有 mode selector、What next 循环、删除 TUI 或 Web 入口。
+
+## API key
+
+`apiKey` 作为 literal 存入 `models.json`。普通 key 是明文；若包含 Pi 配置元字符，落盘前必须编码 `$` → `$$`、开头 `!` → `$!`，防止后续被环境展开或命令执行。Skill 不让用户把 key 发进聊天，而给出 bundled `skills/pi-vendor/scripts/set-api-key.mjs` 命令；脚本在用户终端无回显输入，只更新一个 provider，写前检查原始 bytes 未并发变化，随机临时文件 + rename 原子写，目标与临时文件均为 `0600`。
+
+TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/command-only 产品承诺，也不存在浏览器 SecretRef。
+
+## 配置与保存
+
+### Document/core
+
+- strict JSON；拒绝 BOM、comments 与非 object root；root 必须含 object `providers`；
+- revision 为原始 bytes 的 `sha256:…`；
+- commit 顺序：revision 格式 → 可选 oracle → current bytes/revision → stale check → atomic write；
+- 写入 canonical `JSON.stringify(value, null, 2) + "\n"`；随机 128-bit temp 名；create/write/rename 期间保持 `0600`；失败清理 temp；
+- mutation pure functions 继续使用 `MutationResult<T>` + explicit `ConflictPolicy`，不隐式 upsert。
+
+Pi 0.79 与 0.82 没有共同的独立 `ModelRegistry` 构造 API，所以生产写前只做本地 shape/duplicate 校验；权威兼容检查在 command/tool 层使用运行中的 `ctx.modelRegistry`：`await refresh()` 再 `getError()`。不静态 import 已移除的 `AuthStorage` 等窄 Pi API。
+
+### 保存后语义
+
+TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited registry refresh。refresh 后若 Pi 报错，配置已落盘且错误明确展示；不伪装成写前 rollback。Skill 修改后用 `vendor_validate` 做同一 authoritative check。
+
+## 模型来源
+
+### Active catalog
+
+官方 catalog 必须来自 active Pi installation，而不是 workspace peer fixture。顺序：`PI_VENDOR_PI_ROOT` → 当前 Pi argv → PATH `pi` → imported/local fallback。
+
+Search：query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；稳定排序。DTO 递归 allowlist 构造，未知字段 fail loudly，不 spread/cast passthrough。
+
+### Discovery 安全边界
+
+- http/https only；拒绝 username/password；在用户 base pathname 后 append `/models`；`redirect: "error"`；
+- 进入 credential resolution 起 15 秒 overall deadline；command actual cap 为 `min(10s, remaining)`；
+- decoded body 2 MiB chunk-counted，超限 cancel；non-2xx 不读取/回显 body；
+- 初始 provider snapshot 上所有 command-bearing `apiKey`/header exact path 先预检；任一不可信则 runner/fetch 均为零调用；
+- 错误只返回 `ModelSourceErrorCode` 与本地固定 message，不泄漏 URL/body/statusText/stdout/stderr。
+
+## 模板与路由
+
+- 同 id 跨 official provider 可重复；必须让用户选择模板来源。
+- 目标 provider 与模板来源 provider 是两个概念，复制模板时不复制官方 baseUrl/headers/credentials。
+- `anthropic-messages` 模型挂在 provider-level `/v1` base URL 时，model-level baseUrl 去掉尾部 `/v1`；其他 adapter 无明确需求不加 override。
+- 无官方模板时允许 custom model，但只记录用户明确知道的事实，不把“safe defaults”包装成官方事实。
+
+## 包边界
+
+- runtime public entry 只有 default extension registration；内部 config/model-source/TUI 类型不承诺 npm library API。
+- package manifest 分发 `src/**`、`skills/**` 与 README；无 build step、Web asset、server 或 lifecycle hook。
+- peer：`@earendil-works/pi-coding-agent >=0.79.10`；`@earendil-works/pi-tui` 与 `typebox` 跟随 Pi package 的 `*` peer 约定。
+
+## 明确不做
+
+- Web UI、loopback manager、browser modal、remote management；
+- List verb（Pi `/model` / `--list-models` 已覆盖）；
+- general mutation tools；
+- TUI 批量、编辑、删除或 key management workspace；
+- auth.json / OAuth 管理；
+- 自研实时过滤 select（Pi 原生 selector + 必要时分页足够）。
+
+## 验证
+
+```bash
+npm --workspace @bytetrue/pi-vendor run typecheck
+npm --workspace @bytetrue/pi-vendor test
+npm --workspace @bytetrue/pi-vendor pack --dry-run
 ```
 
-- **一个 draft，一次写入**：`Save & close` 是唯一写入 `models.json` 的终态动作；Raw JSON、模型编辑、官方模板和导入都只更新 draft。clean draft 只可 Close；有变更时才出现 Discard、Review 与 Save。
-- **模型主路径**：结构化 editor 覆盖当前 closed model DTO 字段（identity、limits、capabilities、thinking map、cost、compat、headers）；未知或罕见字段保留 Raw JSON 出口。新模型可搜索官方模板或手填；编辑时官方模板覆盖非密钥模板字段前需要确认，headers/密钥不覆盖。
-- **运行时模型来源**：官方模板始终取 active Pi runtime 的 catalog，不取 workspace peer dependency；`/models` 导入先在 provider endpoint 发现 id，再解析模板并在 import dialog 中加到或替换 draft。
-- **可恢复与密钥**：确认框说明具体对象、后果与保留路径。已配置密钥在浏览器中只显示为 configured，永不显示原值；删除、移动或复制仍按 SecretRef 既有 fail-closed 规则处理。
+真机 smoke 还应确认：package skill 被发现、三个 tool 注册、`/vendor` 的 Add provider/Add model、candidate 左右分页、Esc 零写入、保存后 awaited refresh/getError。所有 smoke 使用 isolated `PI_CODING_AGENT_DIR`，不得读写用户配置。
 
-## 子系统地图
+## 证据
 
-```text
-Config core ──► TUI quick workflows
-     ▲                  │
-     │                  ▼
-     └──────── Web modal runtime ◄── Model source core
-                      │
-                      ▼
-                 static Web UI (draft in browser memory)
-```
-
-1. **Config core**：document + mutation + oracle + atomic commit  
-2. **Web modal runtime**：session、token、CSP、routes、SecretRef  
-3. **Model source core**：catalog / enrich / discover  
-4. **TUI / Web workflows**：任务状态机与表单；不复制业务规则  
-
-## 架构考量
-
-- **双 UI 单语义**：校验、冲突、密钥、发现只在 core；UI 只编排。
-- **Pi 作兼容 oracle**：不复制完整 schema；未知字段 round-trip。
-- **严格 JSON 提交**：canonical `JSON.stringify(..., null, 2)` + newline；不保留注释/BOM。
-- **安全默认**：127.0.0.1、随机端口与 bearer、CSP、no-store、0o600 原子写。
-- **Web 产品化已关闭**：Web 现为日常可用的完整本地配置 workspace；历史范围与决策见 closed epic [`.cs/epics/2026/07/14/vendor-web-productization/spec.md`](../../epics/2026/07/14/vendor-web-productization/spec.md)。
-
-## 当前边界
-
-**做**：models.json 可表达的 provider/model 管理与安全保存。  
-**不做**：远程管理、daemon、鼠标 TUI、auth 系统、新发现协议族。
-
-## 证据索引（按需）
-
-- 包 README：`packages/pi-vendor/README.md`
-- closed epic：`.cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md`
-- closed feature issues：`.cs/issues/2026/07/12/closed-vendor-*.md`
-- closed Web productization epic：`.cs/epics/2026/07/14/vendor-web-productization/spec.md`
-- 旧 design/QA 全量：`.cs/archive/codestable-legacy/features/2026-07-12-vendor-*/`
+- README：`packages/pi-vendor/README.md`
+- 当前转向 epic：`.cs/epics/2026/07/29/vendor-ai-first/spec.md`
+- 讨论：`.cs/talks/2026-07-29-vendor-ai-first.md`
+- 被取代的双界面历史：`.cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md`
+- 被取代的 Web 产品化历史：`.cs/epics/2026/07/14/vendor-web-productization/spec.md`

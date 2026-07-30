@@ -1,16 +1,16 @@
-// WebModelConfig: closed safe DTO for browser consumption.
+// CatalogModelTemplate: closed safe DTO for catalog and AI-tool consumption.
 // Never includes routing fields, credentials, or unknown compat fields.
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
-export type WebChatTemplateKwarg =
+export type CatalogChatTemplateKwarg =
 	| string
 	| number
 	| boolean
 	| null
 	| { $var: "thinking.enabled" | "thinking.effort"; omitWhenOff?: boolean };
 
-export type WebCostTier = {
+export type CatalogCostTier = {
 	inputTokensAbove: number;
 	input: number;
 	output: number;
@@ -18,15 +18,15 @@ export type WebCostTier = {
 	cacheWrite: number;
 };
 
-export type WebCost = {
+export type CatalogCost = {
 	input: number;
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
-	tiers?: WebCostTier[];
+	tiers?: CatalogCostTier[];
 };
 
-export type WebCompat = {
+export type CatalogCompat = {
 	supportsStore?: boolean;
 	supportsDeveloperRole?: boolean;
 	supportsReasoningEffort?: boolean;
@@ -47,9 +47,15 @@ export type WebCompat = {
 		| "qwen-chat-template"
 		| "string-thinking"
 		| "ant-ling";
-	chatTemplateKwargs?: Record<string, WebChatTemplateKwarg>;
+	chatTemplateKwargs?: Record<string, CatalogChatTemplateKwarg>;
 	cacheControlFormat?: "anthropic";
 	supportsStrictMode?: boolean;
+	supportsStrictTools?: boolean;
+	supportsOpenAIGrammarTools?: boolean;
+	supportsToolSearch?: boolean;
+	supportsExplicitPromptCacheMode?: boolean;
+	deferredToolsMode?: "kimi";
+	sessionAffinityFormat?: "openai" | "openai-nosession" | "openrouter";
 	supportsLongCacheRetention?: boolean;
 	sendSessionIdHeader?: boolean;
 	supportsEagerToolInputStreaming?: boolean;
@@ -62,23 +68,23 @@ export type WebCompat = {
 	allowEmptySignature?: boolean;
 };
 
-export type WebModelConfig = {
+export type CatalogModelTemplate = {
 	id: string;
 	name?: string;
 	api?: string;
 	reasoning?: boolean;
 	thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
 	input?: Array<"text" | "image">;
-	cost?: WebCost;
+	cost?: CatalogCost;
 	contextWindow?: number;
 	maxTokens?: number;
-	compat?: WebCompat;
+	compat?: CatalogCompat;
 };
 
 export type OfficialModelChoice = {
 	provider: string;
 	modelId: string;
-	model: WebModelConfig;
+	model: CatalogModelTemplate;
 };
 
 // -- allowed key sets for recursive reconstruction --
@@ -86,6 +92,10 @@ export type OfficialModelChoice = {
 const MODEL_ALLOWED: ReadonlySet<string> = new Set([
 	"id", "name", "api", "reasoning", "thinkingLevelMap",
 	"input", "cost", "contextWindow", "maxTokens", "compat",
+]);
+
+const MODEL_ROUTING_FIELDS: ReadonlySet<string> = new Set([
+	"provider", "baseUrl", "headers", "apiKey", "authHeader",
 ]);
 
 const COST_ALLOWED: ReadonlySet<string> = new Set([
@@ -110,6 +120,12 @@ const COMPAT_ALLOWED: ReadonlySet<string> = new Set([
 	"chatTemplateKwargs",
 	"cacheControlFormat",
 	"supportsStrictMode",
+	"supportsStrictTools",
+	"supportsOpenAIGrammarTools",
+	"supportsToolSearch",
+	"supportsExplicitPromptCacheMode",
+	"deferredToolsMode",
+	"sessionAffinityFormat",
 	"supportsLongCacheRetention",
 	"sendSessionIdHeader",
 	"supportsEagerToolInputStreaming",
@@ -134,6 +150,23 @@ const VALID_THINKING_FORMATS: ReadonlySet<string> = new Set([
 	"chat-template", "qwen-chat-template", "string-thinking", "ant-ling",
 ]);
 
+const VALID_SESSION_AFFINITY_FORMATS: ReadonlySet<string> = new Set([
+	"openai", "openai-nosession", "openrouter",
+]);
+
+export class CatalogShapeError extends Error {
+	constructor(readonly field: string) {
+		super(`Unsupported official catalog field: ${field}`);
+		this.name = "CatalogShapeError";
+	}
+}
+
+function assertAllowedKeys(raw: Record<string, unknown>, allowed: ReadonlySet<string>, path: string): void {
+	for (const key of Object.keys(raw)) {
+		if (!allowed.has(key)) throw new CatalogShapeError(`${path}.${key}`);
+	}
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -150,9 +183,10 @@ function safeString(v: unknown): string | undefined {
 	return typeof v === "string" ? v : undefined;
 }
 
-// --- WebCostTier mapper ---
+// --- CatalogCostTier mapper ---
 
-function toWebCostTier(raw: Record<string, unknown>): WebCostTier | undefined {
+function toCatalogCostTier(raw: Record<string, unknown>): CatalogCostTier | undefined {
+	assertAllowedKeys(raw, TIER_ALLOWED, "cost.tiers[]");
 	const inputTokensAbove = safeNumber(raw.inputTokensAbove);
 	const input = safeNumber(raw.input);
 	const output = safeNumber(raw.output);
@@ -162,27 +196,28 @@ function toWebCostTier(raw: Record<string, unknown>): WebCostTier | undefined {
 	return { inputTokensAbove, input, output, cacheRead, cacheWrite };
 }
 
-function toWebCostTiers(raw: unknown[]): WebCostTier[] | undefined {
-	const tiers: WebCostTier[] = [];
+function toCatalogCostTiers(raw: unknown[]): CatalogCostTier[] | undefined {
+	const tiers: CatalogCostTier[] = [];
 	for (const item of raw) {
-		if (!isRecord(item)) continue;
-		const tier = toWebCostTier(item);
+		if (!isRecord(item)) throw new CatalogShapeError("cost.tiers[]");
+		const tier = toCatalogCostTier(item);
 		if (tier) tiers.push(tier);
 	}
 	return tiers.length > 0 ? tiers : undefined;
 }
 
-// --- WebCost mapper ---
+// --- CatalogCost mapper ---
 
-function toWebCost(raw: Record<string, unknown>): WebCost | undefined {
+function toCatalogCost(raw: Record<string, unknown>): CatalogCost | undefined {
+	assertAllowedKeys(raw, COST_ALLOWED, "cost");
 	const input = safeNumber(raw.input);
 	const output = safeNumber(raw.output);
 	const cacheRead = safeNumber(raw.cacheRead);
 	const cacheWrite = safeNumber(raw.cacheWrite);
 	if (input == null || output == null || cacheRead == null || cacheWrite == null) return undefined;
-	const cost: WebCost = { input, output, cacheRead, cacheWrite };
+	const cost: CatalogCost = { input, output, cacheRead, cacheWrite };
 	if (Array.isArray(raw.tiers)) {
-		const tiers = toWebCostTiers(raw.tiers);
+		const tiers = toCatalogCostTiers(raw.tiers);
 		if (tiers) cost.tiers = tiers;
 	}
 	return cost;
@@ -190,7 +225,7 @@ function toWebCost(raw: Record<string, unknown>): WebCost | undefined {
 
 // --- chatTemplateKwargs mapper ---
 
-function isChatTemplateKwarg(v: unknown): v is WebChatTemplateKwarg {
+function isChatTemplateKwarg(v: unknown): v is CatalogChatTemplateKwarg {
 	if (typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null) return true;
 	if (!isRecord(v)) return false;
 	const keys = Object.keys(v);
@@ -203,32 +238,37 @@ function isChatTemplateKwarg(v: unknown): v is WebChatTemplateKwarg {
 	return true;
 }
 
-function toChatTemplateKwargs(raw: Record<string, unknown>): Record<string, WebChatTemplateKwarg> | undefined {
-	const out: Record<string, WebChatTemplateKwarg> = {};
+function toChatTemplateKwargs(raw: Record<string, unknown>): Record<string, CatalogChatTemplateKwarg> | undefined {
+	const out: Record<string, CatalogChatTemplateKwarg> = {};
 	let hasAny = false;
 	for (const [k, v] of Object.entries(raw)) {
-		if (isChatTemplateKwarg(v)) {
-			out[k] = v;
-			hasAny = true;
-		}
+		if (!isChatTemplateKwarg(v)) throw new CatalogShapeError(`compat.chatTemplateKwargs.${k}`);
+		out[k] = v;
+		hasAny = true;
 	}
 	return hasAny ? out : undefined;
 }
 
-// --- WebCompat mapper ---
+// --- CatalogCompat mapper ---
 
-function toWebCompat(raw: Record<string, unknown>): WebCompat | undefined {
-	const compat: WebCompat = {};
+function toCatalogCompat(raw: Record<string, unknown>): CatalogCompat | undefined {
+	assertAllowedKeys(raw, COMPAT_ALLOWED, "compat");
+	const compat: CatalogCompat = {};
 	let hasAny = false;
 
 	for (const [k, v] of Object.entries(raw)) {
-		if (!COMPAT_ALLOWED.has(k)) continue;
 		switch (k) {
 			case "maxTokensField":
-				if (typeof v === "string" && VALID_MAX_TOKENS_FIELDS.has(v)) { compat.maxTokensField = v as WebCompat["maxTokensField"]; hasAny = true; }
+				if (typeof v === "string" && VALID_MAX_TOKENS_FIELDS.has(v)) { compat.maxTokensField = v as CatalogCompat["maxTokensField"]; hasAny = true; }
 				break;
 			case "thinkingFormat":
-				if (typeof v === "string" && VALID_THINKING_FORMATS.has(v)) { compat.thinkingFormat = v as WebCompat["thinkingFormat"]; hasAny = true; }
+				if (typeof v === "string" && VALID_THINKING_FORMATS.has(v)) { compat.thinkingFormat = v as CatalogCompat["thinkingFormat"]; hasAny = true; }
+				break;
+			case "sessionAffinityFormat":
+				if (typeof v === "string" && VALID_SESSION_AFFINITY_FORMATS.has(v)) { compat.sessionAffinityFormat = v as CatalogCompat["sessionAffinityFormat"]; hasAny = true; }
+				break;
+			case "deferredToolsMode":
+				if (v === "kimi") { compat.deferredToolsMode = v; hasAny = true; }
 				break;
 			case "chatTemplateKwargs": {
 				if (!isRecord(v)) break;
@@ -256,22 +296,22 @@ function toThinkingLevelMap(raw: Record<string, unknown>): Partial<Record<Thinki
 	const map: Partial<Record<ThinkingLevel, string | null>> = {};
 	let hasAny = false;
 	for (const [k, v] of Object.entries(raw)) {
-		if (!THINKING_LEVELS.has(k)) continue;
-		if (v === null || typeof v === "string") {
-			map[k as ThinkingLevel] = v;
-			hasAny = true;
-		}
+		if (!THINKING_LEVELS.has(k)) throw new CatalogShapeError(`thinkingLevelMap.${k}`);
+		if (v !== null && typeof v !== "string") throw new CatalogShapeError(`thinkingLevelMap.${k}`);
+		map[k as ThinkingLevel] = v;
+		hasAny = true;
 	}
 	return hasAny ? map : undefined;
 }
 
-// --- top-level WebModelConfig mapper ---
+// --- top-level CatalogModelTemplate mapper ---
 
-export function toWebModelConfig(raw: Record<string, unknown>): WebModelConfig | undefined {
+export function toCatalogModelTemplate(raw: Record<string, unknown>): CatalogModelTemplate | undefined {
+	assertAllowedKeys(raw, new Set([...MODEL_ALLOWED, ...MODEL_ROUTING_FIELDS]), "model");
 	const id = safeString(raw.id);
 	if (!id) return undefined;
 
-	const config: WebModelConfig = { id };
+	const config: CatalogModelTemplate = { id };
 
 	const name = safeString(raw.name);
 	if (name !== undefined) config.name = name;
@@ -290,13 +330,14 @@ export function toWebModelConfig(raw: Record<string, unknown>): WebModelConfig |
 	if (Array.isArray(raw.input)) {
 		const input: Array<"text" | "image"> = [];
 		for (const item of raw.input) {
-			if (item === "text" || item === "image") input.push(item);
+			if (item !== "text" && item !== "image") throw new CatalogShapeError("model.input[]");
+			input.push(item);
 		}
 		if (input.length > 0) config.input = input;
 	}
 
 	if (isRecord(raw.cost)) {
-		const cost = toWebCost(raw.cost);
+		const cost = toCatalogCost(raw.cost);
 		if (cost) config.cost = cost;
 	}
 
@@ -307,7 +348,7 @@ export function toWebModelConfig(raw: Record<string, unknown>): WebModelConfig |
 	if (maxTokens !== undefined) config.maxTokens = maxTokens;
 
 	if (isRecord(raw.compat)) {
-		const compat = toWebCompat(raw.compat);
+		const compat = toCatalogCompat(raw.compat);
 		if (compat) config.compat = compat;
 	}
 

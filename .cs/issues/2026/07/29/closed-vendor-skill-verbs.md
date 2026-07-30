@@ -2,7 +2,7 @@
 kind: issue
 title: "pi-vendor 出 skill 与三个只读动词"
 type: feature
-status: open
+status: closed
 created: 2026-07-29
 epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
@@ -40,7 +40,7 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 | validate | 把候选配置过一遍 Pi `ModelRegistry` oracle，返回 typed 结果 | `config-core` |
 | discover | 对 provider endpoint 请求 `/models`，返回 id 列表 | `bounded-discover` |
 
-**都只读，都无副作用。** 写路径不出动词——AI 用自己的 `edit` 改 JSON，这是 owner 现有 skill 的形状。代价是失去写路径的原子性保证，单用户配置文件可接受。
+**都不写 `models.json`。** `validate` 会刷新当前 Pi session 的内存 registry；写路径不出动词——AI 用自己的 `edit` 改 JSON。这是 owner 现有 skill 的形状。代价是 AI edit 不具备 config-core 的 conditional commit；单用户配置文件可接受。
 
 关键设计点：**catalog search 直接输出模板 JSON 让 AI 粘贴，而不是让 AI 凭记忆填字段。** Pi oracle 只挡 schema 错，挡不住"合法但错"的 `contextWindow` 或漏掉的 compat flag。
 
@@ -86,4 +86,12 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 
 ## 执行记录
 
-- 
+- 新增 `skills/pi-vendor/SKILL.md`，覆盖 inspect/add/update/remove/discover/audit、模板歧义、目标/来源 provider、Anthropic `/v1` override、validate 后置检查与 apiKey 不复现边界。
+- 新增 `vendor_catalog_search`、`vendor_discover`、`vendor_validate`，并在 default extension registration 中与 `/vendor` 一起注册；无 lifecycle hook、无 mutation tool。
+- `vendor_catalog_search` 使用 active Pi catalog closed DTO；补齐 Pi 0.82 当前 compat 字段，任意未知 top/nested field 都 fail loud 为 `catalog_unavailable`，避免成功返回残缺模板。
+- `vendor_discover` 从已配置 provider 读取凭据，保留 command exact-path preflight；command runner 改为真正 shell command，修正 `$!`/invalid `${}`/literal `$` 语义，并覆盖 nonzero/64 KiB/timeout/abort。
+- `vendor_validate` 使用运行中的 awaited registry refresh/getError；错误文本按当前 provider apiKey 值脱敏。
+- 新增 bundled `scripts/set-api-key.mjs`：TTY 无回显输入、Pi literal metacharacter encoding、并发 bytes 变化时 abort、随机 temp + `0600` + rename；不把 key 放 argv/chat。
+- package manifest 声明 `pi.skills` 与 `skills/**`；真实 Pi RPC `get_commands` 已发现 `skill:pi-vendor`，pack dry-run 含 Skill 与 helper。
+- 自动化：工具、key helper、resolver、active catalog shape 均有聚焦测试；最终 package suite 21 files / 191 tests，typecheck 通过。
+- 独立 reviewer 经过三轮 changes-requested 修复后最终 verdict：blocking=0、important=0。

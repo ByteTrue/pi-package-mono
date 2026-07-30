@@ -4,6 +4,7 @@
 // models needs it.
 
 import { createProvider } from "../config-document.js";
+import { encodeConfigLiteral } from "../model-source/config-resolver.js";
 import type { ModelsJson, ProviderConfig } from "../models-json.js";
 import { acquireOneModel, type AcquireOptions } from "./model-pick.js";
 import type { QuickUI } from "./quick-adapter.js";
@@ -117,13 +118,14 @@ export async function runAddProviderFlow(
 
 	const apiKey = await acquireApiKey(ui);
 	if (apiKey === null) return { kind: "cancelled" };
+	const encodedApiKey = encodeConfigLiteral(apiKey);
 
-	// No initialProvider: this provider is not on disk, so a `!command` key is
-	// not yet trusted and discovery is skipped for it.
-	const model = await acquireOneModel(ui, { baseUrl, api, apiKey }, options);
+	// Pass Pi's escaped literal representation: discovery resolves it back to
+	// the raw key, while a leading ! can never become a shell command.
+	const model = await acquireOneModel(ui, { baseUrl, api, apiKey: encodedApiKey }, options);
 	if (model === null) return { kind: "cancelled" };
 
-	const providerConfig: ProviderConfig = { baseUrl, api, apiKey, models: [model] };
+	const providerConfig: ProviderConfig = { baseUrl, api, apiKey: encodedApiKey, models: [model] };
 	const draft = { ...models, providers: { ...(models.providers ?? {}) } };
 	const created = createProvider(draft, key, providerConfig);
 	if (!created.ok) {

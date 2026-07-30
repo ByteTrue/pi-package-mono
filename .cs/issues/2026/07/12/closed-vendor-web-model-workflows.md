@@ -5,9 +5,12 @@ type: feature
 status: closed
 created: 2026-07-12
 epic: ".cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md"
+superseded_by: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
 
 # Web model CRUD 与导入
+
+> **Superseded（2026-07-29）**：该 Web/双界面产品承诺已被 AI-first epic 取代；记录仅保留历史证据，当前实现不再包含 Web surface。
 
 ## 目标
 

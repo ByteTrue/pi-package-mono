@@ -2,7 +2,7 @@
 kind: issue
 title: "重写 pi-vendor 规格与 README，作废 Web 历史结论"
 type: chore
-status: open
+status: closed
 created: 2026-07-29
 epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 ---
@@ -63,4 +63,10 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 
 ## 执行记录
 
-- 
+- 全量重写 `.cs/spec/pi-vendor/index.md`：AI-first 身份、三个 tool contract、冷启动 TUI、literal key encoding、active catalog fail-loud DTO、discovery/security、运行中 registry oracle 与明确 exclusions。
+- 同步根 `.cs/spec/index.md`、根 README 与包 README；删除 Web 专属 `PRODUCT.md`、`.impeccable` live config、Web ignore metadata。
+- 旧 dual-UI/Web epics 与相关 issues 增加 `superseded_by` + 可见 superseded notice；补标旧 TUI/hardening 记录并修复一条失效 issue 链接。
+- `src/index.ts` 收到 default extension registration，内部约 60 个 symbol 不再承诺 npm library API；`web-model-dto` 重命名为 `catalog-model-dto`，孤立 `web-enrich` 删除。
+- CI 删除已不存在的 `build:web` / Web assets / vendor pack-smoke 调用，改做 vendor pack dry-run。
+- grep 当前 spec/README 与 package tarball，确认无现行 `/vendor web`、SecretRef 或 Web asset 产品承诺；历史文件中的这些词只作为 superseded evidence 保留。
+- 独立 reviewer 最终 gate：blocking=0、important=0。

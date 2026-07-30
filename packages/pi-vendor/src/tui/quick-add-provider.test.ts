@@ -60,6 +60,23 @@ describe("runAddProviderFlow", () => {
 		expect(selects).toEqual(["API format:", "Select model:"]);
 	});
 
+	it("escapes Pi config metacharacters before discovery and persistence", async () => {
+		let discoveredKey: string | undefined;
+		const ui = scripted({ ...HAPPY_PATH, "API key": "!literal$HOME" });
+		const result = await runAddProviderFlow(ui, empty, {
+			...upstream,
+			discover: async (provider) => {
+				discoveredKey = provider.apiKey;
+				return ["upstream-b"];
+			},
+		});
+
+		expect(result.kind).toBe("saved");
+		if (result.kind !== "saved") return;
+		expect(discoveredKey).toBe("$!literal$$HOME");
+		expect(result.models.providers?.relay?.apiKey).toBe("$!literal$$HOME");
+	});
+
 	it("asks for the api key before listing upstream models", async () => {
 		const ui = scripted(HAPPY_PATH);
 		await runAddProviderFlow(ui, empty, upstream);
