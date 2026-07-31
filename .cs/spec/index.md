@@ -5,7 +5,7 @@
 `pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。每个包以 TypeScript 源码通过 jiti 加载，不需要先 build 再安装。当前有四个能力包，其中三个已发布、一个是新加的 background terminal package：
 
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
-2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；三个只读工具提供 catalog/discovery/validation；`/vendor` 只承担零模型冷启动。
+2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
 3. **图像生成**（`@bytetrue/pi-image-gen`）：提供 `image_generate`，支持 OpenAI、Gemini、Qwen-Image、Ark、OpenRouter 与兼容网关。
 4. **背景终端**（`@bytetrue/pi-background-terminal`）：提供 OpenCode 风格的 `pty_spawn` / `pty_list` / `pty_read` / `pty_write` / `pty_kill` 与本地 Web monitor。
 
@@ -13,7 +13,7 @@
 
 ## 当前方向
 
-- `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，read-only tools 提供确定性 catalog/discovery/validation，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
+- `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
 - `pi-web-search` 已完成安全与预算类 hardening（SSRF、body 预算、proxy 隔离、无效配置保护等）。
 - `pi-background-terminal` 已实现 package-only 的 OpenCode 风格 PTY manager：5 个 tool、`notifyOnExit` 与 loopback Web monitor；是否发版待 owner 决定。
 - 近期优先：四个扩展的维护、回归与按需发版。
@@ -31,7 +31,7 @@
 
 - **给 pi 装本地扩展**：`pi install /abs/path/to/packages/<pkg>` 或 `pi -e ...` 试跑。
 - **改搜索行为或安全边界**：先读 web-search 子 spec，再改 `packages/pi-web-search`；验证 `npm --workspace @bytetrue/pi-web-search test`。
-- **改 models.json 管理语义**：先读 vendor 子 spec；日常行为由 package Skill + 三个 read-only tools 定义，冷启动行为在 TUI，配置事务与模型来源语义仍在共享 core。
+- **改 models.json 管理语义**：先读 vendor 子 spec；日常行为由 package Skill + bundled script 定义，冷启动行为在 TUI，配置事务与模型来源语义仍在共享 core。
 - **改 background terminal / 本地 PTY**：先读 background-terminal 子 spec，再改 `packages/pi-background-terminal`；至少验证 typecheck、test、pack dry-run 与当前 session smoke。
 - **发 background terminal npm 版**：bump `packages/pi-background-terminal/package.json` 版本后，push tag `pi-background-terminal-v<version>`；GitHub Actions `release.yml` 走 npm Trusted Publishing 自动发布。
 - **查“以前为什么这么定”**：closed epic/issue 在 `.cs/epics/`、`.cs/issues/`；完整旧 design/review 在 archive。
@@ -41,7 +41,7 @@
 | 包 | 支撑路径 | 配置位置 |
 |---|---|---|
 | `@bytetrue/pi-web-search` | agent 工具 `web_search`/`web_fetch`、`/web` | `~/.pi/byte-pi-web/config.json`（可用 `PI_CONFIG_DIR`） |
-| `@bytetrue/pi-vendor` | Skill `pi-vendor`、工具 `vendor_catalog_search`/`vendor_discover`/`vendor_validate`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
+| `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
 | `@bytetrue/pi-image-gen` | agent 工具 `image_generate`、`/image-gen` | `~/.pi/agent/settings.json`、覆盖 agent dir 或 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
 | `@bytetrue/pi-background-terminal` | agent 工具 `pty_spawn`/`pty_list`/`pty_read`/`pty_write`/`pty_kill`，命令 `/pty-open-background-spy`、`/pty-show-server-url` | 无独立持久配置；运行时状态在当前 Pi session 内存，Web monitor 用 loopback 临时 token |
 

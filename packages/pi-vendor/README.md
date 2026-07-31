@@ -3,7 +3,7 @@
 AI-first provider and model configuration for the [Pi coding agent](https://pi.dev).
 
 - The bundled `pi-vendor` skill handles routine `models.json` inspection, CRUD, discovery, and audits.
-- Three read-only tools provide the active Pi catalog, safe `/models` discovery, and runtime validation.
+- A bundled Node script provides catalog lookup, `/models` discovery, local linting, and secret entry only when the skill invokes it.
 - `/vendor` is a minimal cold-start TUI that adds one provider or one model per run.
 
 Configuration path: `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.json` by default.
@@ -39,7 +39,7 @@ The skill edits `models.json` with the AI's normal file tools. There is delibera
 
 ### API keys
 
-Never paste an API key into chat. For key entry or rotation, the skill gives you a command for its bundled `set-api-key.mjs` script. The script:
+Never paste an API key into chat. For key entry or rotation, the skill gives you a command for its bundled `vendor.mjs set-key` command. The script:
 
 - prompts in your terminal without echoing the key;
 - updates only the selected provider's `apiKey`;
@@ -59,17 +59,18 @@ Each run adds exactly one provider/model and ends. Run `/vendor` again for anoth
 
 `Esc` cancels without writing. Successful saves use an atomic `0600` write, refresh Pi's active model registry, and report any runtime validation error.
 
-## Read-only AI tools
+## Bundled script
 
-| Tool | Purpose |
+The skill invokes one on-demand script instead of registering permanent AI tools:
+
+| Command | Purpose |
 |---|---|
-| `vendor_catalog_search` | Search credential-free templates from the active Pi installation. |
-| `vendor_discover` | Resolve one configured provider safely and return upstream `/models` ids only. |
-| `vendor_validate` | Refresh the running Pi registry and report whether the current `models.json` is valid. |
+| `vendor.mjs catalog <query>` | Search credential-free templates from the active Pi installation. |
+| `vendor.mjs discover <provider>` | Resolve one configured provider locally and return upstream `/models` ids only. |
+| `vendor.mjs lint` | Check JSON shape and duplicate model ids without starting Pi. |
+| `vendor.mjs set-key <provider>` | Prompt the user privately and update one key atomically. |
 
-Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and preflights command-backed credentials before any privileged operation.
-
-Tool output never includes configured API keys. Catalog results are closed, allowlisted DTOs without routing credentials or unknown passthrough fields.
+Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and never outputs configured credentials. `lint` is deliberately local; reload Pi and select the model when runtime confirmation is required.
 
 ## Development
 

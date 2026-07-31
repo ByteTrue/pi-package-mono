@@ -95,3 +95,7 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 - package manifest 声明 `pi.skills` 与 `skills/**`；真实 Pi RPC `get_commands` 已发现 `skill:pi-vendor`，pack dry-run 含 Skill 与 helper。
 - 自动化：工具、key helper、resolver、active catalog shape 均有聚焦测试；最终 package suite 21 files / 191 tests，typecheck 通过。
 - 独立 reviewer 经过三轮 changes-requested 修复后最终 verdict：blocking=0、important=0。
+
+## 2026-08-03 后续简化
+
+Owner 验收后判定三个常驻 tool 属于过度设计；该运行时 surface 已由 `.cs/issues/2026/08/03/closed-vendor-skill-script.md` 取代。当前实现不注册 AI tools，catalog/discover/lint/set-key 均由 Skill bundled script 按需承担。本 issue 保留为当时实现历史，不再是现行接口合同。

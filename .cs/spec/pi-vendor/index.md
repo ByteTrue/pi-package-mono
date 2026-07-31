@@ -4,7 +4,7 @@
 
 `@bytetrue/pi-vendor` 是 **AI-first** 的 Pi provider/model 配置包，维护 `$PI_CODING_AGENT_DIR/models.json`（默认 `~/.pi/agent/models.json`）。
 
-日常 CRUD、审计与修复由随包分发的 `skills/pi-vendor/SKILL.md` 驱动，AI 使用普通 read/edit 工具做窄修改；包只提供三个只读工具与一个零模型也能进入的冷启动 TUI。Web 管理器、SecretRef/mask 协议、浏览器资产与 Web lifecycle 已删除。
+日常 CRUD、审计与修复由随包分发的 `skills/pi-vendor/SKILL.md` 驱动，AI 使用普通 read/edit 工具做窄修改，并按需执行 bundled `scripts/vendor.mjs`。包不注册 AI tool，只提供 Skill 脚本与一个零模型也能进入的冷启动 TUI。Web 管理器、SecretRef/mask 协议、浏览器资产与 Web lifecycle 已删除。
 
 ## 用户表面
 
@@ -17,19 +17,20 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 - 模板有歧义时要求用户明确选择，不静默猜测；
 - 不编造 cost、context、capabilities、compat 等元数据；
 - 任何回复、diff 或工具参数都不复现 `apiKey`；
-- 修改后调用运行中 Pi 的 registry 做验证。
+- 修改后用 bundled script 做本地 lint；需要 runtime 确认时让用户 reload Pi 并实际选择模型。
 
 通用 mutation tool 明确不存在：配置修改属于 AI 自己的 edit 能力。
 
-### 三个只读工具
+### Bundled script
 
-| 工具 | 输入 | 输出/边界 |
+| 子命令 | 调用方 | 输出/边界 |
 |---|---|---|
-| `vendor_catalog_search` | query，limit 1–100 | active Pi catalog 的 closed DTO；无 routing/credential/unknown passthrough |
-| `vendor_discover` | 已配置 provider key | 安全请求 `{baseUrl}/models`，只返回 id；错误为本地 typed code/message |
-| `vendor_validate` | 无 | `await ctx.modelRegistry.refresh()` 后的 valid/error；已知 apiKey 从错误文本中脱敏 |
+| `catalog <query> [limit]` | AI | 从 active Pi catalog 搜索并移除 routing/credential 字段；默认 50，范围 1–100 |
+| `discover <provider-key>` | AI | 读取已配置 provider，请求 `{baseUrl}/models`，只输出排序去重后的 id |
+| `lint` | AI | 本地 strict JSON、root/providers shape、model id/duplicate 检查；不宣称 runtime 可用 |
+| `set-key <provider-key>` | 用户终端 | 无回显输入，只更新一个 key，原子 `0600` 写入 |
 
-“只读”指不改 `models.json`；validate 会刷新当前 Pi session 的内存 registry。
+AI 通过 bash 按需执行前三项，因此没有常驻 tool schema。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
 
 ### `/vendor` 冷启动 TUI
 
@@ -42,7 +43,7 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 
 ## API key
 
-`apiKey` 作为 literal 存入 `models.json`。普通 key 是明文；若包含 Pi 配置元字符，落盘前必须编码 `$` → `$$`、开头 `!` → `$!`，防止后续被环境展开或命令执行。Skill 不让用户把 key 发进聊天，而给出 bundled `skills/pi-vendor/scripts/set-api-key.mjs` 命令；脚本在用户终端无回显输入，只更新一个 provider，写前检查原始 bytes 未并发变化，随机临时文件 + rename 原子写，目标与临时文件均为 `0600`。
+`apiKey` 作为 literal 存入 `models.json`。普通 key 是明文；若包含 Pi 配置元字符，落盘前必须编码 `$` → `$$`、开头 `!` → `$!`，防止后续被环境展开或命令执行。Skill 不让用户把 key 发进聊天，而给出 bundled `skills/pi-vendor/scripts/vendor.mjs set-key` 命令；脚本在用户终端无回显输入，只更新一个 provider，写前检查原始 bytes 未并发变化，随机临时文件 + rename 原子写，目标与临时文件均为 `0600`。
 
 TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/command-only 产品承诺，也不存在浏览器 SecretRef。
 
@@ -56,27 +57,22 @@ TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/c
 - 写入 canonical `JSON.stringify(value, null, 2) + "\n"`；随机 128-bit temp 名；create/write/rename 期间保持 `0600`；失败清理 temp；
 - mutation pure functions 继续使用 `MutationResult<T>` + explicit `ConflictPolicy`，不隐式 upsert。
 
-Pi 0.79 与 0.82 没有共同的独立 `ModelRegistry` 构造 API，所以生产写前只做本地 shape/duplicate 校验；权威兼容检查在 command/tool 层使用运行中的 `ctx.modelRegistry`：`await refresh()` 再 `getError()`。不静态 import 已移除的 `AuthStorage` 等窄 Pi API。
+Pi 0.79 与 0.82 没有共同的独立 `ModelRegistry` 构造 API，所以生产写前只做本地 shape/duplicate 校验。TUI 保存后使用其现成 command context：`await ctx.modelRegistry.refresh()` 再 `getError()`；Skill 脚本不依赖 Pi runtime API，并明确只称为 lint。不静态 import 已移除的 `AuthStorage` 等窄 Pi API。
 
 ### 保存后语义
 
-TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited registry refresh。refresh 后若 Pi 报错，配置已落盘且错误明确展示；不伪装成写前 rollback。Skill 修改后用 `vendor_validate` 做同一 authoritative check。
+TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited registry refresh。refresh 后若 Pi 报错，配置已落盘且错误明确展示；不伪装成写前 rollback。Skill 修改后只做本地 lint；需要 runtime 确认时由用户 reload Pi 并实际选择模型。
 
 ## 模型来源
 
 ### Active catalog
 
-官方 catalog 必须来自 active Pi installation，而不是 workspace peer fixture。顺序：`PI_VENDOR_PI_ROOT` → 当前 Pi argv → PATH `pi` → imported/local fallback。
-
-Search：query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；稳定排序。DTO 递归 allowlist 构造，未知字段 fail loudly，不 spread/cast passthrough。
+Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；按 exact/prefix/substring 稳定排序，并移除 provider/baseUrl/headers/apiKey/authHeader。TUI 继续复用 package 内现有 closed DTO catalog core。
 
 ### Discovery 安全边界
 
-- http/https only；拒绝 username/password；在用户 base pathname 后 append `/models`；`redirect: "error"`；
-- 进入 credential resolution 起 15 秒 overall deadline；command actual cap 为 `min(10s, remaining)`；
-- decoded body 2 MiB chunk-counted，超限 cancel；non-2xx 不读取/回显 body；
-- 初始 provider snapshot 上所有 command-bearing `apiKey`/header exact path 先预检；任一不可信则 runner/fetch 均为零调用；
-- 错误只返回 `ModelSourceErrorCode` 与本地固定 message，不泄漏 URL/body/statusText/stdout/stderr。
+- Skill script：http/https only；拒绝 username/password；append `/models`；redirect error；fetch 15 秒；credential command 每项 10 秒/64 KiB；response 2 MiB chunk-counted；只输出 id 或本地错误。
+- TUI：继续使用 package 内现有 bounded-discover core，包括 overall deadline、exact-path command preflight 与 typed errors。
 
 ## 模板与路由
 
@@ -89,7 +85,7 @@ Search：query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；稳定排
 
 - runtime public entry 只有 default extension registration；内部 config/model-source/TUI 类型不承诺 npm library API。
 - package manifest 分发 `src/**`、`skills/**` 与 README；无 build step、Web asset、server 或 lifecycle hook。
-- peer：`@earendil-works/pi-coding-agent >=0.79.10`；`@earendil-works/pi-tui` 与 `typebox` 跟随 Pi package 的 `*` peer 约定。
+- peer：`@earendil-works/pi-coding-agent >=0.79.10`；`@earendil-works/pi-tui` 跟随 Pi package 的 `*` peer 约定。
 
 ## 明确不做
 
@@ -108,7 +104,7 @@ npm --workspace @bytetrue/pi-vendor test
 npm --workspace @bytetrue/pi-vendor pack --dry-run
 ```
 
-真机 smoke 还应确认：package skill 被发现、三个 tool 注册、`/vendor` 的 Add provider/Add model、candidate 左右分页、Esc 零写入、保存后 awaited refresh/getError。所有 smoke 使用 isolated `PI_CODING_AGENT_DIR`，不得读写用户配置。
+真机 smoke 还应确认：package skill 被发现、bundled script 可从 packed package 执行、extension 不注册 AI tools、`/vendor` 的 Add provider/Add model、candidate 左右分页、Esc 零写入、保存后 awaited refresh/getError。所有 smoke 使用 isolated `PI_CODING_AGENT_DIR`，不得读写用户配置。
 
 ## 证据
 

@@ -11,13 +11,15 @@ description: >
 
 # Pi Vendor
 
-Manage Pi's `models.json` with the AI's normal read/edit tools and three package tools:
+Manage Pi's `models.json` with the AI's normal read/edit tools and the bundled Node script:
 
-- `vendor_catalog_search` — search the active Pi catalog and return credential-free templates;
-- `vendor_discover` — read a configured provider and safely list its `/models` ids;
-- `vendor_validate` — refresh the running Pi registry and report whether it accepts the current file.
+```sh
+node '<absolute-skill-directory>/scripts/vendor.mjs' <catalog|discover|lint|set-key> [argument]
+```
 
-The package deliberately has no general write tool. Make the smallest targeted edit with the AI's normal edit tool, then validate it.
+Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value; never interpolate shell operators. `catalog`, `discover`, and `lint` are AI-facing commands. `set-key` is user-terminal-only because it prompts for a secret.
+
+The package deliberately has no AI tool or general write command. Make the smallest targeted edit with the normal edit tool, then run `lint`.
 
 ## Non-negotiable boundaries
 
@@ -41,7 +43,13 @@ For inspection or audit, summarize provider routing and model ids without showin
 
 ## Official template selection
 
-Call `vendor_catalog_search` before adding or aligning a model. If it reports `catalog_unavailable`, stop and repair/retry catalog resolution; do not reinterpret that failure as “no official match”.
+Run the bundled script before adding or aligning a model:
+
+```sh
+node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<query>'
+```
+
+If it reports that the official catalog is unavailable, stop and repair/retry catalog resolution; do not reinterpret that failure as “no official match”.
 
 1. If several distinct model ids match the query, show a compact comparison and ask which id the user means.
 2. Once the id is exact, group candidates by official source provider.
@@ -71,7 +79,13 @@ Name the exact provider and contained custom models. Check obvious references be
 
 ### Discover
 
-For a configured target provider, call `vendor_discover` with its exact provider key. The tool resolves credentials internally and returns ids only. Discovery proves upstream availability, not metadata correctness; still use `vendor_catalog_search` for the chosen id.
+For a configured target provider, run:
+
+```sh
+node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>'
+```
+
+The script resolves credentials locally and returns ids only. Discovery proves upstream availability, not metadata correctness; still run `catalog` for the chosen id.
 
 ### Add or update
 
@@ -94,22 +108,23 @@ Identify whether the target is in `models` or `modelOverrides`, show the exact t
 The bundled script updates exactly one provider's `apiKey`, prompts in the user's terminal without echoing the value, and writes `models.json` atomically with mode `0600`:
 
 ```sh
-node '<absolute-skill-directory>/scripts/set-api-key.mjs' '<provider-key>'
+node '<absolute-skill-directory>/scripts/vendor.mjs' set-key '<provider-key>'
 ```
 
 Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`, and quote both paths safely. Give this command to the user; do not execute it on their behalf because it needs interactive secret input. The key never appears in the command line or chat.
 
-After the user reports completion, call `vendor_validate`. Do not ask them to reveal the value.
+After the user reports completion, run `lint`. Do not ask them to reveal the value.
 
-## Validate every mutation
+## Check every mutation
 
 After each edit:
 
-1. parse-check the JSON;
-2. call `vendor_validate`;
-3. if invalid, repair the targeted change or restore the previous value before proceeding;
-4. for additions, confirm the intended provider/model appears after refresh;
-5. report only changed JSON paths, the selected official source provider, and validation status.
+1. run `node '<absolute-skill-directory>/scripts/vendor.mjs' lint`;
+2. if lint fails, repair the targeted change or restore the previous value before proceeding;
+3. for additions, re-read the file and confirm the intended provider/model exists;
+4. report only changed JSON paths, the selected official source provider, and lint status.
+
+`lint` checks JSON shape and duplicate model ids locally. It does not claim that a running Pi session has loaded the model; the user can reload Pi and select the model when runtime confirmation is needed.
 
 Do not print the whole edited provider or a full diff when it would expose `apiKey`.
 
@@ -117,10 +132,10 @@ Do not print the whole edited provider or a full diff when it would expose `apiK
 
 For an audit:
 
-1. parse and validate the current file;
+1. parse and lint the current file;
 2. inspect duplicate ids, missing routing facts, broken shapes, and suspicious model-level overrides;
-3. compare official-aligned models with `vendor_catalog_search`, but report ambiguity instead of assuming a source provider;
+3. compare official-aligned models with the script's `catalog` command, but report ambiguity instead of assuming a source provider;
 4. distinguish deliberate custom models from invalid models;
 5. report findings by severity with exact JSON paths and remediation, never credential values.
 
-A clean audit says what was checked and that `vendor_validate` passed. Do not rewrite a clean file.
+A clean audit says what was checked and that `lint` passed. Do not rewrite a clean file.

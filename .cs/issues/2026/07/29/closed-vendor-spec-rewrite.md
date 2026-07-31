@@ -63,7 +63,7 @@ epic: ".cs/epics/2026/07/29/vendor-ai-first/spec.md"
 
 ## 执行记录
 
-- 全量重写 `.cs/spec/pi-vendor/index.md`：AI-first 身份、三个 tool contract、冷启动 TUI、literal key encoding、active catalog fail-loud DTO、discovery/security、运行中 registry oracle 与明确 exclusions。
+- 全量重写 `.cs/spec/pi-vendor/index.md`：AI-first 身份、Skill/bundled-script contract、冷启动 TUI、literal key encoding、active catalog、discovery/security 与明确 exclusions。
 - 同步根 `.cs/spec/index.md`、根 README 与包 README；删除 Web 专属 `PRODUCT.md`、`.impeccable` live config、Web ignore metadata。
 - 旧 dual-UI/Web epics 与相关 issues 增加 `superseded_by` + 可见 superseded notice；补标旧 TUI/hardening 记录并修复一条失效 issue 链接。
 - `src/index.ts` 收到 default extension registration，内部约 60 个 symbol 不再承诺 npm library API；`web-model-dto` 重命名为 `catalog-model-dto`，孤立 `web-enrich` 删除。

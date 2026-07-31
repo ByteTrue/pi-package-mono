@@ -12,12 +12,12 @@ created: 2026-07-29
 把 `@bytetrue/pi-vendor` 从**UI 包**变成**能力提供者**：
 
 - 日常增删改查交给 AI，包内出一个可分发的 `skills/pi-vendor/SKILL.md`
-- 只保留 AI 拿不到的确定性能力，做成三个**只读动词**（catalog search / validate / discover）
+- 只保留 AI 自己无法可靠内联的确定性能力，放进 Skill bundled script（catalog / discover / lint / set-key），按需执行且不注册常驻 AI tool
 - mutation 归 AI 自己的 `edit`，包内不出写动词
 - TUI 缩成两条直线，只服务"冷启动"和"一次性单发"
 - **删掉整个 Web**（8,908 行，占包 59%）以及只为浏览器边界存在的 `SecretRef` / `mask`
 
-终态：`src/` 15,096 → 5,745 行（删除 9,351 行，约 62%）；比预估多保留的是经验证仍有消费者的 config/model-source 安全 core 与新增 tools/tests。
+终态：`src/` 15,096 → 5,685 行（删除 9,411 行，约 62%）；比预估多保留的是经验证仍有消费者的 config/model-source 安全 core 与新增 script tests。
 
 ## 为什么现在做
 
@@ -43,7 +43,7 @@ owner 已明确**放弃"不用 AI 也能管全部"这个产品承诺**。
 ```text
 @bytetrue/pi-vendor
 ├── skills/pi-vendor/SKILL.md   ← 主路径：增删改查 / 官方模板 / /models 导入 / 密钥命令 / 审查
-├── 三个只读动词（AI 调用）
+├── Skill bundled script（AI 按需执行；key 子命令由用户执行）
 │     catalog search   → 输出官方模板 JSON（AI 粘贴，不默写）
 │     validate         → Pi oracle
 │     discover /models → bounded-discover
@@ -79,7 +79,7 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 
 ## 统一语言
 
-- **只读动词**：包对 AI 暴露的三个不写 `models.json` 的能力；validate 允许刷新当前 session 的内存 registry，与配置“写”严格区分。
+- **按需脚本**：包不向 AI 注册 tool；Skill 通过 bash 执行 bundled script 的 catalog/discover/lint，key 子命令只交给用户终端。
 - **官方模板**：active Pi runtime catalog 里的某个 provider 下的 model 配置，作为元数据来源。
 - **目标 provider** vs **官方源 provider**：前者是 `models.json` 里被编辑的 key，后者是模板来源；二者常不同，永不互相替代。
 - **冷启动**：`models.json` 无可用模型、AI 不可用的状态。
@@ -125,18 +125,18 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 
 - `src/web/`、SecretRef/mask、Web scripts/assets/CI 步骤已全部移除；pack dry-run 无 Web 产物。
 - TUI 两条直线已实现；owner 真机确认 Add model，`opus` fuzzy + 完整候选 + 10 行分页按反馈修正；Esc/commit/refresh 与 provider flow 由 scripted tests 覆盖。
-- `skills/pi-vendor/SKILL.md`、三个 read-only-file tools 与 key helper 已打包；Pi RPC 真实发现 `skill:pi-vendor`；tools/key/catalog/resolver 有聚焦测试。
+- `skills/pi-vendor/SKILL.md` 与单个 `scripts/vendor.mjs` 已打包；Pi RPC 真实发现 `skill:pi-vendor`，extension 只注册 `/vendor`、不注册 AI tools；script/catalog/discovery/lint/key 有聚焦测试。
 - project spec / README 已重写，旧 Web epics/issues 标 superseded，内部 export/Web 命名与 CI 收口。
-- package typecheck、21 files / 191 tests、pack dry-run、active Pi 0.82 catalog probe、真实 extension/skill discovery通过。
+- package typecheck、20 files / 195 tests、pack dry-run、active Pi 0.82 catalog probe、真实 extension/skill discovery 通过。
 - 独立 reviewer 经 changes-requested 修复后最终 verdict：blocking=0、important=0。
 
 ## 关闭结论
 
-AI-first 转向完成。日常 CRUD 的唯一产品入口是 bundled Skill + AI edit；包只保留 catalog/discover/validate 三个不写配置文件的工具与零模型冷启动 TUI。Web 产品承诺正式作废但历史证据保留。未执行 npm 发布。
+AI-first 转向完成。日常 CRUD 的唯一产品入口是 bundled Skill + AI edit；catalog/discover/lint/key entry 由 Skill 内单脚本按需承担，包不注册常驻 AI tool；另保留零模型冷启动 TUI。Web 产品承诺正式作废但历史证据保留。未执行 npm 发布。
 
 ## 合并回 Project Spec 的候选
 
-- pi-vendor 的新身份（skill + 只读动词 + 冷启动 TUI）与两条使用路径
+- pi-vendor 的新身份（skill + on-demand script + 冷启动 TUI）与两条使用路径
 - "AI 可读 `models.json` 但输出永不复现 apiKey" 这条安全约束
 - 目标 provider vs 官方源 provider 的区分
 - 官方模板由 active Pi runtime 提供（沿用既有结论）

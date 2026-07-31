@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import registerVendor from "./index.js";
 
 describe("registerVendor", () => {
-	it("registers /vendor and the three read-only tools with no lifecycle hooks", async () => {
+	it("registers only /vendor with no tools or lifecycle hooks", async () => {
 		const commands: string[] = [];
 		const tools: string[] = [];
 		const events: string[] = [];
@@ -15,7 +15,7 @@ describe("registerVendor", () => {
 		await registerVendor(pi as never);
 
 		expect(commands).toEqual(["vendor"]);
-		expect(tools).toEqual(["vendor_catalog_search", "vendor_validate", "vendor_discover"]);
+		expect(tools).toEqual([]);
 		expect(events).toEqual([]);
 	});
 });
