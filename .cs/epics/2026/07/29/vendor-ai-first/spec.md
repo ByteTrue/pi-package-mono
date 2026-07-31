@@ -127,7 +127,7 @@ TUI `Add provider`（owner 给定顺序，一次只加一个模型）：
 - TUI 两条直线已实现；owner 真机确认 Add model，`opus` fuzzy + 完整候选 + 10 行分页按反馈修正；Esc/commit/refresh 与 provider flow 由 scripted tests 覆盖。
 - `skills/pi-vendor/SKILL.md` 与单个 `scripts/vendor.mjs` 已打包；Pi RPC 真实发现 `skill:pi-vendor`，extension 只注册 `/vendor`、不注册 AI tools；script/catalog/discovery/lint/key 有聚焦测试。
 - project spec / README 已重写，旧 Web epics/issues 标 superseded，内部 export/Web 命名与 CI 收口。
-- package typecheck、20 files / 195 tests、pack dry-run、active Pi 0.82 catalog probe、真实 extension/skill discovery 通过。
+- package typecheck、20 files / 200 tests、pack dry-run、active Pi 0.82 catalog probe、真实 extension/skill discovery 通过；异构 provider 的 OpenAI/Anthropic/Google route 已分别真机探查。
 - 独立 reviewer 经 changes-requested 修复后最终 verdict：blocking=0、important=0。
 
 ## 关闭结论

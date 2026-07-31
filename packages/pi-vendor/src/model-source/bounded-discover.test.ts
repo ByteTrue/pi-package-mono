@@ -87,6 +87,56 @@ describe("discoverModelIds", () => {
 		);
 	});
 
+	it("uses Anthropic list URL and headers", async () => {
+		const fetchImpl = vi.fn(async (_input: string, init: any) => {
+			expect(init.headers["x-api-key"]).toBe("secret");
+			expect(init.headers["anthropic-version"]).toBe("2023-06-01");
+			expect(init.headers.Authorization).toBeUndefined();
+			return fakeResponse({ jsonBody: { data: [{ id: "claude-x" }] } });
+		});
+		await expect(discoverModelIds(
+			{ baseUrl: "https://example.com/gateway", api: "anthropic-messages", apiKey: "secret" },
+			{ fetchImpl },
+		)).resolves.toEqual(["claude-x"]);
+		expect(fetchImpl).toHaveBeenCalledWith("https://example.com/gateway/v1/models", expect.any(Object));
+	});
+
+	it("uses Google list URL/header and parses models[].name", async () => {
+		const fetchImpl = vi.fn(async (_input: string, init: any) => {
+			expect(init.headers["x-goog-api-key"]).toBe("secret");
+			return fakeResponse({ jsonBody: { models: [{ name: "models/gemini-b" }, { name: "models/gemini-a" }] } });
+		});
+		await expect(discoverModelIds(
+			{ baseUrl: "https://example.com/v1", api: "google-generative-ai", apiKey: "secret" },
+			{ fetchImpl },
+		)).resolves.toEqual(["gemini-a", "gemini-b"]);
+		expect(fetchImpl).toHaveBeenCalledWith("https://example.com/v1/models", expect.any(Object));
+	});
+
+	it("adds native auth and an additional Bearer header when authHeader is true", async () => {
+		const fetchImpl = vi.fn(async (_input: string, init: any) => {
+			expect(init.headers.Authorization).toBe("Bearer secret");
+			expect(init.headers["x-api-key"]).toBe("secret");
+			return fakeResponse({ jsonBody: { data: [] } });
+		});
+		await discoverModelIds(
+			{ baseUrl: "https://example.com", api: "anthropic-messages", apiKey: "secret", authHeader: true },
+			{ fetchImpl },
+		);
+	});
+
+	it("preserves explicit Authorization while adding Anthropic native auth", async () => {
+		const fetchImpl = vi.fn(async (_input: string, init: any) => {
+			expect(init.headers.Authorization).toBe("custom-auth");
+			expect(init.headers["x-api-key"]).toBe("secret");
+			return fakeResponse({ jsonBody: { data: [] } });
+		});
+		await discoverModelIds(
+			{ baseUrl: "https://example.com", api: "anthropic-messages", apiKey: "secret", headers: { Authorization: "custom-auth" } },
+			{ fetchImpl },
+		);
+	});
+
 	it("does not add Bearer when Authorization header already exists", async () => {
 		const fetchImpl = vi.fn(async (_input: string, init: any) => {
 			expect(init.headers["Authorization"]).toBe("custom-auth");

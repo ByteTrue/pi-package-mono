@@ -35,6 +35,7 @@ export async function runAddModelFlow(
 		api: typeof provider.api === "string" ? provider.api : undefined,
 		apiKey: typeof provider.apiKey === "string" ? provider.apiKey : undefined,
 		headers: provider.headers,
+		authHeader: provider.authHeader,
 		initialProvider,
 	}, options);
 	if (model === null) return { kind: "cancelled" };

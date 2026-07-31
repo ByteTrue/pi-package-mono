@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createServer } from "node:http";
+import { createServer, type IncomingHttpHeaders } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -92,9 +92,39 @@ describe("vendor skill script", () => {
 		try {
 			const result = await runAsync(["discover", "relay"], { PI_VENDOR_TEST_KEY: "!literal$HOME" });
 			expect(result.code).toBe(0);
-			expect(JSON.parse(result.stdout)).toEqual({ providerKey: "relay", count: 2, modelIds: ["a", "b"] });
+			expect(JSON.parse(result.stdout)).toEqual({ providerKey: "relay", route: { api: "openai-completions" }, positiveEvidenceOnly: true, count: 2, modelIds: ["a", "b"] });
 			expect(result.stdout).not.toContain("literal");
 			expect(authorization).toBe("Bearer prefix-!literal$HOME");
+		} finally {
+			server.close();
+		}
+	});
+
+	it("uses configured model routes for Anthropic and Google discovery", async () => {
+		const seen: Array<{ url: string; headers: IncomingHttpHeaders }> = [];
+		const server = createServer((request, response) => {
+			seen.push({ url: request.url ?? "", headers: request.headers });
+			response.end(request.url === "/v1beta/models"
+				? JSON.stringify({ models: [{ name: "models/gemini-x" }] })
+				: JSON.stringify({ data: [{ id: "claude-x" }] }));
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("missing test address");
+		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: {
+			baseUrl: `http://127.0.0.1:${address.port}/v1`, api: "openai-completions", apiKey: "secret", authHeader: true,
+			models: [
+				{ id: "claude-route", api: "anthropic-messages", baseUrl: `http://127.0.0.1:${address.port}` },
+				{ id: "gemini-route", api: "google-generative-ai", baseUrl: `http://127.0.0.1:${address.port}` },
+			],
+		} } }));
+		try {
+			const anthropic = await runAsync(["discover", "relay", "claude-route"]);
+			const google = await runAsync(["discover", "relay", "gemini-route"]);
+			expect(JSON.parse(anthropic.stdout).modelIds).toEqual(["claude-x"]);
+			expect(JSON.parse(google.stdout).modelIds).toEqual(["gemini-x"]);
+			expect(seen[0]).toMatchObject({ url: "/v1/models", headers: { "x-api-key": "secret", authorization: "Bearer secret", "anthropic-version": "2023-06-01" } });
+			expect(seen[1]).toMatchObject({ url: "/v1beta/models", headers: { "x-goog-api-key": "secret", authorization: "Bearer secret" } });
 		} finally {
 			server.close();
 		}

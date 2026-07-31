@@ -171,41 +171,76 @@ function resolveValue(value) {
 	return resolveTemplate(value);
 }
 
-async function discover(providerKey) {
-	if (!providerKey) fail("Usage: vendor.mjs discover <provider-key>", 2);
-	const provider = readModels()?.providers?.[providerKey];
-	if (!provider || typeof provider !== "object" || Array.isArray(provider)) fail(`Provider ${JSON.stringify(providerKey)} was not found`);
-	let url;
-	try {
-		url = new URL(provider.baseUrl);
-		if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error();
-		url.pathname = `${url.pathname.replace(/\/$/, "")}/models`;
-	} catch {
-		fail("Provider has an invalid baseUrl");
+function hasHeader(headers, name) {
+	return Object.keys(headers).some((key) => key.toLowerCase() === name);
+}
+
+function discoveryRoute(provider, modelId) {
+	const model = modelId ? (provider.models ?? []).find((entry) => entry?.id === modelId) : undefined;
+	if (modelId && !model) fail("Configured model was not found");
+	return {
+		api: model?.api ?? provider.api ?? "openai-completions",
+		baseUrl: model?.baseUrl ?? provider.baseUrl,
+		headers: { ...(provider.headers ?? {}), ...(model?.headers ?? {}) },
+		authHeader: provider.authHeader,
+	};
+}
+
+function discoveryUrl(baseUrl, api) {
+	const url = new URL(baseUrl);
+	if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
+	const path = url.pathname.replace(/\/$/, "");
+	if (api === "anthropic-messages") url.pathname = `${path.endsWith("/v1") ? path : `${path}/v1`}/models`;
+	else if (api === "google-generative-ai") url.pathname = `${path.endsWith("/v1") || path.endsWith("/v1beta") ? path : `${path}/v1beta`}/models`;
+	else url.pathname = `${path}/models`;
+	return url;
+}
+
+function addCredentialCandidate(values, name, value) {
+	if (!value) return;
+	values.push(value);
+	if (name.toLowerCase() === "authorization") {
+		const token = value.match(/^\S+\s+(.+)$/)?.[1];
+		if (token) values.push(token);
 	}
+}
+
+async function discover(providerKey, modelId) {
+	if (!providerKey) fail("Usage: vendor.mjs discover <provider-key> [configured-model-id]", 2);
+	const provider = readModels()?.providers?.[providerKey];
+	if (!provider || typeof provider !== "object" || Array.isArray(provider)) fail("Provider was not found");
+	const route = discoveryRoute(provider, modelId);
+	let url;
+	try { url = discoveryUrl(route.baseUrl, route.api); } catch { fail("Provider has an invalid baseUrl"); }
+
 	const headers = {};
 	const credentialValues = [];
-	for (const [name, value] of Object.entries(provider.headers ?? {})) {
+	for (const [name, value] of Object.entries(route.headers)) {
 		const resolved = resolveValue(value);
 		if (resolved === undefined) fail("Unable to resolve provider credentials");
 		headers[name] = resolved;
-		if (resolved) {
-			credentialValues.push(resolved);
-			if (name.toLowerCase() === "authorization") {
-				const token = resolved.match(/^\S+\s+(.+)$/)?.[1];
-				if (token) credentialValues.push(token);
-			}
-		}
+		addCredentialCandidate(credentialValues, name, resolved);
 	}
 	const configuredKey = typeof provider.apiKey === "string" ? provider.apiKey : undefined;
 	if (configuredKey) credentialValues.push(configuredKey);
-	const hasAuthorization = Object.keys(headers).some((name) => name.toLowerCase() === "authorization");
+	const nativeHeader = route.api === "anthropic-messages" ? "x-api-key" : route.api === "google-generative-ai" ? "x-goog-api-key" : "authorization";
+	if (route.authHeader && !configuredKey) fail("Unable to resolve provider credentials");
+	const needsKey = !hasHeader(headers, nativeHeader) || route.authHeader;
 	let resolvedKey;
-	if (configuredKey && (!configuredKey.startsWith("!") || !hasAuthorization)) {
+	if (configuredKey && (!configuredKey.startsWith("!") || needsKey)) {
 		resolvedKey = resolveValue(configuredKey);
 		if (resolvedKey) credentialValues.push(resolvedKey);
 	}
-	if (!hasAuthorization && resolvedKey) headers.Authorization = `Bearer ${resolvedKey}`;
+	if (needsKey && configuredKey && !resolvedKey) fail("Unable to resolve provider credentials");
+	if (resolvedKey) {
+		if (!hasHeader(headers, nativeHeader)) {
+			if (nativeHeader === "authorization") headers.Authorization = `Bearer ${resolvedKey}`;
+			else headers[nativeHeader] = resolvedKey;
+		}
+		if (route.authHeader) headers.Authorization = `Bearer ${resolvedKey}`;
+	}
+	if (route.api === "anthropic-messages" && !hasHeader(headers, "anthropic-version")) headers["anthropic-version"] = "2023-06-01";
+
 	let response;
 	try {
 		response = await fetch(url, { headers, redirect: "error", signal: AbortSignal.timeout(15_000) });
@@ -232,9 +267,12 @@ async function discover(providerKey) {
 	} catch {
 		fail("Upstream returned invalid model data");
 	}
-	const modelIds = [...new Set((Array.isArray(body?.data) ? body.data : []).map((item) => item?.id).filter((id) => typeof id === "string" && id))].sort();
+	const entries = route.api === "google-generative-ai" ? body?.models : body?.data;
+	if (!Array.isArray(entries)) fail("Upstream returned invalid model data");
+	const field = route.api === "google-generative-ai" ? "name" : "id";
+	const modelIds = [...new Set(entries.map((item) => item?.[field]).filter((id) => typeof id === "string" && id).map((id) => route.api === "google-generative-ai" ? id.replace(/^models\//, "") : id))].sort();
 	if (modelIds.some((id) => credentialValues.some((value) => id.includes(value)))) fail("Upstream model discovery failed");
-	output({ providerKey, count: modelIds.length, modelIds });
+	output({ providerKey, route: { api: route.api }, positiveEvidenceOnly: true, count: modelIds.length, modelIds });
 }
 
 async function readSecret() {
@@ -294,7 +332,7 @@ async function setKey(providerKey) {
 
 switch (command) {
 	case "catalog": await catalog(args[0], args[1]); break;
-	case "discover": await discover(args[0]); break;
+	case "discover": await discover(args[0], args[1]); break;
 	case "lint": lint(); break;
 	case "set-key": await setKey(args[0]); break;
 	default: fail("Usage: vendor.mjs <catalog|discover|lint|set-key> [arguments]", 2);

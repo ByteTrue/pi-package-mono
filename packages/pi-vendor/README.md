@@ -66,11 +66,11 @@ The skill invokes one on-demand script instead of registering permanent AI tools
 | Command | Purpose |
 |---|---|
 | `vendor.mjs catalog <query>` | Search credential-free templates from the active Pi installation. |
-| `vendor.mjs discover <provider>` | Resolve one configured provider locally and return upstream `/models` ids only. |
+| `vendor.mjs discover <provider> [configured-model]` | Probe the provider default route or one configured model's effective OpenAI/Anthropic/Google route; return listed ids only. |
 | `vendor.mjs lint` | Check JSON shape and duplicate model ids without starting Pi. |
 | `vendor.mjs set-key <provider>` | Prompt the user privately and update one key atomically. |
 
-Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and never outputs configured credentials. `lint` is deliberately local; reload Pi and select the model when runtime confirmation is required.
+Discovery uses protocol-specific model-list URLs, authentication, and response shapes for OpenAI-compatible, Anthropic Messages, and Google Generative AI routes. It accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and never outputs configured credentials. Results are positive evidence only: an unlisted id is not proof that the upstream cannot serve it. `lint` is deliberately local; reload Pi and select the model when runtime confirmation is required.
 
 ## Development
 

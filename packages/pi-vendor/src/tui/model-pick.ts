@@ -22,6 +22,7 @@ export type ProviderTarget = {
 	api?: string;
 	apiKey?: string;
 	headers?: Record<string, string>;
+	authHeader?: boolean;
 	/** On-disk credential snapshot; required before any `!command` value may run. */
 	initialProvider?: { apiKey?: string; headers?: Record<string, string> };
 };
@@ -156,10 +157,10 @@ async function listUpstreamIds(
 		return null;
 	}
 
-	ui.notify(`Listing models at ${provider.baseUrl}/models …`, "info");
+	ui.notify(`Listing ${provider.api ?? "OpenAI-compatible"} models …`, "info");
 	try {
 		const ids = await discover(
-			{ baseUrl: provider.baseUrl, apiKey: provider.apiKey, headers: provider.headers },
+			{ baseUrl: provider.baseUrl, api: provider.api, apiKey: provider.apiKey, headers: provider.headers, authHeader: provider.authHeader },
 			provider.initialProvider ? { initialProvider: provider.initialProvider } : {},
 		);
 		if (ids.length === 0) {

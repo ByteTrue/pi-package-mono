@@ -1,4 +1,4 @@
-// Bounded discover: OpenAI-compatible /models with deadlines, budgets, and command trust.
+// Bounded discover: API-aware model listing with deadlines, budgets, and command trust.
 // Implements the full discoverModelIds pipeline per the design contract.
 
 import { allCommandsTrusted, collectCommandPaths, resolveConfigValue } from "./config-resolver.js";
@@ -37,7 +37,7 @@ const ID_MAX_BYTES_PER_CHAR = 4; // worst-case UTF-8
 
 // --- URL validation ---
 
-function buildModelsUrl(baseUrl: string): string {
+function buildModelsUrl(baseUrl: string, api = "openai-completions"): string {
 	if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
 		throw new ModelSourceError("invalid_request", "baseUrl must start with http:// or https://");
 	}
@@ -46,10 +46,14 @@ function buildModelsUrl(baseUrl: string): string {
 		if (u.username || u.password) {
 			throw new ModelSourceError("invalid_request", "baseUrl must not contain credentials");
 		}
-		// Normalize: strip trailing slash, append /models
-		let pathname = u.pathname;
-		if (pathname.endsWith("/")) pathname = pathname.slice(0, -1);
-		u.pathname = pathname + "/models";
+		const pathname = u.pathname.replace(/\/$/, "");
+		if (api === "anthropic-messages") {
+			u.pathname = `${pathname.endsWith("/v1") ? pathname : `${pathname}/v1`}/models`;
+		} else if (api === "google-generative-ai") {
+			u.pathname = `${pathname.endsWith("/v1") || pathname.endsWith("/v1beta") ? pathname : `${pathname}/v1beta`}/models`;
+		} else {
+			u.pathname = `${pathname}/models`;
+		}
 		return u.toString();
 	} catch {
 		throw new ModelSourceError("invalid_request", "Invalid base URL");
@@ -91,12 +95,12 @@ async function readBoundedBody(
 	return text;
 }
 
-// --- Parse /models response ---
+// --- Parse model-list response ---
 
-function parseAndSortModelIds(json: unknown): string[] {
+function parseAndSortModelIds(json: unknown, api = "openai-completions"): string[] {
 	if (!json || typeof json !== "object" || Array.isArray(json)) return [];
 	const obj = json as Record<string, unknown>;
-	const data = obj.data;
+	const data = api === "google-generative-ai" ? obj.models : obj.data;
 	if (!Array.isArray(data)) return [];
 
 	const seen = new Set<string>();
@@ -104,9 +108,10 @@ function parseAndSortModelIds(json: unknown): string[] {
 
 	for (const item of data) {
 		if (!item || typeof item !== "object") continue;
-		const raw = (item as Record<string, unknown>).id;
+		const field = api === "google-generative-ai" ? "name" : "id";
+		const raw = (item as Record<string, unknown>)[field];
 		if (typeof raw !== "string") continue;
-		const trimmed = raw.trim();
+		const trimmed = (api === "google-generative-ai" ? raw.replace(/^models\//, "") : raw).trim();
 		if (!trimmed) continue;
 		if (trimmed.length > MAX_ID_BYTES) continue; // byte count checked below
 		if (new TextEncoder().encode(trimmed).length > MAX_ID_BYTES) continue;
@@ -123,17 +128,25 @@ function parseAndSortModelIds(json: unknown): string[] {
 
 // --- Auth header composition ---
 
-function hasAuthorization(headers: Record<string, string>): boolean {
-	for (const key of Object.keys(headers)) {
-		if (key.toLowerCase() === "authorization") return true;
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+	return Object.keys(headers).some((key) => key.toLowerCase() === name);
+}
+
+function applyApiKey(headers: Record<string, string>, api: string | undefined, apiKey: string, authHeader: boolean | undefined): void {
+	if (api === "anthropic-messages") {
+		if (!hasHeader(headers, "x-api-key")) headers["x-api-key"] = apiKey;
+	} else if (api === "google-generative-ai") {
+		if (!hasHeader(headers, "x-goog-api-key")) headers["x-goog-api-key"] = apiKey;
+	} else if (!hasHeader(headers, "authorization")) {
+		headers.Authorization = `Bearer ${apiKey}`;
 	}
-	return false;
+	if (authHeader) headers.Authorization = `Bearer ${apiKey}`;
 }
 
 // --- Main discover function ---
 
 export async function discoverModelIds(
-	provider: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
+	provider: { baseUrl: string; api?: string; apiKey?: string; headers?: Record<string, string>; authHeader?: boolean },
 	options: DiscoverOptions = {},
 ): Promise<string[]> {
 	const initialProvider = options.initialProvider;
@@ -193,9 +206,15 @@ export async function discoverModelIds(
 			}
 		}
 
-		// --- Resolve apiKey and compose Bearer ---
-		if (!hasAuthorization(requestHeaders)) {
-			if (provider.apiKey) {
+		// --- Resolve apiKey and compose protocol auth ---
+		if (provider.authHeader && !provider.apiKey) {
+			throw new ModelSourceError("credential_unresolved", "authHeader requires an API key");
+		}
+		if (provider.apiKey) {
+			const nativeHeader = provider.api === "anthropic-messages"
+				? "x-api-key"
+				: provider.api === "google-generative-ai" ? "x-goog-api-key" : "authorization";
+			if (!hasHeader(requestHeaders, nativeHeader) || provider.authHeader) {
 				const result = await resolveConfigValue(provider.apiKey, {
 					path: { kind: "apiKey" },
 					providerEnv,
@@ -206,14 +225,15 @@ export async function discoverModelIds(
 				if (result.kind !== "resolved") {
 					throw new ModelSourceError("credential_unresolved", "Failed to resolve API key");
 				}
-				if (result.value) {
-					requestHeaders["Authorization"] = `Bearer ${result.value}`;
-				}
+				if (result.value) applyApiKey(requestHeaders, provider.api, result.value, provider.authHeader);
 			}
+		}
+		if (provider.api === "anthropic-messages" && !hasHeader(requestHeaders, "anthropic-version")) {
+			requestHeaders["anthropic-version"] = "2023-06-01";
 		}
 
 		// --- Build URL and fetch ---
-		const url = buildModelsUrl(provider.baseUrl);
+		const url = buildModelsUrl(provider.baseUrl, provider.api);
 
 		let response: BoundedFetchResponse;
 		try {
@@ -269,7 +289,7 @@ export async function discoverModelIds(
 			throw new ModelSourceError("upstream_failed", "Invalid JSON response");
 		}
 
-		return parseAndSortModelIds(parsed);
+		return parseAndSortModelIds(parsed, provider.api);
 	} catch (err: unknown) {
 		if (err instanceof ModelSourceError) throw err;
 		if (combinedSignal.aborted) {

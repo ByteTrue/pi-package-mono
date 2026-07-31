@@ -82,10 +82,12 @@ Name the exact provider and contained custom models. Check obvious references be
 For a configured target provider, run:
 
 ```sh
-node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>'
+node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>' ['<configured-model-id>']
 ```
 
-The script resolves credentials locally and returns ids only. Discovery proves upstream availability, not metadata correctness; still run `catalog` for the chosen id.
+The optional configured model id makes discovery use that model's effective `api`, `baseUrl`, and headers together with the provider's `authHeader`; this is required for providers that mix OpenAI, Anthropic, and Google routes. For a heterogeneous provider, group configured models by effective route and run one representative model from each group.
+
+Discovery is **positive evidence only**: a returned id proves that route listed it. A missing id does not prove that the upstream cannot serve it because model-list APIs may be incomplete or paginated. Never produce “configured but absent upstream” findings from a list difference alone. Still run `catalog` for metadata.
 
 ### Add or update
 
@@ -134,8 +136,9 @@ For an audit:
 
 1. parse and lint the current file;
 2. inspect duplicate ids, missing routing facts, broken shapes, and suspicious model-level overrides;
-3. compare official-aligned models with the script's `catalog` command, but report ambiguity instead of assuming a source provider;
-4. distinguish deliberate custom models from invalid models;
-5. report findings by severity with exact JSON paths and remediation, never credential values.
+3. group heterogeneous providers by effective API/base URL and run route-specific discovery, treating results as positive evidence only;
+4. compare official-aligned models with the script's `catalog` command, but report ambiguity instead of assuming a source provider;
+5. distinguish deliberate custom models from invalid models;
+6. report findings by severity with exact JSON paths and remediation, never credential values.
 
 A clean audit says what was checked and that `lint` passed. Do not rewrite a clean file.

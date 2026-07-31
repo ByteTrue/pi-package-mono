@@ -26,7 +26,7 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 | 子命令 | 调用方 | 输出/边界 |
 |---|---|---|
 | `catalog <query> [limit]` | AI | 从 active Pi catalog 搜索并移除 routing/credential 字段；默认 50，范围 1–100 |
-| `discover <provider-key>` | AI | 读取已配置 provider，请求 `{baseUrl}/models`，只输出排序去重后的 id |
+| `discover <provider-key> [configured-model-id]` | AI | 按 provider 默认路由或指定模型的 effective api/baseUrl/headers + provider authHeader 探查；OpenAI/Anthropic/Google 协议分支；只输出排序去重后的 id |
 | `lint` | AI | 本地 strict JSON、root/providers shape、model id/duplicate 检查；不宣称 runtime 可用 |
 | `set-key <provider-key>` | 用户终端 | 无回显输入，只更新一个 key，原子 `0600` 写入 |
 
@@ -71,8 +71,11 @@ Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi 
 
 ### Discovery 安全边界
 
-- Skill script：http/https only；拒绝 username/password；append `/models`；redirect error；fetch 15 秒；credential command 每项 10 秒/64 KiB；response 2 MiB chunk-counted；只输出 id 或本地错误。
-- TUI：继续使用 package 内现有 bounded-discover core，包括 overall deadline、exact-path command preflight 与 typed errors。
+- Skill script：按 effective API 选择 list URL/auth/response shape：OpenAI-compatible `data[].id` + Bearer；Anthropic `/v1/models` + `x-api-key`/version；Google `/v1|v1beta/models` + `x-goog-api-key` + `models[].name`；`authHeader` 或显式 header 优先。
+- 可传 configured model id 使用 model-level api/baseUrl/headers；异构 provider 由 Skill 按 effective route 分组后各探一次。
+- 所有 discovery 结果只作 positive evidence：出现可证明该 route 列出该 id，缺失不能推出上游不支持（list API 可能不完整或分页）。禁止据此生成“configured but absent upstream”结论。
+- http/https only；拒绝 username/password；redirect error；fetch 15 秒；credential command 10 秒/64 KiB；response 2 MiB chunk-counted；只输出 id 或本地错误。
+- TUI：继续使用 package 内 bounded-discover core，同样按 provider API 分支，并保留 overall deadline、exact-path command preflight 与 typed errors。
 
 ## 模板与路由
 
