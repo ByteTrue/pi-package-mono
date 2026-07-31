@@ -37,7 +37,7 @@ The file is:
 1. `$PI_CODING_AGENT_DIR/models.json` when that environment variable is set;
 2. otherwise `~/.pi/agent/models.json`.
 
-Read the active file before every mutation. Identify the requested operation and exact target provider/model. If the same model id exists under several target providers and the user did not name one, ask which target to edit.
+Read the active file before every mutation. Identify the requested operation and exact target provider/model. If the same model id exists under several target providers and the user did not name one, ask which target to edit. For ad hoc local inspection, use Node rather than assuming Python is installed; Pi itself guarantees a Node runtime.
 
 For inspection or audit, summarize provider routing and model ids without showing credential values. Include model-level `api`/`baseUrl` overrides because they can differ from provider defaults.
 
@@ -87,7 +87,7 @@ node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>' [
 
 The optional configured model id makes discovery use that model's effective `api`, `baseUrl`, and headers together with the provider's `authHeader`; this is required for providers that mix OpenAI, Anthropic, and Google routes. For a heterogeneous provider, group configured models by effective route and run one representative model from each group.
 
-Discovery is **positive evidence only**: a returned id proves that route listed it. A missing id does not prove that the upstream cannot serve it because model-list APIs may be incomplete or paginated. Never produce “configured but absent upstream” findings from a list difference alone. Still run `catalog` for metadata.
+Discovery is **positive evidence only**: a returned id proves that route listed it. A missing id does not prove that the upstream cannot serve it because model-list APIs may be incomplete or paginated. Never produce “configured but absent upstream” findings from a list difference alone. Still run `catalog` for metadata. When reporting discovery, preserve the script's exact unique `modelIds` and count; if routes return the same set, say so instead of retranscribing the list.
 
 ### Add or update
 

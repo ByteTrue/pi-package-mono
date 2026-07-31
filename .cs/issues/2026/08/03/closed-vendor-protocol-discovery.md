@@ -35,3 +35,4 @@ Skill audit 对混合 OpenAI/Anthropic/Google model-level route 的 provider 只
 - Skill 明确 list 结果只作 positive evidence，禁止再用缺集推断“上游不支持”。
 - 真机对 `bytetrueapi` 验证：OpenAI route 列 17 个、Anthropic route 列 7 个、Google route 列 3 个；原报告中 Claude/Qwen/Gemini 的“上游没列出”是单路由误判。
 - 验证：全 workspace typecheck/test；pi-vendor 20 files / 200 tests；pack manifest 通过；独立 reviewer blocking=0、important=0。
+- 真实 Pi 0.82.1 非交互 E2E 三轮通过：显式要求 Skill 与自然中文自动触发均读取包内 `SKILL.md`，四条 route 全部探查成功，0 tool errors、0 credential occurrence、0 writes。第二轮自动触发报告发现一次长列表手工转录重复及 Python 假设，Skill 随即要求用 Node 做临时检查并保持脚本返回的 unique IDs/count；第三轮回归确认只用 Node、两个相同 OpenAI route 不再重抄列表、ID/count 准确。
