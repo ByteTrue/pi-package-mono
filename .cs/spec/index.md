@@ -85,6 +85,7 @@
 ## 架构考量
 
 - **源码直装**：扩展以 TS 源 + jiti 加载，减少发布构建面；background-terminal Web monitor 静态资源是例外（`build:web` / `prepack`）。
+- **Worktree extension 隔离**：新 worktree 默认没有 `node_modules`，且 Pi 对 local package 按绝对路径判 identity；repo 不提交 `.pi/settings.json` 自动加载 workspace package，避免启动期缺依赖及与用户级来源重复注册 tools。测试当前 worktree 源码时先显式 `npm ci`，再停用同名全局来源并隔离加载。
 - **包隔离**：proxy、fetch dispatcher 不改全局，避免多扩展互踩。
 - **background terminal 走 package-only**：OpenCode 风格 PTY 语义通过 `@lydell/node-pty` 实现；不把这类能力偷渡成 tmux 或 Pi core 依赖。
 - **配置 fail-closed 写路径**：运行时可读可 soft-fail；交互写配置必须先证明基底有效。
@@ -93,6 +94,7 @@
 ## 证据索引（按需）
 
 - 根 `package.json` workspaces、`npm test`
+- 本地 package / worktree 加载边界：`.cs/notes/pi-local-package-loading.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`
 - 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
 - background terminal 关闭记录：`.cs/issues/2026/07/23/closed-background-terminal-package.md`
