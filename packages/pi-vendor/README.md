@@ -70,7 +70,7 @@ The skill invokes one on-demand script instead of registering permanent AI tools
 | `vendor.mjs lint` | Check JSON shape and duplicate model ids without starting Pi. |
 | `vendor.mjs set-key <provider>` | Prompt the user privately and update one key atomically. |
 
-Discovery uses protocol-specific model-list URLs, authentication, and response shapes for OpenAI-compatible, Anthropic Messages, and Google Generative AI routes. It accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and never outputs configured credentials. Results are positive evidence only: an unlisted id is not proof that the upstream cannot serve it. `lint` is deliberately local; reload Pi and select the model when runtime confirmation is required.
+Discovery uses protocol-specific model-list URLs, authentication, and response shapes for OpenAI-compatible, Anthropic Messages, and Google Generative AI routes. It accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and never outputs configured credentials. A returned id is positive evidence; a configured but unlisted id is reported as a warning to verify, not proof that the upstream cannot serve it. `lint` is deliberately local; reload Pi and select the model when runtime confirmation is required.
 
 ## Development
 

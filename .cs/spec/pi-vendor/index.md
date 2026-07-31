@@ -73,7 +73,7 @@ Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi 
 
 - Skill script：按 effective API 选择 list URL/auth/response shape：OpenAI-compatible `data[].id` + Bearer；Anthropic `/v1/models` + `x-api-key`/version；Google `/v1|v1beta/models` + `x-goog-api-key` + `models[].name`；`authHeader` 或显式 header 优先。
 - 可传 configured model id 使用 model-level api/baseUrl/headers；异构 provider 由 Skill 按 effective route 分组后各探一次。
-- 所有 discovery 结果只作 positive evidence：出现可证明该 route 列出该 id，缺失不能推出上游不支持（list API 可能不完整或分页）。禁止据此生成“configured but absent upstream”结论。
+- discovery 中出现的 id 是 route 支持的 positive evidence；配置存在但 route 未列出的 id 必须作为待验证 warning 报告，但缺失本身不能推出上游不支持（list API 可能不完整或分页），不得据此自动删除或改路由。
 - http/https only；拒绝 username/password；redirect error；fetch 15 秒；credential command 10 秒/64 KiB；response 2 MiB chunk-counted；只输出 id 或本地错误。
 - TUI：继续使用 package 内 bounded-discover core，同样按 provider API 分支，并保留 overall deadline、exact-path command preflight 与 typed errors。
 

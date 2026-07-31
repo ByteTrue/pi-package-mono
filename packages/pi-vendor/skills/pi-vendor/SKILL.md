@@ -87,7 +87,7 @@ node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>' [
 
 The optional configured model id makes discovery use that model's effective `api`, `baseUrl`, and headers together with the provider's `authHeader`; this is required for providers that mix OpenAI, Anthropic, and Google routes. For a heterogeneous provider, group configured models by effective route and run one representative model from each group.
 
-Discovery is **positive evidence only**: a returned id proves that route listed it. A missing id does not prove that the upstream cannot serve it because model-list APIs may be incomplete or paginated. Never produce “configured but absent upstream” findings from a list difference alone. Still run `catalog` for metadata. When reporting discovery, preserve the script's exact unique `modelIds` and count; if routes return the same set, say so instead of retranscribing the list.
+Discovery is **positive evidence for support, and a useful warning signal when configured ids are not listed**. A returned id proves that route listed it. A configured id missing from the response should be reported as “not listed by this route; verify with a real request or upstream documentation”, because model-list APIs may be incomplete or paginated. Never promote that warning alone to “unsupported”, and never delete or reroute the model without stronger evidence. Still run `catalog` for metadata. When reporting discovery, preserve the script's exact unique `modelIds` and count; if routes return the same set, say so instead of retranscribing the list.
 
 ### Add or update
 
@@ -136,7 +136,7 @@ For an audit:
 
 1. parse and lint the current file;
 2. inspect duplicate ids, missing routing facts, broken shapes, and suspicious model-level overrides;
-3. group heterogeneous providers by effective API/base URL and run route-specific discovery, treating results as positive evidence only;
+3. group heterogeneous providers by effective API, base URL, and merged headers, then run route-specific discovery; report configured ids missing from each route as **warnings requiring verification**, not proof that they are unsupported;
 4. compare official-aligned models with the script's `catalog` command, but report ambiguity instead of assuming a source provider;
 5. distinguish deliberate custom models from invalid models;
 6. report findings by severity with exact JSON paths and remediation, never credential values.
