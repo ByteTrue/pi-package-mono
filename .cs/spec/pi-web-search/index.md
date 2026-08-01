@@ -58,5 +58,5 @@
 ## 证据索引（按需）
 
 - 包 README：`packages/pi-web-search/README.md`
-- 相关 closed bugs：`.cs/issues/2026/07/11/closed-*.md`
+- 相关 closed bugs：`.cs/issues/001-x-atomic-config-write.md` 至 `.cs/issues/011-x-web-search-budgets.md`
 - 旧 audit 原文：`.cs/archive/codestable-legacy/audits/`

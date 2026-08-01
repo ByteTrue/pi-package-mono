@@ -112,7 +112,7 @@ npm --workspace @bytetrue/pi-vendor pack --dry-run
 ## 证据
 
 - README：`packages/pi-vendor/README.md`
-- 当前转向 epic：`.cs/epics/2026/07/29/vendor-ai-first/spec.md`
-- 讨论：`.cs/talks/2026-07-29-vendor-ai-first.md`
-- 被取代的双界面历史：`.cs/epics/2026/07/12/vendor-dual-ui-manager/spec.md`
-- 被取代的 Web 产品化历史：`.cs/epics/2026/07/14/vendor-web-productization/spec.md`
+- 当前转向 epic：`.cs/epics/003-x-vendor-ai-first/spec.md`
+- 讨论：`.cs/talks/003-vendor-ai-first.md`
+- 被取代的双界面历史：`.cs/epics/001-x-vendor-dual-ui-manager/spec.md`
+- 被取代的 Web 产品化历史：`.cs/epics/002-x-vendor-web-productization/spec.md`
