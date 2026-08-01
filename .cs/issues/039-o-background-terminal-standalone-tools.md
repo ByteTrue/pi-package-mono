@@ -125,6 +125,14 @@ Pi 的 `/reload` 通过 jiti `moduleCache: false` 重新 import 每个 extension
 - 全 workspace typecheck + test 通过（370 tests passed / 9 skipped，其中 package 自身 18 tests），`npm pack --dry-run` 干净无残留文件。
 - **提示词优化**（用户要求“尽可能少 token 把重要的事情讲清楚，同时上下文工程要做好”）：三个工具 `description` 字数从 1611 字符压到 1142（含新增共享 guideline），约减 29%，`background_run` 单项减约 47%。具体做法：删除“从不碰/替换 bash”类冗余声明（架构上已经零耦合，不需要再自辩）；删除 `background_run` 尾部向其他两个工具的重复导航句（模型自己能看到那两个工具的 description）；把“不要轮询 background_status”这条跨工具共享规则从两个 description 里的重复叙述收敛成一条 `promptGuidelines`（只挂在 `background_run` 上，因三个工具总是一起注册，不会缺失）。真实 Pi 回归确认新文案下仍是三轮真实 turn（启动→结束本轮→自动唤醒），全程 **0 次** `background_status` 调用（模型完全依赖自动通知，未轮询）。
 
+## 发布
+
+- 版本号用 **0.2.0**，不是开发期遗留的 0.3.0：npm 上当时只有 `0.1.0`（PTY 版），本会话内那两次 bump（0.2.0 → 0.3.0）都没发布过。留个幽灵 0.2.0 空档只会让人回头问“0.2.0 去哪了”，而 0.1.0 → 0.2.0 在 0.x 语义下正好表达破坏性变更。
+- 两个提交：`9f6535e` docs(cs) CS 产物格式迁移（issue 036）、`1768df1` feat(background-terminal)! 本次重写。已推送 origin/main。
+- tag `pi-background-terminal-v0.2.0` 触发 `release.yml`（run 30706997778）：typecheck → npm test → OIDC Trusted Publishing 全部 ✓，conclusion success。
+- npm 已生效：`latest = 0.2.0`，**零 runtime dependencies**（旧版带 `@lydell/node-pty` + `ws`），peerDeps 仅 `@earendil-works/pi-coding-agent` 与 `typebox`。
+- 拉下已发布的 tarball 反验（不是工作区）：7 个文件、测试与 `test-helpers.ts` 均未泄露；真实 Pi 0.82.1 跑自动唤醒场景，三轮 turn（`background_run` → “已启动”结束本轮 → 无用户输入下自动唤醒报告 `published-ok`），0 错误；临时目录、输出文件、子进程均无残留。
+
 ## 关闭回写
 
 - project spec：`.cs/spec/pi-background-terminal/index.md`
