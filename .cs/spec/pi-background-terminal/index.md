@@ -2,85 +2,103 @@
 
 ## 这一层是什么
 
-`@bytetrue/pi-background-terminal` 给 Pi 提供 **OpenCode `opencode-pty` 风格**的 background terminal：真实 PTY 会话、5 个 agent tools、退出 follow-up 通知，以及可选的 loopback Web monitor。它是 **package-only** 扩展，不改 Pi core。
+`@bytetrue/pi-background-terminal` 提供三个完全独立的工具：在后台运行一个命令、查看它、停止它。**不覆盖 `bash`，不注册任何与 Pi 原生工具同名的 tool，不影响内建 `bash` 的任何行为。**
 
 Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
 
+## 命名由来的两次纠偏
+
+第一版自称"对齐 OpenCode"，实际对齐的是 `shekohex/opencode-pty`——一个个人开发者维护的第三方社区插件，OpenCode 官方核心没有任何后台/PTY 工具。第二版吸取教训不再对齐任何产品，改为覆盖内建 `bash` 加一个 `background` 参数（+`bash_output`/`bash_kill`）。用户验收后提出两点新要求，促成第三版（当前版本）：
+
+1. **不想覆盖 `bash`，不想影响 Pi 原生工具**——哪怕覆盖在技术上无害（不改变原生行为、不绕开不存在的权限系统），用户仍然不想要这种耦合方式，改为三个完全独立命名的工具。
+2. **输出应该落盘**，理由是**上下文管理**而非"进程重启幸存"：命令输出可能很长，如果整段塞进 agent 上下文容易撑爆；落盘后 agent 可以用已有的 `read` 工具选择性地看。
+
 ## 它负责什么
 
-- **`pty_spawn`**：启动受管 PTY session，记录 `id/title/description/command/args/workdir/pid/status`，支持 `notifyOnExit` 与 `timeoutSeconds`。
-- **`pty_list` / `pty_read` / `pty_write` / `pty_kill`**：列会话、读缓冲、写 stdin、停止/清理会话。
-- **会话绑定**：所有 PTY session 绑定到启动它们的 Pi session；`session_shutdown` 时清理该 session 的所有 PTY，并关闭 monitor server。
-- **退出通知**：`notifyOnExit` 为真时，进程结束后向原 Pi session 投递 follow-up message，附带退出码、是否 timeout、输出行数与最后一行。
-- **Web monitor**：`/pty-open-background-spy` 打开本地监视页，`/pty-show-server-url` 显示 URL；页面通过 REST + WebSocket 读 session 列表、原始输出和增量更新。
+- **`background_run(command, timeoutSeconds)`**：两个参数都必传。立即返回任务 id 与输出文件路径；命令通过 Pi 自己的本地 shell backend（`createLocalBashOperations`）继续跑。`timeoutSeconds` 复用 Pi 内建 bash 工具本身的超时校验与跨平台进程树 kill（Windows `taskkill /F /T`，POSIX 进程组 `SIGKILL`），到时自动终止，状态记为 `timed_out`（区别于手动停止的 `killed`）。必传由 `manager.start()` 的运行时守卫强制——Pi 不会在调用 `execute()` 前按 TypeBox schema 校验参数，schema 里的 required 只是给模型的提示。
+- **输出落盘**：命令的 stdout/stderr 实时写入 `$TMPDIR/pi-background-terminal/<task-id>.log`；工具本身只维护一个小型内存 tail 预览（约 4000 字符）与累计行数，不重复实现 offset/limit 分页——需要看更多，直接用 Pi 内建 `read` 工具读那个文件路径。
+- **`background_status(id?)`**：不传 id 列出所有后台任务（id/command/status/输出文件路径）；传 id 看该任务详情（状态、退出码或超时、输出文件路径、行数、tail 预览、"用 read 工具看全部"提示）。
+- **`background_kill(id)`**：手动提前停止一个仍在运行的任务；已结束的任务返回友好提示而不报错。
+- **自动完成通知**：任务结束（正常退出、被杀、或超时）后，通过 `pi.sendMessage(..., {deliverAs:"followUp", triggerTurn:true})` 自动唤醒发起它的 Pi session 继续对话——这不是"发个消息给人看"，而是 Pi 明确设计用来在 agent 空闲时立即触发下一轮 LLM 调用的机制；`display:true` 只是顺带让人类也能在 TUI 里看到。
+- **会话隔离与清理**：任务按 `parentSessionId` 隔离；真正的 session 结束（quit/新会话/切换/fork）时清空并 abort 该 session 所有仍在跑的任务，并删除对应输出文件；`/reload` 不算结束，任务原样保留（详见下文）。
 
 ## 它不负责什么
 
-- 不改 Pi core，不引入内建后台终端能力。
-- 不依赖 tmux，不要求 Pi 退出后 PTY 继续存活。
-- 不做常驻 daemon、固定端口、远程面板或跨 session 恢复。
-- 不复用 Pi 内建 `bash` 的 approval / sandbox matrix；当前 package 层 permission check 明确保持 default allow，而不是假装已有同级安全闸门。
+- 不覆盖、不注册任何与 Pi 内建工具同名的 tool；`bash` 的行为、渲染、未来变化都不受此包影响。
+- 不是 PTY / 伪终端；没有原生依赖，不支持交互式输入（没有类似 `pty_write` 的工具）——需要交互的任务应在真实终端里跑，这不是本包要解决的问题。
+- 不做常驻 daemon、Web UI、远程面板、tmux。
+- 输出文件没有应用层大小上限：`timeoutSeconds` 兜住命令运行时长，Pi 内建 `read` 工具自身的截断（50KB/2000 行）兜住单次阅读量，足够，不重复造轮子。
+- 不做自定义 `workdir`/`env` 参数——命令总是在当前 Pi session 的 cwd 下跑，需要更灵活的场景不在范围内。
 
 ## 统一语言
 
-- **PTY session**：一次受管背景终端会话，有稳定 `pty_<hex>` id、buffer、状态与父 Pi session。
-- **parent Pi session**：创建该 PTY 的 Pi session；list/read/write/kill/cleanup 都按它隔离。
-- **notifyOnExit**：进程结束时给原 session 发一条 follow-up，不要求 agent 轮询 `pty_read` 等退出。
-- **cleanup**：删除 session 记录并清空 buffer；与普通 `kill` 不同，cleanup 后不会再出现在 `pty_list`。
-- **Web monitor**：loopback-only 的临时监视页；URL 带随机 token，API/WS 校验 Host/Origin/token。
+- **background task**：一次 `background_run` 调用产生的后台命令；有稳定 `bg_<hex>` id、状态（`running`/`exited`/`killed`/`timed_out`/`failed`）、输出文件路径、父 Pi session。
+- **timed_out**：因达到 `timeoutSeconds` 被 Pi 内部机制自动终止，区别于用户主动 `background_kill` 产生的 `killed`。
+- **failed**：命令根本没跑起来或没能产生退出码（cwd 不存在、这台机器上没有可用 shell、timeout 超出 Pi 上限）。与 `exited` 分开，避免把「从未运行」谎报成「退出码 null」。
+- **parent Pi session**：发起该任务的 Pi session；`get`/`list`/`kill`/`clearSession` 都按它隔离。
+- **自动唤醒**：任务结束时给原 session 发一条 `followUp` + `triggerTurn:true` 消息，让空闲的 agent 立即开始新一轮对话，不要求 agent 轮询 `background_status`。
+
+## `/reload` 安全性
+
+Pi 的 `/reload` 会在**同一个 session** 上重新触发 `session_shutdown`（`reason:"reload"`）再 `session_start`（`reason:"reload"`），这只是扩展/配置热重载，不是会话真正结束（核实自 Pi `agent-session.js` 源码：`reload()` 方法只重建 extension runtime，从不创建新 session）。`session_shutdown` handler 在 `event.reason === "reload"` 时直接跳过清理；只有 `quit`/`new`/`resume`/`fork` 才会清空任务、删除输出文件。这条是第二版实现时被独立 review 抓到的真实 blocker，第三版原样继承了这个修复。
 
 ## 使用路径
 
 | 想完成的事 | 入口 |
 |---|---|
-| 后台跑一个会持续输出的命令 | `pty_spawn` |
-| 看当前输出 / 查历史行 | `pty_read` |
-| 给进程发 stdin / Ctrl-C | `pty_write`（Ctrl-C 发 `"\x03"`） |
-| 看当前 session 全貌 | `pty_list` |
-| 真正停掉或删掉 session | `pty_kill` |
-| 在浏览器里盯多条 PTY 输出 | `/pty-open-background-spy` |
+| 普通命令，跑完就有结果 | 内建 `bash`，本包不参与 |
+| 起一个要越过本次工具调用继续跑的命令 | `background_run(command, timeoutSeconds)` |
+| 看所有后台任务 / 看某一个的状态和输出文件路径 | `background_status()` / `background_status(id)` |
+| 看某个后台任务的完整或大量输出 | Pi 内建 `read` 工具，读 `background_status` 给的输出文件路径 |
+| 提前停掉一个后台任务 | `background_kill(id)` |
 | 发 npm 版 | push tag `pi-background-terminal-v<version>`，由 repo `release.yml` + npm Trusted Publishing 自动发布 |
 
 ## 子系统地图
 
 ```text
-Extension entry
-  ├─ tools: pty_spawn / list / read / write / kill
-  ├─ commands: open-background-spy / show-server-url
-  └─ PTYManager
-       ├─ SessionLifecycleManager (@lydell/node-pty + timeout + status)
-       ├─ OutputManager / RingBuffer
-       ├─ NotificationManager (follow-up exit message)
-       └─ PtyWebServer (loopback REST + WebSocket monitor)
+Extension entry (index.ts)
+  ├─ tools/background-run.ts     启动；委托 background/manager.ts
+  ├─ tools/background-status.ts  列表 / 单任务详情（含输出文件路径 + tail 预览）
+  ├─ tools/background-kill.ts    手动停止
+  └─ background/manager.ts
+       ├─ createLocalBashOperations().exec()  ← 复用 Pi 自己的本地 shell backend（含 timeout 校验、跨平台 kill）
+       ├─ fs.createWriteStream()              ← 输出实时写入 $TMPDIR/pi-background-terminal/<id>.log
+       └─ globalThis[Symbol.for(...)]         ← 进程级单例，跨 /reload 的模块重新求值存活
 ```
+
+完成通知不注册自定义 renderer：Pi 对 custom message 的默认渲染已经给出带主题色的 `[background-exit]` 标签 + 盒装 Markdown 正文，自己写 renderer 反而更丑、更多代码。
 
 ## 架构考量
 
-- **OpenCode 对齐优先**：tool 名称、会话生命周期、buffer/read/search、exit notify 与 Web monitor 都优先贴近 `opencode-pty`，而不是自发明混合协议。
-- **跨平台真实 PTY**：用 `@lydell/node-pty` 承接 macOS/Linux/Windows 的 PTY，而不是 tmux 或 pipe 假终端。
-- **session 范围隔离**：所有 manager 操作都带 `parentSessionId`；其他 Pi session 看不到或误杀不属于自己的 PTY。
-- **monitor 默认只本地可达**：`127.0.0.1` + 随机端口 + bearer token + Host/Origin 校验；stop 时主动销毁 sockets。
-- **package 约束说实话**：当前扩展拿不到 Pi 内建 bash 审批矩阵，因此 permission 行为必须在 spec 中明说，不把“默认允许”包装成已有安全边界。
+- **不对标任何外部产品**：三次重设计后的最终形态，只解决用户点名的四件事（跑/查看/管理/通知），不因为某个产品这么做就跟着做——即便某个选择恰好和别的产品殊途同归（例如落盘输出、复用通用 `read` 工具，与 Claude Code 现行设计的方向一致），也是各自独立推导出的结论，不是对齐。
+- **复用 Pi 官方扩展点与工具，不重新发明**：`createLocalBashOperations()`（跨平台 shell 执行、timeout、进程树 kill）与 Pi 内建 `read` 工具（大文件截断、offset/limit）都是公开、文档化、已被验证过的能力；本包只负责"什么时候该跑在后台"这一层胶水逻辑。
+- **完全不碰 Pi 原生工具身份**：三个工具都是独立命名，`bash` 的注册、渲染、未来任何版本变化都不受影响，避免了覆盖同名工具带来的任何潜在耦合。
+- **落盘而不是内存 buffer 的具体动机是上下文控制**：避免"查看"类工具的返回值随命令输出量线性增长，把"要不要看更多"的决定权交给 agent 自己通过 `read` 工具的 offset/limit。
+- **`timeoutSeconds` 强制必传**：把"命令会不会失控卡死"这件事从"希望 agent 记得手动停"变成"框架层面永远有兜底"，与该包"保持简单但不能牺牲基本安全性"的定位一致。
+- **`/reload` 安全**：`session_shutdown` 按 `reason` 精确区分热重载与真正结束，避免后台任务被无声杀死。
 
 ## 当前边界
 
 **做**
-- 受管 PTY tools、内存 buffer、regex read/search
-- `notifyOnExit` follow-up
-- timeout kill 与 session-scoped cleanup
-- loopback Web monitor
+- `background_run` / `background_status` / `background_kill` 三个独立工具
+- 输出实时落盘，内存只保留小型 tail 预览
+- 必传 `timeoutSeconds` 自动终止 + 手动 `background_kill`
+- 完成/超时自动唤醒 agent
+- session-scoped 清理（`/reload` 安全）与真实进程树 kill
 
 **不做**
-- tmux / core 改造 / 跨 Pi 退出持久化
-- 常驻服务、远程多用户管理、固定 URL
-- 伪装成已有 builtin bash approval 行为
+- 覆盖或影响任何 Pi 原生工具
+- PTY / 交互式 stdin
+- Web UI / 远程面板 / tmux / 常驻 daemon
+- 自定义 `workdir`/`env`、输出文件应用层大小上限
 
 ## 证据索引（按需）
 
 - 包 README：`packages/pi-background-terminal/README.md`
 - 入口：`packages/pi-background-terminal/src/index.ts`
-- 生命周期：`packages/pi-background-terminal/src/pty/session-lifecycle.ts`
-- 通知：`packages/pi-background-terminal/src/pty/notification-manager.ts`
-- Web monitor：`packages/pi-background-terminal/src/web/server/server.ts`
+- 任务管理：`packages/pi-background-terminal/src/background/manager.ts`
+- 讨论记录：`.cs/talks/004-background-terminal-redesign.md`
+- Pi 官方扩展点：Pi `docs/extensions.md`（`pi.sendMessage` 的 `deliverAs`/`triggerTurn` 语义、`session_shutdown` 的 `reason` 字段）
+- 历史（已被本次重写取代）：`.cs/issues/025-x-background-terminal-package.md`（第一版 PTY）、`.cs/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`.cs/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）
+- 当前实现：`.cs/issues/039-o-background-terminal-standalone-tools.md`
 - 自动发布工作流：`.github/workflows/release.yml`
-- closed issue：`.cs/issues/2026/07/23/closed-background-terminal-package.md`

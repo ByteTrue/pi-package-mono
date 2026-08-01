@@ -11,7 +11,7 @@ Personal [pi coding agent](https://pi.dev) extensions as an npm workspaces monor
 | [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` tools with zero-config Exa MCP free search, keyless Bing fallback, self-hosted SearXNG, and pluggable providers (Bocha, Tavily, Exa, Brave, Jina, Firecrawl). |
 | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first `models.json` management: bundled Skill + on-demand script, with `/vendor` as a minimal cold-start wizard. |
 | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | `image_generate` tool and `/image-gen` settings command for OpenAI, Gemini, Qwen-Image, Ark, OpenRouter, and compatible gateways. |
-| [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | OpenCode-style background PTY sessions for Pi: `pty_spawn`, `pty_list`, `pty_read`, `pty_write`, `pty_kill`, and a local web monitor. |
+| [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `background_run`/`background_status`/`background_kill` to run a shell command hands-off, check on it, and stop it — independent tools, does not override `bash`. |
 
 ## Local development
 

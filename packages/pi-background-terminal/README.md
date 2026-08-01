@@ -1,12 +1,14 @@
 # @bytetrue/pi-background-terminal
 
-OpenCode-style background terminal sessions for Pi.
+Three independent tools to run a shell command in the background, check on it, and stop it — without touching or overriding Pi's built-in `bash`.
 
-- Real PTY-backed sessions via `@lydell/node-pty`
-- Managed tools: `pty_spawn`, `pty_list`, `pty_read`, `pty_write`, `pty_kill`
-- Exit notifications back into the Pi session via `notifyOnExit`
-- Web monitor commands: `/pty-open-background-spy`, `/pty-show-server-url`
-- Session lifetime matches the current Pi session; everything is cleaned up on `session_shutdown`
+- `background_run` starts a command and returns immediately with a task id; the command keeps running.
+- `background_status` lists all background tasks, or reports one task's status/exit code/output file.
+- `background_kill` stops a running one.
+- When a task finishes (or times out), a follow-up message wakes the agent automatically — no polling required.
+- Output streams to a file as it's produced; use the built-in `read` tool on that path for the full output instead of getting it dumped inline, which keeps a long command's output from flooding context.
+- `timeoutSeconds` is required on every `background_run` call, so a hung command can never run forever.
+- Task lifetime matches the current Pi session; a real session end (not `/reload`) stops any still-running tasks and deletes their output files. Tasks survive `/reload`, which re-evaluates the extension module.
 
 ## Install
 
@@ -16,37 +18,24 @@ pi install npm:@bytetrue/pi-background-terminal
 
 ## Tools
 
-### `pty_spawn`
-Start a background PTY session.
+### `background_run`
 
-Key fields:
-- `command`
-- `args`
-- `description`
-- `workdir`
-- `env`
-- `title`
-- `notifyOnExit`
-- `timeoutSeconds`
+- `command` (required)
+- `timeoutSeconds` (required) — the command is auto-terminated if it runs longer than this
 
-### `pty_list`
-List PTY sessions for the current Pi session.
+Returns a task id and the output file path immediately. Use this only for a command that must outlive the tool call (a dev server, a watch mode, a long build/test); for anything that finishes on its own, use `bash`.
 
-### `pty_read`
-Read buffered output, with optional regex filtering.
+### `background_status`
 
-### `pty_write`
-Send stdin to a session. Send `"\x03"` for Ctrl-C.
+- `id` (optional) — omit to list all background tasks; pass it for one task's detail
 
-### `pty_kill`
-Stop or clean up a session.
+Detail view includes status (`running`/`exited`/`killed`/`timed_out`/`failed`), exit code, output file path, line count, and a short recent-output preview. Never returns the full output inline — use `read` on the file path for that.
 
-## Web monitor
+### `background_kill`
 
-- `/pty-open-background-spy` — open the local PTY monitor in your browser
-- `/pty-show-server-url` — show the monitor URL
+- `id` (required)
 
-The web monitor is loopback-only and authenticated for API / WebSocket access with a per-session token.
+Stops a running task before its `timeoutSeconds` elapses on its own.
 
 ## Verification
 
@@ -54,7 +43,3 @@ The web monitor is loopback-only and authenticated for API / WebSocket access wi
 npm --workspace @bytetrue/pi-background-terminal run typecheck
 npm --workspace @bytetrue/pi-background-terminal test
 ```
-
-## Notes
-
-Inspired by the OpenCode `opencode-pty` plugin model and semantics.

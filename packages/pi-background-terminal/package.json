@@ -1,15 +1,11 @@
 {
   "name": "@bytetrue/pi-background-terminal",
-  "version": "0.1.0",
-  "description": "Pi extension for OpenCode-style background PTY sessions, tools, and web monitor.",
+  "version": "0.2.0",
+  "description": "Pi extension: run a shell command in the background, check on it, stop it, get notified when it finishes. Does not override bash.",
   "keywords": [
     "pi-package",
     "pi-extension",
-    "pty",
-    "terminal",
-    "background-process",
-    "interactive",
-    "web-monitor"
+    "background-process"
   ],
   "type": "module",
   "license": "MIT",
@@ -25,6 +21,7 @@
   "files": [
     "src/**",
     "!src/**/*.test.ts",
+    "!src/**/test-helpers.ts",
     "README.md"
   ],
   "pi": {
@@ -33,26 +30,15 @@
     ]
   },
   "scripts": {
-    "build:web": "node src/web/build.mjs",
-    "prepack": "npm run build:web",
-    "test": "npm run build:web && vitest run",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@lydell/node-pty": "1.2.0-beta.12",
-    "ws": "^8.18.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.79.10",
-    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.18.1",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
-    "esbuild": "^0.27.7",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
   }
