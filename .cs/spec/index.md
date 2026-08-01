@@ -99,7 +99,7 @@
 - 本地 package / worktree 加载边界：`.cs/notes/005-pi-local-package-loading.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`
 - 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
-- background terminal 历史重写：`.cs/issues/025-x-background-terminal-package.md`（第一版 PTY）、`.cs/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`.cs/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）；当前实现：`.cs/issues/039-o-background-terminal-standalone-tools.md`
+- background terminal 历史重写：`.cs/issues/025-x-background-terminal-package.md`（第一版 PTY）、`.cs/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`.cs/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）；当前实现：`.cs/issues/039-x-background-terminal-standalone-tools.md`
 - Pi 本地包加载坑点：`.cs/notes/005-pi-local-package-loading.md`
 - 自动发布工作流：`.github/workflows/release.yml`
 - 迁移映射：`.cs/archive/MIGRATION.md`

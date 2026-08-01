@@ -2,7 +2,7 @@
 kind: issue
 title: "迁移 CodeStable 产物到当前实体格式"
 type: chore
-status: open
+status: closed
 created: 2026-08-01
 epic: ""
 ---
@@ -56,3 +56,14 @@ epic: ""
 
 - project spec：`.cs/spec/index.md`
 - notes：`.cs/notes/003-legacy-codestable-archive.md`
+- 迁移映射：`.cs/archive/MIGRATION.md`
+
+## 关闭结论
+
+- **关闭判断**：目标达成且范围未扩。现行 `.cs/` 已全部使用扇平编号 + 状态内嵌路径，历史证据仍冻结在 legacy archive。两项质量目标都有相称证据（见下），不存在为关闭而临时降级的项。
+- **验证摘要**：
+  - *可维护性 / 可分析性*：37 issues、3 epics、6 notes、3 talks 均满足“仅凭路径与 frontmatter 即可判断类型与状态”；`o|x` marker 与 frontmatter `status` 一致；4 个 FF 的 `-ff-` / `type: ff` / 四段正文齐备；旧 date-based 与 `open-/closed-/superseded-` 引用在现行树零命中。
+  - *信息完整性*：Git 将全部实体识别为 rename（提交 `9f6535e` 中多数为 R100），正文未丢失；编号路径引用均可解析；`git diff --check` 通过。
+  - 独立 CS reviewer 提出的 Vision 未确认内容、stale epic contract、stale active note、closed-epic 回写缺失与旧 identifier 已逐项修正。
+- **回写位置**：格式契约本身由全局 cs skill 定义，不在本仓 project spec 重复一份；本次只沉淀仓内事实：新旧路径映射进 `.cs/archive/MIGRATION.md`，“旧证据只在 archive”的读法进 `.cs/notes/003-legacy-codestable-archive.md`，包能力地图修正进 `.cs/spec/index.md`。
+- **遗留**：无。已关闭实体**未**自动挪进 `issues/done/` / `epics/done/`——按契约那是用户主动要求整理时才做的动作，不属于本 issue。

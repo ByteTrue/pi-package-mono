@@ -5,7 +5,7 @@ type: bug
 status: closed
 created: 2026-08-01
 epic: ""
-superseded_by: ".cs/issues/038-o-background-terminal-bash-override-redesign.md"
+superseded_by: ".cs/issues/038-x-background-terminal-bash-override-redesign.md"
 ---
 
 # background terminal 只用于真正的后台或交互命令
@@ -87,5 +87,5 @@ Pi 默认用 `bash` 执行普通、有限时长、无需 stdin 的命令；只�
 
 - **关闭判断**：本 issue 提出的文案对齐 + 转义修复已实现并验证继，但在未经 owner 确认/提交前，用户进一步追问“这个插件本身是否对齐错了对象”。核实后确认 OpenCode 官方根本没有任何后台/PTY 工具，`shekohex/opencode-pty` 只是个人开发者的第三方社区插件（自带未解决的跨平台 bug），且真实使用体验比不装这个包还差。User 随后明确指令“作废”整个基于该插件对齐的 5-tool/PTY/Web-monitor 设计。
 - 因此本 issue 里的文案对齐与转义修复（虽已验证完整）从未提交，就在验收前被完整删除。`pty_spawn`/`pty_list`/`pty_read`/`pty_write`/`pty_kill` 五个工具已不存在，本 issue 要解决的“工具选择边界”问题因它们消失而自然不再存在。
-- **superseded_by**：`.cs/issues/038-o-background-terminal-bash-override-redesign.md`
+- **superseded_by**：`.cs/issues/038-x-background-terminal-bash-override-redesign.md`
 - 保留本 issue 作为历史：它真实发生过，且包含迁移前就已发现的真实 `pty_write` 转义缺陷。

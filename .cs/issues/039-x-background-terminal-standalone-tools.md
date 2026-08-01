@@ -2,7 +2,7 @@
 kind: issue
 title: "background terminal 三独立工具：不覆盖 bash，输出落盘，timeout 必传"
 type: feature
-status: open
+status: closed
 created: 2026-08-01
 epic: ""
 ---
@@ -138,3 +138,16 @@ Pi 的 `/reload` 通过 jiti `moduleCache: false` 重新 import 每个 extension
 - project spec：`.cs/spec/pi-background-terminal/index.md`
 - 包 README：`packages/pi-background-terminal/README.md`
 - 根 README：`README.md`
+- 能力地图：`.cs/spec/index.md`
+
+## 关闭结论
+
+- **关闭判断**：目标达成，范围未暗扩。用户提出的四件事（后台跑命令 / 查看 / 管理 / 完成通知）全部实现，且两条硬约束——不覆盖任何 Pi 原生工具、输出落盘以控制上下文——均有真实证据。已发布 0.2.0 并用**已发布的 tarball**而非工作区反验通过。
+- **验证摘要**：
+  - *功能正确性*：`timeoutSeconds` 缺失/非法时在任何进程启动前抛错；超时自动终止标 `timed_out`，与手动 `killed`、从未跑起来的 `failed` 三者可区分。
+  - *上下文效率*：`background_status` 从不内联全量输出，只给路径 + 行数 + tail 预览，全量阅读交给 Pi 内建 `read`。
+  - *兼容性 / 隔离性*：真实 Pi 0.82.1 下普通命令仍只走内建 `bash`；`index.test.ts` 锁定只注册三个 `background_*` 工具、无命令、无 renderer。
+  - 24 条单测全部面向真实子进程；三个关键回归（`/reload` 存活、完成通知契约、`failed` 状态）均做了变异验证，确认不是空测。
+  - 全 workspace typecheck + 376 tests / 9 skipped；`npm pack` 7 个文件无测试与 helper 泄漏；release workflow run 30706997778 success；npm `latest = 0.2.0`，零 runtime 依赖。
+- **回写位置**：稳定结论（三工具职责、落盘与 `read` 分工、必传 timeout 的理由、`/reload` 存活机制、不对标外部产品的立场）已合入 `.cs/spec/pi-background-terminal/index.md`；能力地图与包描述已同步 `.cs/spec/index.md` 与两份 README。中间过程（三次重设计、两轮 review 的逐条取舍）留在本 issue 与 `.cs/talks/004-background-terminal-redesign.md`，不往 spec 搬。
+- **遗留**：`/reload` 期间从模块重新求值到 `session_start` 重新填回 `currentSessionId` 之间有一个几十毫秒窗口，恰好在此完成的任务会丢自动唤醒（任务与输出仍可用 `background_status` 看到，不丢数据）。已在 spec 中记为已知边界；要堵需加 pending 队列，为这个窗口不值得。若将来真实碰到再开新 issue，不在本次预先建档。

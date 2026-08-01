@@ -100,5 +100,5 @@ Extension entry (index.ts)
 - 讨论记录：`.cs/talks/004-background-terminal-redesign.md`
 - Pi 官方扩展点：Pi `docs/extensions.md`（`pi.sendMessage` 的 `deliverAs`/`triggerTurn` 语义、`session_shutdown` 的 `reason` 字段）
 - 历史（已被本次重写取代）：`.cs/issues/025-x-background-terminal-package.md`（第一版 PTY）、`.cs/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`.cs/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）
-- 当前实现：`.cs/issues/039-o-background-terminal-standalone-tools.md`
+- 当前实现：`.cs/issues/039-x-background-terminal-standalone-tools.md`
 - 自动发布工作流：`.github/workflows/release.yml`

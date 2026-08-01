@@ -5,7 +5,7 @@ type: feature
 status: closed
 created: 2026-08-01
 epic: ""
-superseded_by: ".cs/issues/039-o-background-terminal-standalone-tools.md"
+superseded_by: ".cs/issues/039-x-background-terminal-standalone-tools.md"
 ---
 
 # background terminal 改为 bash 加 background 参数的最小设计
@@ -102,5 +102,5 @@ Extension entry (index.ts)
 ## 关闭结论
 
 - **关闭判断**：实现并验证完成后，用户在下一轮对话中提出两个新需求：(1) 不想覆盖 `bash`，不想影响 Pi 原生工具；(2) 输出应该落盘以控制上下文大小、timeout 应该必传。这两条与本 issue 的核心前提（覆盖 bash + 内存 buffer + timeout 可选）直接冲突，因此本 issue 的设计被整体取代，非改进。
-- **superseded_by**：`.cs/issues/039-o-background-terminal-standalone-tools.md`
+- **superseded_by**：`.cs/issues/039-x-background-terminal-standalone-tools.md`
 - 保留本 issue 作为历史：它真实实现并通过了验证（包括发现并修复了 `/reload` 会静默杀掉后台任务的真实 blocker），下一代设计完全继承了这个修复。
