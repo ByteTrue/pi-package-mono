@@ -2,12 +2,13 @@
 
 ## 这个项目是什么
 
-`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。每个包以 TypeScript 源码通过 jiti 加载，不需要先 build 再安装。当前有四个已发布能力包：
+`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。每个包以 TypeScript 源码通过 jiti 加载，不需要先 build 再安装。当前有五个已发布能力包：
 
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
 3. **图像生成**（`@bytetrue/pi-image-gen`）：提供 `image_generate`，支持 OpenAI、Gemini、Qwen-Image、Ark、OpenRouter 与兼容网关。
 4. **背景终端**（`@bytetrue/pi-background-terminal`）：三个独立工具——后台跑命令、查看、停止。不覆盖 `bash`。
+5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型，`read` 撞上非视觉降级时给出引导，`/vision` 零学习成本选模型。
 
 仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
 
@@ -17,7 +18,8 @@
 - `pi-web-search` 已完成安全与预算类 hardening（SSRF、body 预算、proxy 隔离、无效配置保护等）。
 - `pi-background-terminal` 经历三次重设计，当前版本是三个完全独立的工具：`background_run(command, timeoutSeconds)` 立即返回任务 id，输出实时落盘（不是内存 buffer，为了不把大量输出一次性塑进 agent 上下文，需要全量时用 Pi 内建 `read` 工具自己去读）；`background_status(id?)` 列表/详情；`background_kill(id)` 手动停止；`timeoutSeconds` 必传，超时自动终止并标记为 `timed_out`（与手动 `killed` 区分）。完全不覆盖、不影响 `bash`。无 PTY、无原生 addon、无 Web UI。
 - **修正：之前说的“对齐 OpenCode”是错的**。OpenCode 官方内建工具只有同步 `bash`，没有任何后台/PTY 工具（官方文档确认）。当时对齐的实际是 `shekohex/opencode-pty`——个人开发者维护的第三方社区插件，自带未解决的跨平台 bug。现在不再声称对齐任何外部产品，只写自己的设计理由——即便某个选择恰好和别的产品殖途同归（如落盘输出、复用通用 `read` 工具，与 Claude Code 现行方向一致），也是各自独立推导的结论，不是对齐。
-- 近期优先：四个扩展的维护、回归与按需发版。
+- **`pi-vision`**：新增能力，解决“主力模型没有视觉能力，粘贴截图让它修 bug”的诉求。核心发现是 Pi 的 `read` 工具在图片被丢弃时只回一句提示，**完全拦不住模型编造图片内容**（实测同一张截图被编成 macOS VoiceOver 设置面板）——这比“模型说看不到”更糟。方案不是 MCP（非视觉模型不知道图被丢弃，不会主动想起要调工具），而是在 `read` 撞墙时引导到 `image_ask`，由 agent 自己提问而非自动生成描述。
+- 近期优先：五个扩展的维护、回归与按需发版。
 
 ## 能力地图
 
@@ -25,6 +27,7 @@
 - **管理自定义 provider / model** → 读 [`pi-vendor/`](pi-vendor/index.md)
 - **生成图像** → 读 `packages/pi-image-gen/README.md`
 - **后台跑命令** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；三个独立工具，不影响内建 `bash`
+- **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 工具 + `/vision` 配置菜单
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
 - **历史审计与旧流程证据** → [`.cs/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
 
@@ -45,8 +48,9 @@
 | `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
 | `@bytetrue/pi-image-gen` | agent 工具 `image_generate`、`/image-gen` | `~/.pi/agent/settings.json`、覆盖 agent dir 或 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
 | `@bytetrue/pi-background-terminal` | 工具 `background_run`/`background_status`/`background_kill`（不覆盖 `bash`） | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
+| `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`tool_result` hook | `settings.json` 的 `pi-vision.model`（全局，`/vision` 写入） |
 
-四包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
+五包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
 
 ## 统一语言
 
@@ -58,11 +62,12 @@
 
 ## 阅读路径
 
-- 新人理解仓库：本页 → 四个包的 README / 子 spec → 根 README
+- 新人理解仓库：本页 → 五个包的 README / 子 spec → 根 README
 - 改 web-search：[`pi-web-search/index.md`](pi-web-search/index.md)
 - 改 pi-vendor：[`pi-vendor/index.md`](pi-vendor/index.md)
 - 配置/使用图像生成：`packages/pi-image-gen/README.md`
 - 改 background terminal：[`pi-background-terminal/index.md`](pi-background-terminal/index.md)
+- 改 pi-vision：[`pi-vision/index.md`](pi-vision/index.md)
 - 追溯已被取代的 dual-UI / Web 决策：closed epic [`.cs/epics/001-x-vendor-dual-ui-manager/spec.md`](../epics/001-x-vendor-dual-ui-manager/spec.md) 与 [`.cs/epics/002-x-vendor-web-productization/spec.md`](../epics/002-x-vendor-web-productization/spec.md)
 - 追溯当前 AI-first 转向：epic [`.cs/epics/003-x-vendor-ai-first/spec.md`](../epics/003-x-vendor-ai-first/spec.md)
 
@@ -70,7 +75,7 @@
 
 **做**
 
-- 维护四个已发布扩展，并按需回归与发版
+- 维护五个已发布扩展，并按需回归与发版
 - 安全/正确性回归（SSRF、密钥权限、配置损坏保护、revision 冲突）
 - 以 package-only 方式提供后台执行：三个独立工具、必传 timeout 自动终止、输出落盘、session-scoped cleanup、自动完成通知，全程不覆盖任何 Pi 原生工具
 - 用新 CodeStable（`.cs/`）承载真相、epic、issue、notes

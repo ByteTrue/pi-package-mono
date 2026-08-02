@@ -1,0 +1,47 @@
+{
+  "name": "@bytetrue/pi-vision",
+  "version": "0.1.0",
+  "description": "Pi extension: let a text-only model read images by asking a vision-capable model from your own models.json.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "vision",
+    "multimodal"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "byte",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteTrue/pi-package-mono.git",
+    "directory": "packages/pi-vision"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/**",
+    "!src/**/*.test.ts",
+    "!src/**/test-helpers.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": ">=0.79.10",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  }
+}
