@@ -230,6 +230,13 @@ image_ask({ paths: string[], question: string })
 - Baseline 那轮暴露了一个比本 issue 目标更广的事实：Pi 现有的 `[Current model does not support images…]` 提示**完全拦不住模型编造图片内容**。本包在 `read` 那条路上顺手堵了这个洞（引导到 image_ask），但如果哪天模型绕过 `read` 直接凭文件名猜，仍会瞎编 —— 已在 `image_ask` 的 promptGuidelines 里写了"不要凭文件名猜图片内容"。不另开 issue。
 - **写本节时实测到自己的 hook 有真实误报**：因为本 issue 文档本身引用了 Pi 那句错误原文作为证据，`read` 这个 issue 文件本身就会触发 `NON_VISION_MARKER` 子串匹配（它并不是图片）。根因是 hook 只按子串匹配，不验证这句话真的来自 Pi 的图片降级逻辑。核实 `read.js` 后确认：真实非视觉 note 永远与 `"Read image file ["` 前缀同处一个 text part。修复为双重匹配（`part.text.startsWith("Read image file [")` 且 `includes(NON_VISION_MARKER)`），新增一条回归测试直接用本 issue 文档引用那句话作为 fixture，确认不再误触发。同时修了一条旧测试的 fixture 缺前缀，修后碰巧也会失败。现在 49 条单测全绿，全 workspace 425 passed / 9 skipped。
 
+## 发布
+
+- 版本 `0.1.0`（npm 首发，不支持 OIDC，手动 `npm publish -w @bytetrue/pi-vision --access public`，用户本机完成 2FA 浏览器授权）。Playwright 确认：npmjs.com 页面显示 `0.1.0`、Public、README 正常渲染；`npm view`/registry API 有几分钟传播延迟（与发布本身无关，同一时间窗 `pi-background-terminal` 的旧查询正常）。
+- Trusted Publisher（Playwright 配置，用户完成两次安全密钥/密码二次验证）：`ByteTrue/pi-package-mono` / `release.yml` / Permissions `npm publish`，与其它四包已生效的配置逐字一致（Environment name 留空）。
+- Tag `pi-vision-v0.1.0` 推送后触发 `release.yml`（run 30739773091）：typecheck → npm test → OIDC 取得 `NODE_AUTH_TOKEN` → `✓ @bytetrue/pi-vision@0.1.0 already on npm — skipping`，conclusion success。验证了幂等跳过逻辑与 OIDC 信任关系同时生效，后续版本发布（如 `0.2.0`）无需再手动 `npm publish`，只需 bump 版本号 + 打 tag。
+- 代码合入主分支：`image-delegation` 分支 fast-forward 到 `main`（`e3c1f82`），无分歧。
+
 ## 关闭回写
 
 - project spec：`.cs/spec/index.md`（能力地图 / 架构落点表 / 阅读路径 / 当前边界均新增 pi-vision；"四包"改"五包"）
