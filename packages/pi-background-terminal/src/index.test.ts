@@ -13,6 +13,7 @@ interface SentMessage {
 
 function harness() {
   const toolNames: string[] = [];
+  const commandNames: string[] = [];
   const events: string[] = [];
   const rendererTypes: string[] = [];
   const sent: SentMessage[] = [];
@@ -21,8 +22,8 @@ function harness() {
     registerTool(tool: { name: string }) {
       toolNames.push(tool.name);
     },
-    registerCommand() {
-      throw new Error("should not register any command");
+    registerCommand(name: string) {
+      commandNames.push(name);
     },
     registerMessageRenderer(type: string) {
       rendererTypes.push(type);
@@ -37,16 +38,16 @@ function harness() {
   } as unknown as ExtensionAPI;
 
   registerBackgroundTerminal(pi);
-  return { toolNames, events, rendererTypes, sent, handlers };
+  return { toolNames, commandNames, events, rendererTypes, sent, handlers };
 }
 
 const ctxFor = (sessionId: string) => ({ sessionManager: { getSessionId: () => sessionId } });
 
 describe("pi-background-terminal extension", () => {
-  it("registers exactly the three background tools and touches no native tool or command", () => {
-    const { toolNames, events, rendererTypes } = harness();
-
+  it("registers the three background tools and the /background command without touching native tools", () => {
+    const { toolNames, commandNames, events, rendererTypes } = harness();
     expect(toolNames.sort()).toEqual(["background_kill", "background_run", "background_status"]);
+    expect(commandNames).toEqual(["background"]);
     expect(events.sort()).toEqual(["session_shutdown", "session_start"]);
     // No renderer: Pi's default custom-message rendering already labels and boxes the content.
     expect(rendererTypes).toEqual([]);
@@ -66,7 +67,7 @@ describe("pi-background-terminal extension", () => {
     expect(sent[0]?.message.content).toContain("exited with code 0");
     expect(sent[0]?.message.content).toContain("notify-payload");
 
-    manager.clearSession(sessionId);
+    await manager.clearSession(sessionId);
   });
 
   it("does not deliver another session's completion into this session", async () => {
@@ -78,7 +79,7 @@ describe("pi-background-terminal extension", () => {
     await vi.waitFor(() => expect(manager.get(foreign.id, "someone-else")?.status).toBe("exited"), { timeout: 8000 });
 
     expect(sent).toEqual([]);
-    manager.clearSession("someone-else");
+    await manager.clearSession("someone-else");
   });
 
   it("survives /reload but clears tasks and their output files on a real session end", async () => {

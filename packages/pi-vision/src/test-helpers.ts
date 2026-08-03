@@ -28,6 +28,7 @@ export interface FakeCtxOptions {
   cwd?: string;
   models?: Model<Api>[];
   auth?: { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
+  model?: Model<Api>;
 }
 
 export function makeCtx(options: FakeCtxOptions = {}): ExtensionContext {
@@ -35,6 +36,7 @@ export function makeCtx(options: FakeCtxOptions = {}): ExtensionContext {
   const auth = options.auth ?? { ok: true as const, apiKey: "test-key-123456" };
   return {
     cwd: options.cwd ?? process.cwd(),
+    model: options.model,
     modelRegistry: {
       getAvailable: () => models,
       find: (provider: string, modelId: string) =>
@@ -63,12 +65,14 @@ export interface FakePi {
   tools: Map<string, ToolDefinition<any, any, any>>;
   commands: Map<string, { description?: string; handler: (args: string, ctx: any) => unknown }>;
   handlers: Map<string, Array<(event: any, ctx: any) => any>>;
+  activeTools: Set<string>;
 }
 
 export function makePi(): FakePi {
   const tools = new Map<string, ToolDefinition<any, any, any>>();
   const commands = new Map<string, { description?: string; handler: (args: string, ctx: any) => unknown }>();
   const handlers = new Map<string, Array<(event: any, ctx: any) => any>>();
+  const activeTools = new Set(["image_ask", "read"]);
   const api = {
     registerTool: (definition: ToolDefinition<any, any, any>) => {
       tools.set(definition.name, definition);
@@ -76,13 +80,18 @@ export function makePi(): FakePi {
     registerCommand: (name: string, command: { description?: string; handler: (args: string, ctx: any) => unknown }) => {
       commands.set(name, command);
     },
+    getActiveTools: () => [...activeTools],
+    setActiveTools: (names: string[]) => {
+      activeTools.clear();
+      for (const name of names) activeTools.add(name);
+    },
     on: (event: string, handler: (e: any, c: any) => any) => {
       const list = handlers.get(event) ?? [];
       list.push(handler);
       handlers.set(event, list);
     },
   } as unknown as ExtensionAPI;
-  return { api, tools, commands, handlers };
+  return { api, tools, commands, handlers, activeTools };
 }
 
 export interface FakeUi {

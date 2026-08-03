@@ -6,8 +6,8 @@ import { call, registerOne } from "./test-helpers.js";
 const SESSION_ID = "background-status-test-session";
 
 describe("background_status tool", () => {
-  afterEach(() => {
-    manager.clearSession(SESSION_ID);
+  afterEach(async () => {
+    await manager.clearSession(SESSION_ID);
   });
 
   it("without id, lists all background tasks", async () => {

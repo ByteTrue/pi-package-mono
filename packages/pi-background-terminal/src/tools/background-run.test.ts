@@ -7,8 +7,8 @@ import { call, registerOne } from "./test-helpers.js";
 const SESSION_ID = "background-run-test-session";
 
 describe("background_run tool", () => {
-  afterEach(() => {
-    manager.clearSession(SESSION_ID);
+  afterEach(async () => {
+    await manager.clearSession(SESSION_ID);
   });
 
   it("returns immediately with a task id and an already-created output file, even for a long command", async () => {
@@ -24,9 +24,11 @@ describe("background_run tool", () => {
     expect(manager.get(details.id, SESSION_ID)?.status).toBe("running");
   });
 
-  it("surfaces the required-timeoutSeconds guard instead of swallowing it into a running task", async () => {
+  it("allows an omitted timeout and still rejects an invalid explicit timeout", async () => {
     const tool = registerOne(registerBackgroundRunTool);
+    const result = await call(tool, { command: 'node -e "setInterval(() => {}, 1000)"' }, SESSION_ID);
+    const details = result.details as { id: string; status: string };
+    expect(details.status).toBe("running");
     await expect(call(tool, { command: "echo hi", timeoutSeconds: 0 }, SESSION_ID)).rejects.toThrow(/timeoutSeconds/);
-    expect(manager.list(SESSION_ID)).toEqual([]);
   });
 });

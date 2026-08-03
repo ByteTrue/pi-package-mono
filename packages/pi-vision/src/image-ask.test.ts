@@ -197,4 +197,15 @@ describe("runImageAsk", () => {
       runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete),
     ).rejects.toThrow(/returned no text/);
   });
+
+  it("rejects direct calls when the current model already supports images", async () => {
+    const { ctx: base } = scenario();
+    const ctx = { ...base, model: makeModel("vendor", "main", true) };
+    const complete = vi.fn() as unknown as CompleteFn;
+
+    await expect(runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete)).rejects.toThrow(
+      /already supports images/,
+    );
+    expect(complete).not.toHaveBeenCalled();
+  });
 });

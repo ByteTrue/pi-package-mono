@@ -23,9 +23,21 @@ export function buildReadHint(path: unknown): string {
   return `\nTo actually see it, call ${TOOL_NAME} with paths: ["${example}"] and a specific question.`;
 }
 
+function syncImageAskTool(pi: ExtensionAPI, model: { input: readonly string[] } | undefined): void {
+  if (!model) return;
+
+  const active = new Set(pi.getActiveTools());
+  if (model.input.includes("image")) active.delete(TOOL_NAME);
+  else active.add(TOOL_NAME);
+  pi.setActiveTools([...active]);
+}
+
 export default function registerVision(pi: ExtensionAPI): void {
   registerImageAskTool(pi);
   registerVisionCommand(pi);
+
+  pi.on("session_start", (_event, ctx) => syncImageAskTool(pi, ctx.model));
+  pi.on("model_select", (event) => syncImageAskTool(pi, event.model));
 
   // read() keeps working normally; it just tells a text-only model that the image was dropped.
   // That message is a dead end, so point it at image_ask instead. No-op for vision models,

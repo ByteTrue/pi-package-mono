@@ -7,9 +7,9 @@ const SESSION_ID = "background-kill-test-session";
 const OTHER_SESSION = "background-kill-other-session";
 
 describe("background_kill tool", () => {
-  afterEach(() => {
-    manager.clearSession(SESSION_ID);
-    manager.clearSession(OTHER_SESSION);
+  afterEach(async () => {
+    await manager.clearSession(SESSION_ID);
+    await manager.clearSession(OTHER_SESSION);
   });
 
   it("stops a running background task", async () => {

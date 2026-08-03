@@ -19,6 +19,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。
 ## 它负责什么
 
 - **`image_ask(paths, question)`**：多图（顺序保留，前端"设计稿 vs 实际渲染"对比是刚需，`UserMessage.content` 本来就是数组，零额外代码）。三个错误闸门——模型未配置 / 凭据不可用 / 图片读不出——均在任何网络调用之前触发，不静默用假描述兜底。
+- **按当前模型能力门控**：`session_start` 与 `model_select` 根据 `ctx.model.input` 同步 `image_ask` active tool；视觉模型移除它，非视觉模型恢复它，执行路径另有 guard 防止旧 prompt 或竞态调用。
 - **`tool_result` hook**：agent 撞上 `read` 那句"看不到图"的提示时，追加一句"改用 image_ask"的引导，不改原文、不碰 image part。当前模型本身支持图片时不介入（该提示压根不会出现）。
 - **`/vision`**：列出 `models.json` 里 `input` 含 `image` 的模型，`ctx.ui.select` 选一个，原子写入 `pi-vision.model`，保留其它字段与文件权限；写完重读一次生效值，被 project 级 settings 覆盖时警告而不是无声失败。
 
@@ -41,7 +42,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。
 | 选/换 `image_ask` 用哪个视觉模型 | `/vision` |
 | 手动配置，不走菜单 | `settings.json` 的 `{ "pi-vision": { "model": "provider/model-id" } }` |
 | 问一张或几张本地图片 | agent 自己调 `image_ask(paths, question)`，不需要用户显式要求 |
-| 当前模型本身能看图 | 什么都不用做，`read` 与本包均不介入 |
+| 当前模型本身能看图 | `image_ask` 不出现在 active tools；`read` 与本包均不介入 |
 | 发 npm 版 | push tag `pi-vision-v<version>`，由 repo `release.yml` + npm Trusted Publishing 自动发布 |
 
 ## 架构考量
@@ -57,6 +58,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。
 - `image_ask` 多图问答，三闸门错误优先于网络调用
 - `read` 撞墙时的一次性文字引导
 - `/vision` 零学习成本配置，安全写 settings.json
+- 按当前模型图片能力动态启停 `image_ask`，视觉模型不暴露代理工具
 
 **不做**
 - input hook、落盘、清理（Pi 自身已处理）
@@ -71,4 +73,5 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。
 - 讨论记录：本 spec 无独立 talk，结论收敛在 `.cs/issues/040-x-vision-package.md` 的「背景与证据」
 - Pi 落盘/`images` 产地事实：`.cs/notes/007-pi-clipboard-image-paths.md`
 - 当前实现与全部验证证据：`.cs/issues/040-x-vision-package.md`
+- 当前模型能力门控实现与验证：`.cs/issues/041-x-pi-vision-tool-capability-gate.md`
 - 自动发布工作流：`.github/workflows/release.yml`

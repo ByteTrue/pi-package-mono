@@ -58,6 +58,9 @@ export async function runImageAsk(
   if (params.paths.length === 0) throw new Error("No image paths given.");
   if (!params.question.trim()) throw new Error("No question given.");
 
+  if (ctx.model?.input.includes("image")) {
+    throw new Error("image_ask is unavailable because the current model already supports images.");
+  }
   const resolved = await resolveVisionModel(ctx);
   if (!resolved.ok) throw new Error(resolved.error);
 

@@ -1,6 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BackgroundManager, manager as globalManager } from "./manager.js";
+import { BackgroundManager, manager as globalManager, type BackgroundTask } from "./manager.js";
 
 // Passes through to the real implementation; only makes createWriteStream observable so the
 // output-stream error listener can be exercised. Transparent to every other test here.
@@ -21,12 +23,12 @@ const FOREVER = 'node -e "setInterval(() => {}, 1000)"';
 describe("BackgroundManager", () => {
   const managers: BackgroundManager[] = [];
 
-  afterEach(() => {
+  afterEach(async () => {
     // The process-global manager is included: the /reload test uses it, and a failing test must
     // not leave a real child process running.
     for (const manager of [...managers, globalManager]) {
-      manager.clearSession(SESSION_A);
-      manager.clearSession(SESSION_B);
+      await manager.clearSession(SESSION_A);
+      await manager.clearSession(SESSION_B);
     }
     managers.length = 0;
   });
@@ -38,13 +40,12 @@ describe("BackgroundManager", () => {
     return manager;
   }
 
-  it("requires a positive timeoutSeconds and never silently runs without one", () => {
+  it("allows an omitted timeout for long-lived commands and rejects invalid values", () => {
     const manager = createManager();
+    const started = manager.start("echo hi", process.cwd(), SESSION_A, undefined);
+    expect(started.status).toBe("running");
     expect(() => manager.start("echo hi", process.cwd(), SESSION_A, 0)).toThrow(/timeoutSeconds/);
     expect(() => manager.start("echo hi", process.cwd(), SESSION_A, Number.NaN)).toThrow(/timeoutSeconds/);
-    // @ts-expect-error proving the runtime guard, not just the type: Pi does not validate schemas
-    expect(() => manager.start("echo hi", process.cwd(), SESSION_A, undefined)).toThrow(/timeoutSeconds/);
-    expect(manager.list(SESSION_A)).toEqual([]);
   });
 
   it("runs a command in the background, streams output to a real file, and resolves exit status", async () => {
@@ -70,9 +71,12 @@ describe("BackgroundManager", () => {
 
   it("auto-terminates and marks timed_out when timeoutSeconds elapses, distinct from a manual kill", async () => {
     const manager = createManager();
+    const exits: string[] = [];
+    manager.init((task) => exits.push(task.status));
     const started = manager.start(FOREVER, process.cwd(), SESSION_A, 1);
 
     await vi.waitFor(() => expect(manager.get(started.id, SESSION_A)?.status).toBe("timed_out"), { timeout: 8000 });
+    await vi.waitFor(() => expect(exits).toEqual(["timed_out"]), { timeout: 8000 });
   });
 
   it("marks a command that never ran as failed, not as exited with a null code", async () => {
@@ -94,26 +98,51 @@ describe("BackgroundManager", () => {
     expect(manager.list(SESSION_A).map((task) => task.id)).toEqual([started.id]);
     expect(manager.kill(started.id, SESSION_B)).toBe(false);
   });
-
-  it("kill() stops a running task and marks it killed (not timed_out), and is a no-op afterwards", async () => {
+  it("kill() stops a running task and marks it killed without notifying, and is a no-op afterwards", async () => {
     const manager = createManager();
+    const exits: BackgroundTask[] = [];
+    manager.init((task) => exits.push(task));
     const started = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
 
     expect(manager.kill(started.id, SESSION_A)).toBe(true);
     await vi.waitFor(() => expect(manager.get(started.id, SESSION_A)?.status).toBe("killed"), { timeout: 8000 });
+    expect(exits).toEqual([]);
     expect(manager.kill(started.id, SESSION_A)).toBe(false);
   });
 
   it("clearSession aborts and removes only that session's tasks, and deletes their output files", async () => {
     const manager = createManager();
+    const exits: BackgroundTask[] = [];
+    manager.init((task) => exits.push(task));
     const a = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
     const b = manager.start(FOREVER, process.cwd(), SESSION_B, LONG_TIMEOUT);
 
-    manager.clearSession(SESSION_A);
+    await manager.clearSession(SESSION_A);
 
+    expect(exits).toEqual([]);
     expect(manager.get(a.id, SESSION_A)).toBeNull();
     expect(manager.get(b.id, SESSION_B)?.status).toBe("running");
     await vi.waitFor(() => expect(existsSync(a.outputPath)).toBe(false), { timeout: 8000 });
+  });
+  it("waits for an unlimited command's process tree to die before clearing its session", async () => {
+    const manager = createManager();
+    const pidDir = mkdtempSync(join(tmpdir(), "pi-background-pid-"));
+    const pidPath = join(pidDir, "pid");
+    const command = `node -e "require('fs').writeFileSync('${pidPath}', String(process.pid)); setInterval(() => {}, 1000)"`;
+    const started = manager.start(command, process.cwd(), SESSION_A);
+
+    try {
+      await vi.waitFor(() => expect(existsSync(pidPath)).toBe(true), { timeout: 8000 });
+      const pid = Number(readFileSync(pidPath, "utf8"));
+      expect(pid).toBeGreaterThan(0);
+
+      await manager.clearSession(SESSION_A);
+      expect(manager.get(started.id, SESSION_A)).toBeNull();
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 8000 });
+    } finally {
+      await manager.clearSession(SESSION_A);
+      rmSync(pidDir, { recursive: true, force: true });
+    }
   });
 
   it("does not leak internals into the task snapshot handed to callers", () => {
@@ -155,6 +184,6 @@ describe("BackgroundManager", () => {
     expect(second.manager).toBe(first.manager); // ...yet the same manager, so tasks stay reachable
     expect(second.manager.get(task.id, SESSION_A)?.status).toBe("running");
 
-    second.manager.clearSession(SESSION_A);
+    await second.manager.clearSession(SESSION_A);
   });
 });

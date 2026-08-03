@@ -2,7 +2,7 @@
 
 ## 这一层是什么
 
-`@bytetrue/pi-background-terminal` 提供三个完全独立的工具：在后台运行一个命令、查看它、停止它。**不覆盖 `bash`，不注册任何与 Pi 原生工具同名的 tool，不影响内建 `bash` 的任何行为。**
+`@bytetrue/pi-background-terminal` 提供三个完全独立的 Agent 工具：在后台运行一个命令、查看它、停止它；另提供用户用的 `/background` 菜单管理当前 session 的任务。**不覆盖 `bash`，不注册任何与 Pi 原生工具同名的 tool，不影响内建 `bash` 的任何行为。**
 
 Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
 
@@ -15,12 +15,13 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。
 
 ## 它负责什么
 
-- **`background_run(command, timeoutSeconds)`**：两个参数都必传。立即返回任务 id 与输出文件路径；命令通过 Pi 自己的本地 shell backend（`createLocalBashOperations`）继续跑。`timeoutSeconds` 复用 Pi 内建 bash 工具本身的超时校验与跨平台进程树 kill（Windows `taskkill /F /T`，POSIX 进程组 `SIGKILL`），到时自动终止，状态记为 `timed_out`（区别于手动停止的 `killed`）。必传由 `manager.start()` 的运行时守卫强制——Pi 不会在调用 `execute()` 前按 TypeBox schema 校验参数，schema 里的 required 只是给模型的提示。
+- **`background_run(command, timeoutSeconds?)`**：立即返回任务 id 与输出文件路径；命令通过 Pi 自己的本地 shell backend（`createLocalBashOperations`）继续跑。`timeoutSeconds` 可选：提供时复用 Pi 内建 bash 工具本身的超时校验与跨平台进程树 kill（Windows `taskkill /F /T`，POSIX 进程组 `SIGKILL`），到时自动终止，状态记为 `timed_out`；省略时不限时，直到命令自然退出或 session 清理。显式提供的值仍由 `manager.start()` 运行时守卫校验。
 - **输出落盘**：命令的 stdout/stderr 实时写入 `$TMPDIR/pi-background-terminal/<task-id>.log`；工具本身只维护一个小型内存 tail 预览（约 4000 字符）与累计行数，不重复实现 offset/limit 分页——需要看更多，直接用 Pi 内建 `read` 工具读那个文件路径。
 - **`background_status(id?)`**：不传 id 列出所有后台任务（id/command/status/输出文件路径）；传 id 看该任务详情（状态、退出码或超时、输出文件路径、行数、tail 预览、"用 read 工具看全部"提示）。
-- **`background_kill(id)`**：手动提前停止一个仍在运行的任务；已结束的任务返回友好提示而不报错。
-- **自动完成通知**：任务结束（正常退出、被杀、或超时）后，通过 `pi.sendMessage(..., {deliverAs:"followUp", triggerTurn:true})` 自动唤醒发起它的 Pi session 继续对话——这不是"发个消息给人看"，而是 Pi 明确设计用来在 agent 空闲时立即触发下一轮 LLM 调用的机制；`display:true` 只是顺带让人类也能在 TUI 里看到。
-- **会话隔离与清理**：任务按 `parentSessionId` 隔离；真正的 session 结束（quit/新会话/切换/fork）时清空并 abort 该 session 所有仍在跑的任务，并删除对应输出文件；`/reload` 不算结束，任务原样保留（详见下文）。
+- **`background_kill(id)`**：手动提前停止一个仍在运行的任务；已结束的任务返回友好提示而不报错；主动停止不发送自动完成 follow-up。
+- **`/background`**：用户菜单列出当前 session 的任务；进入任务后可查看落盘输出、确认停止运行中的任务或返回，不需要记 `list` / `kill` 或复制 id。
+- **自动完成通知**：任务自然退出或超时后，通过 `pi.sendMessage(..., {deliverAs:"followUp", triggerTurn:true})` 自动唤醒发起它的 Pi session 继续对话；主动 `background_kill` 和 session 清理不发送通知——这不是"发个消息给人看"，而是 Pi 明确设计用来在 agent 空闲时立即触发下一轮 LLM 调用的机制；`display:true` 只是顺带让人类也能在 TUI 里看到。
+- **会话隔离与清理**：任务按 `parentSessionId` 隔离；真正的 session 结束（quit/新会话/切换/fork）时等待并清理该 session 所有仍在跑的进程树与输出流，再删除对应输出文件；`/reload` 不算结束，任务原样保留（详见下文）。
 
 ## 它不负责什么
 
@@ -47,10 +48,11 @@ Pi 的 `/reload` 会在**同一个 session** 上重新触发 `session_shutdown`�
 | 想完成的事 | 入口 |
 |---|---|
 | 普通命令，跑完就有结果 | 内建 `bash`，本包不参与 |
-| 起一个要越过本次工具调用继续跑的命令 | `background_run(command, timeoutSeconds)` |
+| 起一个要越过本次工具调用继续跑的命令 | `background_run(command, timeoutSeconds?)`；省略 timeout 表示不限时 |
 | 看所有后台任务 / 看某一个的状态和输出文件路径 | `background_status()` / `background_status(id)` |
 | 看某个后台任务的完整或大量输出 | Pi 内建 `read` 工具，读 `background_status` 给的输出文件路径 |
 | 提前停掉一个后台任务 | `background_kill(id)` |
+| 用户查看、看输出、停止或返回 | `/background` 菜单，不需要输入命令或 id |
 | 发 npm 版 | push tag `pi-background-terminal-v<version>`，由 repo `release.yml` + npm Trusted Publishing 自动发布 |
 
 ## 子系统地图
@@ -60,6 +62,7 @@ Extension entry (index.ts)
   ├─ tools/background-run.ts     启动；委托 background/manager.ts
   ├─ tools/background-status.ts  列表 / 单任务详情（含输出文件路径 + tail 预览）
   ├─ tools/background-kill.ts    手动停止
+  ├─ background-command.ts       `/background` 用户菜单、输出查看与返回
   └─ background/manager.ts
        ├─ createLocalBashOperations().exec()  ← 复用 Pi 自己的本地 shell backend（含 timeout 校验、跨平台 kill）
        ├─ fs.createWriteStream()              ← 输出实时写入 $TMPDIR/pi-background-terminal/<id>.log
@@ -74,17 +77,18 @@ Extension entry (index.ts)
 - **复用 Pi 官方扩展点与工具，不重新发明**：`createLocalBashOperations()`（跨平台 shell 执行、timeout、进程树 kill）与 Pi 内建 `read` 工具（大文件截断、offset/limit）都是公开、文档化、已被验证过的能力；本包只负责"什么时候该跑在后台"这一层胶水逻辑。
 - **完全不碰 Pi 原生工具身份**：三个工具都是独立命名，`bash` 的注册、渲染、未来任何版本变化都不受影响，避免了覆盖同名工具带来的任何潜在耦合。
 - **落盘而不是内存 buffer 的具体动机是上下文控制**：避免"查看"类工具的返回值随命令输出量线性增长，把"要不要看更多"的决定权交给 agent 自己通过 `read` 工具的 offset/limit。
-- **`timeoutSeconds` 强制必传**：把"命令会不会失控卡死"这件事从"希望 agent 记得手动停"变成"框架层面永远有兜底"，与该包"保持简单但不能牺牲基本安全性"的定位一致。
+- **`timeoutSeconds` 可选**：显式提供时把命令不会失控卡死交给 Pi 框架兜底；省略时支持长驻开发服务，但真正 session 结束仍由 session-scoped 清理硬停止，保持安全边界。
 - **`/reload` 安全**：`session_shutdown` 按 `reason` 精确区分热重载与真正结束，避免后台任务被无声杀死。
 
 ## 当前边界
 
 **做**
 - `background_run` / `background_status` / `background_kill` 三个独立工具
+- `/background` 用户菜单：按 session 列出任务，进入后查看输出、确认停止或返回
 - 输出实时落盘，内存只保留小型 tail 预览
-- 必传 `timeoutSeconds` 自动终止 + 手动 `background_kill`
-- 完成/超时自动唤醒 agent
-- session-scoped 清理（`/reload` 安全）与真实进程树 kill
+- 显式提供 `timeoutSeconds` 时自动终止 + 手动 `background_kill`；省略 timeout 表示不限时
+- 自然完成/超时自动唤醒 agent；主动 kill 与 session 清理静默
+- session-scoped 清理（`/reload` 安全）：等待真实进程树与输出流完成后删除输出文件
 
 **不做**
 - 覆盖或影响任何 Pi 原生工具
@@ -100,5 +104,6 @@ Extension entry (index.ts)
 - 讨论记录：`.cs/talks/004-background-terminal-redesign.md`
 - Pi 官方扩展点：Pi `docs/extensions.md`（`pi.sendMessage` 的 `deliverAs`/`triggerTurn` 语义、`session_shutdown` 的 `reason` 字段）
 - 历史（已被本次重写取代）：`.cs/issues/025-x-background-terminal-package.md`（第一版 PTY）、`.cs/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`.cs/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）
-- 当前实现：`.cs/issues/039-x-background-terminal-standalone-tools.md`
+- 当前独立工具实现：`.cs/issues/039-x-background-terminal-standalone-tools.md`
+- 不限时、生命周期清理与 `/background` 菜单实现/验证：`.cs/issues/042-x-background-terminal-menu-lifecycle.md`
 - 自动发布工作流：`.github/workflows/release.yml`

@@ -1,5 +1,6 @@
 import { truncateLine, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { manager, type BackgroundTask } from "./background/manager.js";
+import { registerBackgroundCommand } from "./background-command.js";
 import { registerBackgroundKillTool } from "./tools/background-kill.js";
 import { registerBackgroundRunTool } from "./tools/background-run.js";
 import { registerBackgroundStatusTool } from "./tools/background-status.js";
@@ -22,6 +23,7 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
     );
   });
 
+  registerBackgroundCommand(pi);
   registerBackgroundRunTool(pi);
   registerBackgroundStatusTool(pi);
   registerBackgroundKillTool(pi);
@@ -36,8 +38,8 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
     if (event.reason === "reload") return;
 
     const sessionId = ctx.sessionManager.getSessionId();
-    manager.clearSession(sessionId);
     if (currentSessionId === sessionId) currentSessionId = null;
+    await manager.clearSession(sessionId);
   });
 }
 

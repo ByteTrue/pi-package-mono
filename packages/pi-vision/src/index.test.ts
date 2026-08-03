@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import registerVision, { NON_VISION_MARKER } from "./index.js";
-import { makePi } from "./test-helpers.js";
+import { makeModel, makePi } from "./test-helpers.js";
 
 /** Shape pi's read tool returns for an image when the current model cannot see images. */
 function readImageResult(note: string) {
@@ -28,7 +28,7 @@ describe("registerVision", () => {
 
     expect([...pi.tools.keys()]).toEqual(["image_ask"]);
     expect([...pi.commands.keys()]).toEqual(["vision"]);
-    expect([...pi.handlers.keys()]).toEqual(["tool_result"]);
+    expect([...pi.handlers.keys()].sort()).toEqual(["model_select", "session_start", "tool_result"]);
   });
 
   it("points a dropped-image read at image_ask, keeping the original text and image part", () => {
@@ -107,5 +107,21 @@ describe("registerVision", () => {
     });
 
     expect(patch.content[0].text).toContain("path/to/image.png");
+  });
+
+  it("hides image_ask for vision models and restores it for text-only models", () => {
+    const pi = makePi();
+    registerVision(pi.api);
+
+    const sessionStart = pi.handlers.get("session_start")?.[0];
+    const modelSelect = pi.handlers.get("model_select")?.[0];
+    sessionStart?.({}, { model: makeModel("vendor", "vision", true) });
+    expect([...pi.activeTools]).toEqual(["read"]);
+
+    modelSelect?.({ model: makeModel("vendor", "text-only", false) }, {});
+    expect([...pi.activeTools].sort()).toEqual(["image_ask", "read"]);
+
+    modelSelect?.({ model: makeModel("vendor", "vision", true) }, {});
+    expect([...pi.activeTools]).toEqual(["read"]);
   });
 });

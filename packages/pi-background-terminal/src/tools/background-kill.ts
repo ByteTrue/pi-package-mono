@@ -6,7 +6,7 @@ export function registerBackgroundKillTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "background_kill",
     label: "Stop Background Task",
-    description: "Stops a running command started with background_run, before its timeoutSeconds elapses.",
+    description: "Stops a running command started with background_run.",
     promptSnippet: "Stop a running background task started with background_run.",
     parameters: Type.Object({
       id: Type.String({ minLength: 1, description: "The task id returned by background_run" }),

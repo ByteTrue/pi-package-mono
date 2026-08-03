@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { finished } from "node:stream/promises";
 import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
 
 export type BackgroundStatus = "running" | "exited" | "killed" | "timed_out" | "failed";
@@ -24,6 +25,8 @@ export interface BackgroundTask {
 
 interface InternalTask extends BackgroundTask {
   controller: AbortController;
+  notifyOnExit: boolean;
+  done: Promise<void>;
 }
 
 /** Recent-output preview held in memory for background_status; the full output lives in the file. */
@@ -43,14 +46,14 @@ export class BackgroundManager {
 
   /**
    * Starts a command in the background and returns immediately with its task info.
-   * Output streams to a file on disk as it's produced; `timeoutSeconds` is required
-   * so a hung command is always auto-terminated.
+   * Output streams to a file on disk as it's produced; omitting `timeoutSeconds` leaves the command running
+   * until it exits or the owning Pi session ends.
    */
-  start(command: string, cwd: string, parentSessionId: string, timeoutSeconds: number): BackgroundTask {
+  start(command: string, cwd: string, parentSessionId: string, timeoutSeconds?: number): BackgroundTask {
     // Pi does not validate tool parameters against the TypeBox schema before calling execute(),
-    // so "required" in the schema is only a hint to the model. This is the real enforcement.
-    if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
-      throw new Error("timeoutSeconds is required and must be a positive number.");
+    // so this is the real enforcement for an explicitly supplied timeout.
+    if (timeoutSeconds !== undefined && (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0)) {
+      throw new Error("timeoutSeconds must be a positive number when provided.");
     }
 
     mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -75,6 +78,8 @@ export class BackgroundManager {
       lineCount: 0,
       tail: "",
       controller,
+      notifyOnExit: true,
+      done: Promise.resolve(),
     };
 
     // Without this, a write failure (ENOSPC/EACCES on a long-lived task) is an unhandled stream
@@ -83,7 +88,8 @@ export class BackgroundManager {
       task.error = `output file write failed: ${error instanceof Error ? error.message : String(error)}`;
     });
 
-    ops
+    const outputClosed = finished(fileStream, { cleanup: true }).catch(() => {});
+    const execution = ops
       .exec(command, cwd, {
         signal: controller.signal,
         timeout: timeoutSeconds,
@@ -113,12 +119,15 @@ export class BackgroundManager {
           task.status = "failed";
           task.error = message;
         }
-      })
-      .finally(() => {
+      });
+
+    task.done = execution
+      .then(() => {
         fileStream.end();
+        return outputClosed;
       })
       .then(() => {
-        this.onExit?.(this.toPublic(task));
+        if (task.notifyOnExit) this.onExit?.(this.toPublic(task));
       })
       // A throwing onExit would otherwise be an unhandled rejection, which Node promotes to an
       // uncaught exception; a failed notification must not take down the host process.
@@ -145,17 +154,26 @@ export class BackgroundManager {
     const task = this.tasks.get(id);
     if (!task || task.parentSessionId !== parentSessionId) return false;
     if (task.status !== "running") return false;
+    task.notifyOnExit = false;
     task.controller.abort();
     return true;
   }
 
-  clearSession(parentSessionId: string): void {
-    for (const task of this.tasks.values()) {
-      if (task.parentSessionId !== parentSessionId) continue;
+  async clearSession(parentSessionId: string): Promise<void> {
+    const tasks = Array.from(this.tasks.values()).filter((task) => task.parentSessionId === parentSessionId);
+
+    for (const task of tasks) {
+      task.notifyOnExit = false;
       if (task.status === "running") task.controller.abort();
       this.tasks.delete(task.id);
-      rm(task.outputPath, { force: true }).catch(() => {});
     }
+
+    await Promise.all(
+      tasks.map(async (task) => {
+        await task.done;
+        await rm(task.outputPath, { force: true }).catch(() => {});
+      }),
+    );
   }
 
   private appendTail(task: InternalTask, chunk: string): void {
@@ -164,7 +182,7 @@ export class BackgroundManager {
   }
 
   private toPublic(task: InternalTask): BackgroundTask {
-    const { controller: _controller, ...publicTask } = task;
+    const { controller: _controller, notifyOnExit: _notifyOnExit, done: _done, ...publicTask } = task;
     return publicTask;
   }
 }
