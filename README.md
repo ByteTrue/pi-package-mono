@@ -12,6 +12,7 @@ Personal [pi coding agent](https://pi.dev) extensions as an npm workspaces monor
 | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first `models.json` management: bundled Skill + on-demand script, with `/vendor` as a minimal cold-start wizard. |
 | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | `image_generate` tool and `/image-gen` settings command for OpenAI, Gemini, Qwen-Image, Ark, OpenRouter, and compatible gateways. |
 | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `background_run`/`background_status`/`background_kill` plus a `/background` task menu — independent tools, does not override `bash`. |
+| [`@bytetrue/pi-ask-user`](packages/pi-ask-user) | OpenCode-compatible `question` tool for interactive single-choice, multi-select, and custom user answers. |
 | [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask` + `/vision`: let a text-only model query local images or opt in to automatic attachment analysis through a vision-capable model from `models.json`. |
 
 ## Local development
@@ -28,6 +29,9 @@ pi install /absolute/path/to/pi-package-mono/packages/pi-image-gen
 
 # Try background terminal locally
 pi install /absolute/path/to/pi-package-mono/packages/pi-background-terminal
+
+# Try the OpenCode-compatible question tool locally
+pi install /absolute/path/to/pi-package-mono/packages/pi-ask-user
 
 # Try vision locally
 pi install /absolute/path/to/pi-package-mono/packages/pi-vision
@@ -47,6 +51,8 @@ npm --workspace @bytetrue/pi-web-search test
 npm --workspace @bytetrue/pi-image-gen test
 
 npm --workspace @bytetrue/pi-background-terminal test
+
+npm --workspace @bytetrue/pi-ask-user test
 
 npm --workspace @bytetrue/pi-vision test
 ```
