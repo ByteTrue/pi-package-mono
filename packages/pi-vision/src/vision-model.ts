@@ -38,31 +38,61 @@ function visionCapable(models: readonly Model<Api>[]): Model<Api>[] {
   return models.filter((m) => m.input.includes("image"));
 }
 
-function readJson(path: string): Record<string, unknown> | undefined {
+type JsonRead =
+  | { state: "missing" }
+  | { state: "invalid" }
+  | { state: "valid"; value: Record<string, unknown> };
+
+function readJson(path: string): JsonRead {
+  if (!existsSync(path)) return { state: "missing" };
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
+      ? { state: "valid", value: parsed as Record<string, unknown> }
+      : { state: "invalid" };
   } catch {
-    return undefined;
+    return { state: "invalid" };
   }
 }
 
-/**
- * Read `"pi-vision": { "model": "provider/id" }` from pi's settings.
- * Project settings win over global, matching how pi layers its own settings.
- */
-export function readConfiguredModelRef(cwd: string): string | undefined {
-  const files = [globalSettingsPath(), projectSettingsPath(cwd)];
-  let ref: string | undefined;
+function readLayeredValue(
+  cwd: string,
+  projectTrusted: boolean,
+  key: "model" | "autoAnalyzeAttachments",
+): unknown {
+  const files = projectTrusted
+    ? [globalSettingsPath(), projectSettingsPath(cwd)]
+    : [globalSettingsPath()];
+  let value: unknown;
   for (const file of files) {
-    const section = readJson(file)?.[SETTINGS_KEY];
-    if (!section || typeof section !== "object") continue;
-    const model = (section as Record<string, unknown>).model;
-    if (typeof model === "string" && model.trim()) ref = model.trim();
+    const result = readJson(file);
+    if (result.state === "missing") continue;
+    if (result.state === "invalid") {
+      value = undefined;
+      continue;
+    }
+    const settings = result.value;
+    if (!Object.prototype.hasOwnProperty.call(settings, SETTINGS_KEY)) continue;
+    const section = settings[SETTINGS_KEY];
+    if (!section || typeof section !== "object" || Array.isArray(section)) {
+      value = undefined;
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(section, key)) {
+      value = (section as Record<string, unknown>)[key];
+    }
   }
-  return ref;
+  return value;
+}
+
+/** Project settings participate only after Pi has marked the project trusted. */
+export function readConfiguredModelRef(cwd: string, projectTrusted: boolean): string | undefined {
+  const model = readLayeredValue(cwd, projectTrusted, "model");
+  return typeof model === "string" && model.trim() ? model.trim() : undefined;
+}
+
+export function readAutoAnalyzeAttachments(cwd: string, projectTrusted: boolean): boolean {
+  return readLayeredValue(cwd, projectTrusted, "autoAnalyzeAttachments") === true;
 }
 
 function listCandidates(ctx: ExtensionContext): string {
@@ -85,11 +115,10 @@ export function listVisionModelRefs(models: readonly Model<Api>[]): string[] {
 }
 
 /**
- * Set `pi-vision.model` in the global settings file, preserving every other key and the
- * file's permissions. Returns the path written. Refuses to touch a file that is not a
- * JSON object, so a typo elsewhere in settings.json is never destroyed by this command.
+ * Set one pi-vision value in the global settings file, preserving every other key and
+ * the file's permissions. Refuses to touch malformed settings.
  */
-export function writeConfiguredModelRef(ref: string): string {
+function writeSetting(key: "model" | "autoAnalyzeAttachments", value: string | boolean): string {
   const path = globalSettingsPath();
   let settings: Record<string, unknown> = {};
   let mode = 0o600;
@@ -113,7 +142,7 @@ export function writeConfiguredModelRef(ref: string): string {
     existing && typeof existing === "object" && !Array.isArray(existing)
       ? { ...(existing as Record<string, unknown>) }
       : {};
-  section.model = ref;
+  section[key] = value;
   settings[SETTINGS_KEY] = section;
 
   // ponytail: no lockfile, unlike pi's own settings writer. A /settings write landing in the
@@ -126,6 +155,14 @@ export function writeConfiguredModelRef(ref: string): string {
   return path;
 }
 
+export function writeConfiguredModelRef(ref: string): string {
+  return writeSetting("model", ref);
+}
+
+export function writeAutoAnalyzeAttachments(enabled: boolean): string {
+  return writeSetting("autoAnalyzeAttachments", enabled);
+}
+
 /**
  * Resolve the model image_ask delegates to. There is deliberately no fallback to
  * "first vision-capable model": that silently picks whichever model happens to be
@@ -133,7 +170,7 @@ export function writeConfiguredModelRef(ref: string): string {
  * list is cheaper for the user than a surprise bill.
  */
 export async function resolveVisionModel(ctx: ExtensionContext): Promise<VisionModelResult> {
-  const ref = readConfiguredModelRef(ctx.cwd);
+  const ref = readConfiguredModelRef(ctx.cwd, ctx.isProjectTrusted());
   if (!ref) {
     return {
       ok: false,

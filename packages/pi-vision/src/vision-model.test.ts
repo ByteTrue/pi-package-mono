@@ -2,7 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeCtx, makeModel, makeSettingsSandbox } from "./test-helpers.js";
-import { readConfiguredModelRef, resolveVisionModel } from "./vision-model.js";
+import {
+  readAutoAnalyzeAttachments,
+  readConfiguredModelRef,
+  resolveVisionModel,
+} from "./vision-model.js";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
@@ -11,14 +15,14 @@ afterEach(() => {
   else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 });
 
-describe("readConfiguredModelRef", () => {
+describe("vision settings readers", () => {
   it("reads the global settings section", () => {
     const { cwd } = makeSettingsSandbox({ model: "vendor/qwen-plus" });
 
-    expect(readConfiguredModelRef(cwd)).toBe("vendor/qwen-plus");
+    expect(readConfiguredModelRef(cwd, true)).toBe("vendor/qwen-plus");
   });
 
-  it("lets project settings win over global", () => {
+  it("lets trusted project settings win over global", () => {
     const { cwd } = makeSettingsSandbox({ model: "vendor/global" });
     mkdirSync(join(cwd, ".pi"), { recursive: true });
     writeFileSync(
@@ -26,20 +30,76 @@ describe("readConfiguredModelRef", () => {
       JSON.stringify({ "pi-vision": { model: "vendor/project" } }),
     );
 
-    expect(readConfiguredModelRef(cwd)).toBe("vendor/project");
+    expect(readConfiguredModelRef(cwd, true)).toBe("vendor/project");
+    expect(readConfiguredModelRef(cwd, false)).toBe("vendor/global");
   });
 
   it("returns undefined when nothing is configured", () => {
     const { cwd } = makeSettingsSandbox();
 
-    expect(readConfiguredModelRef(cwd)).toBeUndefined();
+    expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
   });
 
   it("survives malformed settings json instead of throwing", () => {
     const { agentDir, cwd } = makeSettingsSandbox();
     writeFileSync(join(agentDir, "settings.json"), "{ not json");
 
-    expect(readConfiguredModelRef(cwd)).toBeUndefined();
+    expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
+  });
+
+  it("layers the automatic-analysis opt-in through trusted project settings", () => {
+    const { cwd } = makeSettingsSandbox({ autoAnalyzeAttachments: true });
+    mkdirSync(join(cwd, ".pi"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pi", "settings.json"),
+      JSON.stringify({ "pi-vision": { autoAnalyzeAttachments: false } }),
+    );
+
+    expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
+    expect(readAutoAnalyzeAttachments(cwd, false)).toBe(true);
+  });
+
+  it("fails closed on invalid higher-priority values", () => {
+    const { cwd } = makeSettingsSandbox({
+      model: "vendor/global",
+      autoAnalyzeAttachments: true,
+    });
+    mkdirSync(join(cwd, ".pi"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pi", "settings.json"),
+      JSON.stringify({
+        "pi-vision": { model: null, autoAnalyzeAttachments: "yes" },
+      }),
+    );
+
+    expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
+    expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
+  });
+
+  it.each(["{ not json", "[]", "42"])(
+    "fails closed when trusted project settings are invalid: %s",
+    (contents) => {
+      const { cwd } = makeSettingsSandbox({
+        model: "vendor/global",
+        autoAnalyzeAttachments: true,
+      });
+      mkdirSync(join(cwd, ".pi"), { recursive: true });
+      writeFileSync(join(cwd, ".pi", "settings.json"), contents);
+
+      expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
+      expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
+    },
+  );
+
+  it("fails closed when trusted project settings cannot be read as a file", () => {
+    const { cwd } = makeSettingsSandbox({
+      model: "vendor/global",
+      autoAnalyzeAttachments: true,
+    });
+    mkdirSync(join(cwd, ".pi", "settings.json"), { recursive: true });
+
+    expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
+    expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
   });
 });
 

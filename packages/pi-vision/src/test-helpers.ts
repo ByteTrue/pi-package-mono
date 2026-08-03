@@ -29,6 +29,7 @@ export interface FakeCtxOptions {
   models?: Model<Api>[];
   auth?: { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
   model?: Model<Api>;
+  projectTrusted?: boolean;
 }
 
 export function makeCtx(options: FakeCtxOptions = {}): ExtensionContext {
@@ -37,6 +38,7 @@ export function makeCtx(options: FakeCtxOptions = {}): ExtensionContext {
   return {
     cwd: options.cwd ?? process.cwd(),
     model: options.model,
+    isProjectTrusted: () => options.projectTrusted ?? true,
     modelRegistry: {
       getAvailable: () => models,
       find: (provider: string, modelId: string) =>

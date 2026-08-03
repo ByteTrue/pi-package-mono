@@ -28,7 +28,12 @@ describe("registerVision", () => {
 
     expect([...pi.tools.keys()]).toEqual(["image_ask"]);
     expect([...pi.commands.keys()]).toEqual(["vision"]);
-    expect([...pi.handlers.keys()].sort()).toEqual(["model_select", "session_start", "tool_result"]);
+    expect([...pi.handlers.keys()].sort()).toEqual([
+      "before_agent_start",
+      "model_select",
+      "session_start",
+      "tool_result",
+    ]);
   });
 
   it("points a dropped-image read at image_ask, keeping the original text and image part", () => {

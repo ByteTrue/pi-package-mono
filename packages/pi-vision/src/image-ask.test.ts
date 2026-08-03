@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,29 +15,14 @@ afterEach(() => {
   else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 });
 
-function reply(text: string, overrides: Partial<AssistantMessage> = {}): AssistantMessage {
-  return {
-    role: "assistant",
-    content: text ? [{ type: "text", text }] : [],
-    api: "openai-completions",
-    provider: "vendor",
-    model: "qwen-plus",
-    usage: {
-      input: 10,
-      output: 5,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 15,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: Date.now(),
-    ...overrides,
-  } as AssistantMessage;
-}
+const reply = fauxAssistantMessage;
 
 /** Configured vision model + one readable PNG named shot.png in cwd. */
-function scenario(auth?: { ok: false; error: string }) {
+function scenario(
+  auth?:
+    | { ok: true; apiKey?: string; headers?: Record<string, string> }
+    | { ok: false; error: string },
+) {
   const { cwd } = makeSettingsSandbox({ model: "vendor/qwen-plus" });
   writeFileSync(join(cwd, "shot.png"), PNG);
   writeFileSync(join(cwd, "mock.jpg"), JPEG);
@@ -170,12 +155,58 @@ describe("runImageAsk", () => {
       }),
     ) as unknown as CompleteFn;
 
-    await expect(
-      runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete),
-    ).rejects.toThrow(/echoed the API key/);
-    await expect(
-      runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete),
-    ).rejects.not.toThrow(/sk-test-abcdef123456/);
+    const request = runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    await expect(request).rejects.toThrow(/echoed the API key/);
+    await expect(request).rejects.not.toThrow(/sk-test-abcdef123456/);
+  });
+
+  it("withholds an upstream message that echoes a bare header credential", async () => {
+    const secret = "header-secret-123456";
+    const { ctx } = scenario({
+      ok: true,
+      apiKey: "sk-test-abcdef123456",
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    const complete = vi
+      .fn()
+      .mockRejectedValue(new Error(`request rejected for ${secret}`)) as unknown as CompleteFn;
+
+    const request = runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    await expect(request).rejects.toThrow(/echoed a configured credential/);
+    await expect(request).rejects.not.toThrow(secret);
+  });
+
+  it("withholds a successful-looking answer that echoes a credential", async () => {
+    const secret = "header-secret-123456";
+    const { ctx } = scenario({
+      ok: true,
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    const complete = vi.fn().mockResolvedValue(reply(`visible ${secret}`)) as unknown as CompleteFn;
+
+    const request = runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    await expect(request).rejects.toThrow(/echoed a configured credential/);
+    await expect(request).rejects.not.toThrow(secret);
+  });
+
+  it("does not treat words inside ordinary headers as standalone credentials", async () => {
+    const { ctx } = scenario({
+      ok: true,
+      headers: { "x-tenant-label": "acme corp" },
+    });
+    const complete = vi.fn().mockResolvedValue(reply("The screenshot belongs to corp.")) as unknown as CompleteFn;
+
+    const result = await runImageAsk(
+      { paths: ["shot.png"], question: "q" },
+      ctx,
+      undefined,
+      complete,
+    );
+
+    expect(result.content).toEqual([{ type: "text", text: "The screenshot belongs to corp." }]);
   });
 
   it("withholds a thrown transport error that echoes the api key", async () => {

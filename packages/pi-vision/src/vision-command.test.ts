@@ -123,4 +123,34 @@ describe("runVisionCommand", () => {
     expect(ui.notifications.at(-1)).toMatchObject({ type: "error" });
     expect(() => readSettings(agentDir)).toThrow();
   });
+
+  it("enables automatic attached-image analysis only after a model is configured", async () => {
+    const { agentDir, cwd } = makeSettingsSandbox({ model: "vendor/qwen-plus" });
+    const { ctx, ui } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[0]);
+
+    await runVisionCommand(ctx, "auto on");
+
+    expect(ui.selectOptions).toBeUndefined();
+    expect(readSettings(agentDir)["pi-vision"]).toEqual({
+      model: "vendor/qwen-plus",
+      autoAnalyzeAttachments: true,
+    });
+    expect(ui.notifications.at(-1)?.message).toContain("enabled");
+
+    await runVisionCommand(ctx, "auto off");
+
+    expect(readSettings(agentDir)["pi-vision"].autoAnalyzeAttachments).toBe(false);
+    expect(ui.notifications.at(-1)?.message).toContain("disabled");
+  });
+
+  it("refuses to enable automatic analysis without a configured model", async () => {
+    const { agentDir, cwd } = makeSettingsSandbox();
+    const { ctx, ui } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[0]);
+
+    await runVisionCommand(ctx, "auto on");
+
+    expect(() => readSettings(agentDir)).toThrow();
+    expect(ui.notifications.at(-1)).toMatchObject({ type: "error" });
+    expect(ui.notifications.at(-1)?.message).toContain("No vision model configured");
+  });
 });

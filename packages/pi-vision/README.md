@@ -1,9 +1,9 @@
 # @bytetrue/pi-vision
 
-Let a text-only model read images, by asking a vision-capable model from your own `models.json`.
+Let a text-only model read images by delegating to a vision-capable model from your own `models.json`.
 
-If your main model can't see images — you paste a screenshot and it says "I can't see it" — this
-adds one tool, `image_ask`, that hands the image to a model that can, and returns a text answer.
+Use the opt-in automatic mode to analyze attached images before the first main-model call, or keep the
+`image_ask` tool for explicit local files and follow-up questions.
 
 ## Install
 
@@ -17,19 +17,26 @@ pi install /absolute/path/to/pi-package-mono/packages/pi-vision
 
 ```
 /vision
+/vision auto on
 ```
 
-Picks from the vision-capable models already in your `models.json` and saves the choice to
-`~/.pi/agent/settings.json`, preserving every other setting and the file's permissions.
+`/vision` picks from the vision-capable models already in your `models.json`. `/vision auto on` then
+opts into analyzing images attached to the current user message before the first main-model call;
+`/vision auto off` disables it. Settings are saved to `~/.pi/agent/settings.json`, preserving every
+other setting and the file's permissions.
 
-There is no default model on purpose: auto-picking would silently use whichever vision model
-happens to be first in your `models.json`, which can be an expensive one.
+There is no default model and automatic mode is off by default. This prevents an unexpected provider
+from receiving attachments or silently choosing an expensive model.
 
-Equivalent by hand, in `~/.pi/agent/settings.json` (or `<project>/.pi/settings.json`, which wins):
+Equivalent by hand, in `~/.pi/agent/settings.json` (or `<project>/.pi/settings.json`, which wins only
+after Pi marks the project trusted):
 
 ```json
 {
-  "pi-vision": { "model": "bytetrueapi/qwen3.7-plus" }
+  "pi-vision": {
+    "model": "bytetrueapi/qwen3.7-plus",
+    "autoAnalyzeAttachments": true
+  }
 }
 ```
 
@@ -37,15 +44,21 @@ Credentials come from your existing `models.json`; this package stores none of i
 
 ## Use
 
-Nothing to learn. Paste a screenshot (pi's `ctrl+v` already saves it to a file and inserts the
-path) or point at any image file, and ask:
+With automatic mode enabled, attach up to four PNG/JPEG/GIF/WebP images to a user message. The
+extension sends the complete batch plus that user request to the configured vision provider once,
+then injects the answer before the text-only main model starts. The batch must stay within 20MB and
+passes MIME header validation; it is rejected as a whole rather than silently dropping images.
+
+The UI reports the provider/model used or a failure. A failure is also injected into model context so
+the main model cannot claim it saw the images and can explicitly retry with `image_ask`.
+
+For local image paths or a more specific follow-up, ask normally:
 
 ```
 /tmp/pi-clipboard-3f2a.png the submit button looks misaligned, fix it
 ```
 
-The agent calls `image_ask` with that path and its own specific question, gets a text answer,
-and keeps working.
+The agent calls `image_ask` with that path and its own focused question.
 
 If the agent reaches for the built-in `read` tool instead and pi tells it the image was dropped,
 this extension appends a pointer to `image_ask` so it isn't a dead end.
@@ -59,11 +72,10 @@ this extension appends a pointer to `image_ask` so it isn't a dead end.
 
 ## What it does not do
 
-- No provider config of its own — vision models are ordinary chat models in `models.json`.
-- No API keys of its own — `/vision` only ever writes one field, `pi-vision.model`.
+- No provider config or API keys of its own — vision models and credentials stay in `models.json`.
+- `/vision` writes only `pi-vision.model` and `pi-vision.autoAnalyzeAttachments`.
 - No URLs. Download the file first, then pass the path.
-- No automatic image description on paste; the agent asks its own question, which beats a
-  generic description for the "why is this UI wrong" case.
+- No fallback chains, automatic model switching or cache.
 - Nothing when your current model already accepts images — `read` behaves exactly as before.
 
 ## Development

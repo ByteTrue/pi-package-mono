@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerAutoAnalyze } from "./auto-analyze.js";
 import { registerImageAskTool, TOOL_NAME } from "./image-ask.js";
 import { registerVisionCommand } from "./vision-command.js";
 
@@ -35,6 +36,7 @@ function syncImageAskTool(pi: ExtensionAPI, model: { input: readonly string[] } 
 export default function registerVision(pi: ExtensionAPI): void {
   registerImageAskTool(pi);
   registerVisionCommand(pi);
+  registerAutoAnalyze(pi);
 
   pi.on("session_start", (_event, ctx) => syncImageAskTool(pi, ctx.model));
   pi.on("model_select", (event) => syncImageAskTool(pi, event.model));

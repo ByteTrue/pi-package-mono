@@ -32,6 +32,10 @@ describe("sniffMime", () => {
     expect(sniffMime(WAVE)).toBeUndefined();
   });
 
+  it("rejects a GIF8 prefix without a complete GIF87a/GIF89a signature", () => {
+    expect(sniffMime(Buffer.from("GIF8nope"))).toBeUndefined();
+  });
+
   it("rejects text", () => {
     expect(sniffMime(Buffer.from("not an image at all"))).toBeUndefined();
   });
