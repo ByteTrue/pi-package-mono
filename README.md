@@ -11,8 +11,8 @@ Personal [pi coding agent](https://pi.dev) extensions as an npm workspaces monor
 | [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search` + `web_fetch` tools with zero-config Exa MCP free search, keyless Bing fallback, self-hosted SearXNG, and pluggable providers (Bocha, Tavily, Exa, Brave, Jina, Firecrawl). |
 | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first `models.json` management: bundled Skill + on-demand script, with `/vendor` as a minimal cold-start wizard. |
 | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | `image_generate` tool and `/image-gen` settings command for OpenAI, Gemini, Qwen-Image, Ark, OpenRouter, and compatible gateways. |
-| [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `background_run`/`background_status`/`background_kill` to run a shell command hands-off, check on it, and stop it — independent tools, does not override `bash`. |
-| [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask` tool + `/vision` command: let a text-only model read local images by asking a vision-capable model from your own `models.json`. |
+| [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `background_run`/`background_status`/`background_kill` plus a `/background` task menu — independent tools, does not override `bash`. |
+| [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask` + `/vision`: let a text-only model query local images or opt in to automatic attachment analysis through a vision-capable model from `models.json`. |
 
 ## Local development
 

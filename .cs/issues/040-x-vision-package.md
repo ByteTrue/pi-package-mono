@@ -236,6 +236,7 @@ image_ask({ paths: string[], question: string })
 - Trusted Publisher（Playwright 配置，用户完成两次安全密钥/密码二次验证）：`ByteTrue/pi-package-mono` / `release.yml` / Permissions `npm publish`，与其它四包已生效的配置逐字一致（Environment name 留空）。
 - Tag `pi-vision-v0.1.0` 推送后触发 `release.yml`（run 30739773091）：typecheck → npm test → OIDC 取得 `NODE_AUTH_TOKEN` → `✓ @bytetrue/pi-vision@0.1.0 already on npm — skipping`，conclusion success。验证了幂等跳过逻辑与 OIDC 信任关系同时生效，后续版本发布（如 `0.2.0`）无需再手动 `npm publish`，只需 bump 版本号 + 打 tag。
 - 代码合入主分支：`image-delegation` 分支 fast-forward 到 `main`（`e3c1f82`），无分歧。
+- 版本 `0.2.0`：tag `pi-vision-v0.2.0` 触发 `release.yml`（run 30838291139），全 workspace typecheck/test 与 OIDC publish 均成功；registry 已确认 `latest = 0.2.0`。该版本加入按主模型能力门控与 opt-in 附件自动预分析，当前真相见 `.cs/spec/pi-vision/index.md`。
 
 ## 关闭回写
 

@@ -8,7 +8,7 @@
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
 3. **图像生成**（`@bytetrue/pi-image-gen`）：提供 `image_generate`，支持 OpenAI、Gemini、Qwen-Image、Ark、OpenRouter 与兼容网关。
 4. **背景终端**（`@bytetrue/pi-background-terminal`）：三个独立工具——后台跑命令、查看、停止。不覆盖 `bash`。
-5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型，`read` 撞上非视觉降级时给出引导，`/vision` 零学习成本选模型。
+5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
 
 仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
 
@@ -17,7 +17,7 @@
 - `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
 - `pi-web-search` 已完成安全与预算类 hardening（SSRF、body 预算、proxy 隔离、无效配置保护等）。
 - `pi-background-terminal` 经历三次重设计，当前版本是三个完全独立的工具：`background_run(command, timeoutSeconds?)` 立即返回任务 id，timeout 省略时支持长驻服务，输出实时落盘（不是内存 buffer，为了不把大量输出一次性塑进 agent 上下文，需要全量时用 Pi 内建 `read` 工具自己去读）；`background_status(id?)` 列表/详情；`background_kill(id)` 手动停止且静默；自然退出/超时自动唤醒 agent；`/background` 提供无需记命令或 id 的用户菜单。session 结束等待并清理进程树、输出流与文件，`/reload` 保留任务。完全不覆盖、不影响 `bash`。无 PTY、无原生 addon、无 Web UI。
-- **`pi-vision`**：新增能力，解决“主力模型没有视觉能力，粘贴截图让它修 bug”的诉求。核心发现是 Pi 的 `read` 工具在图片被丢弃时只回一句提示，**完全拦不住模型编造图片内容**（实测同一张截图被编成 macOS VoiceOver 设置面板）——这比“模型说看不到”更糟。方案不是 MCP（非视觉模型不知道图被丢弃，不会主动想起要调工具），而是在 `read` 撞墙时引导到 `image_ask`，由 agent 自己提问而非自动生成描述。
+- **`pi-vision`**：解决“主力模型没有视觉能力却需要按图工作”的诉求。`image_ask` 保留模型主动提出精确问题的路径；0.2.0 新增 opt-in 附件预分析，把 `before_agent_start.images` 在首轮主模型调用前批量交给所选视觉模型。自动模式默认关闭，不处理 TUI 粘贴后形成的路径文本，并受 project trust、数量/总字节与 60 秒 deadline 约束。
 - 近期优先：五个扩展的维护、回归与按需发版。
 
 ## 能力地图
@@ -26,7 +26,7 @@
 - **管理自定义 provider / model** → 读 [`pi-vendor/`](pi-vendor/index.md)
 - **生成图像** → 读 `packages/pi-image-gen/README.md`
 - **后台跑命令** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；三个独立工具，不影响内建 `bash`
-- **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 工具 + `/vision` 配置菜单
+- **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 精确问图 + opt-in 附件预分析 + `/vision` 配置
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
 - **历史审计与旧流程证据** → [`.cs/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
 
@@ -37,6 +37,7 @@
 - **改 models.json 管理语义**：先读 vendor 子 spec；日常行为由 package Skill + bundled script 定义，冷启动行为在 TUI，配置事务与模型来源语义仍在共享 core。
 - **改 background terminal**：先读 background-terminal 子 spec，再改 `packages/pi-background-terminal`；至少验证 typecheck、test、pack dry-run 与真实 Pi 回归。
 - **发 background terminal npm 版**：bump `packages/pi-background-terminal/package.json` 版本后，push tag `pi-background-terminal-v<version>`；GitHub Actions `release.yml` 走 npm Trusted Publishing 自动发布。
+- **发 pi-vision npm 版**：bump `packages/pi-vision/package.json` 版本后，push tag `pi-vision-v<version>`；同一 OIDC workflow 自动发布。
 - **查“以前为什么这么定”**：closed epic/issue 在 `.cs/epics/`、`.cs/issues/`；完整旧 design/review 在 archive。
 
 ## 架构落点
@@ -47,7 +48,7 @@
 | `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
 | `@bytetrue/pi-image-gen` | agent 工具 `image_generate`、`/image-gen` | `~/.pi/agent/settings.json`、覆盖 agent dir 或 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
 | `@bytetrue/pi-background-terminal` | 工具 `background_run`/`background_status`/`background_kill` + 用户菜单 `/background`（不覆盖 `bash`） | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
-| `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`tool_result` hook | `settings.json` 的 `pi-vision.model`（全局，`/vision` 写入） |
+| `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `settings.json` 的 `pi-vision.model` 与 `pi-vision.autoAnalyzeAttachments`（`/vision` 写全局层；可信 project 可覆盖） |
 
 五包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
 
@@ -101,7 +102,7 @@
 - 根 `package.json` workspaces、`npm test`
 - BySpace worktree 准备：`byspace.json`
 - 本地 package / worktree 加载边界：`.cs/notes/005-pi-local-package-loading.md`
-- `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`
+- `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
 - 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
 - background terminal 历史重写：`.cs/issues/025-x-background-terminal-package.md`（第一版 PTY）、`.cs/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`.cs/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）；当前独立工具：`.cs/issues/039-x-background-terminal-standalone-tools.md`；不限时、清理与用户菜单：`.cs/issues/042-x-background-terminal-menu-lifecycle.md`
 - Pi 本地包加载坑点：`.cs/notes/005-pi-local-package-loading.md`

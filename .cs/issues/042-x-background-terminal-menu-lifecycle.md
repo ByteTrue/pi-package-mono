@@ -52,6 +52,12 @@ epic: ""
 - 已验证：`npm --workspace @bytetrue/pi-background-terminal run typecheck`；`npm --workspace @bytetrue/pi-background-terminal test`（29 tests，含真实 PID 存活检查、通知差异、菜单空列表/输出/返回/确认 kill/取消 kill 流程）；`npm --workspace @bytetrue/pi-background-terminal pack --dry-run`。
 - 并行 correctness review：未发现 blocker；review 建议的 timeout 通知、session 清理静默和取消 kill 覆盖已补进测试。未执行真实交互式 Pi session smoke，作为后续 Pi 版本回归风险保留。
 - ponytail review：已采用 `node:stream/promises.finished` 收敛输出流关闭等待，并删除 README 中重复的 `/background` 总览条目。
+
+## 发布
+
+- 版本 `0.3.0`：tag `pi-background-terminal-v0.3.0` 触发 `release.yml`（run 30838293398），全 workspace typecheck/test 与 OIDC publish 均成功；registry 已确认 `latest = 0.3.0`。
+- 发布前本地复跑与 workflow 同构的验证：全 workspace 453 tests passed / 9 live tests skipped；目标包 tarball 共 8 个文件，无测试/helper 泄漏。
+
 ## 关闭结论
 
 - **可关闭**：实现范围与用户确认一致；不限时任务仍按 session 管理，主动 kill 静默，session 结束等待进程树/输出流并清理，`/background` 完成菜单式查看与停止。
