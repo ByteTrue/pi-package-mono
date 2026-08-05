@@ -41,7 +41,10 @@ function harness() {
   return { toolNames, commandNames, events, rendererTypes, sent, handlers };
 }
 
-const ctxFor = (sessionId: string) => ({ sessionManager: { getSessionId: () => sessionId } });
+const ctxFor = (sessionId: string, setStatus = vi.fn()) => ({
+  sessionManager: { getSessionId: () => sessionId },
+  ui: { setStatus },
+});
 
 describe("pi-background-terminal extension", () => {
   it("registers the three background tools and the /background command without touching native tools", () => {
@@ -80,6 +83,27 @@ describe("pi-background-terminal extension", () => {
 
     expect(sent).toEqual([]);
     await manager.clearSession("someone-else");
+  });
+
+  it("shows the running count in the footer and hides it again at zero", async () => {
+    const { handlers } = harness();
+    const sessionId = "status-session";
+    const setStatus = vi.fn();
+    const ctx = ctxFor(sessionId, setStatus);
+    await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctx);
+
+    const first = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId, 30);
+    const second = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId, 30);
+    expect(setStatus).toHaveBeenLastCalledWith("background-terminal", "bg:2");
+
+    manager.kill(first.id, sessionId);
+    await vi.waitFor(() => expect(setStatus).toHaveBeenLastCalledWith("background-terminal", "bg:1"), { timeout: 8000 });
+
+    manager.kill(second.id, sessionId);
+    await vi.waitFor(() => expect(setStatus).toHaveBeenLastCalledWith("background-terminal", undefined), {
+      timeout: 8000,
+    });
+    await manager.clearSession(sessionId);
   });
 
   it("survives /reload but clears tasks and their output files on a real session end", async () => {

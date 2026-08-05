@@ -7,21 +7,25 @@ import { registerBackgroundStatusTool } from "./tools/background-status.js";
 
 export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
   let currentSessionId: string | null = null;
+  let updateStatus: (() => void) | undefined;
 
-  manager.init((task) => {
-    if (!currentSessionId || task.parentSessionId !== currentSessionId) return;
-    // followUp + triggerTurn is what makes this hands-off: it wakes an idle agent into a new turn
-    // with the outcome, so nothing has to poll background_status to notice completion.
-    pi.sendMessage(
-      {
-        customType: "background-exit",
-        content: formatExitMessage(task),
-        display: true,
-        details: task,
-      },
-      { deliverAs: "followUp", triggerTurn: true },
-    );
-  });
+  manager.init(
+    (task) => {
+      if (!currentSessionId || task.parentSessionId !== currentSessionId) return;
+      // followUp + triggerTurn is what makes this hands-off: it wakes an idle agent into a new turn
+      // with the outcome, so nothing has to poll background_status to notice completion.
+      pi.sendMessage(
+        {
+          customType: "background-exit",
+          content: formatExitMessage(task),
+          display: true,
+          details: task,
+        },
+        { deliverAs: "followUp", triggerTurn: true },
+      );
+    },
+    () => updateStatus?.(),
+  );
 
   registerBackgroundCommand(pi);
   registerBackgroundRunTool(pi);
@@ -29,7 +33,13 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
   registerBackgroundKillTool(pi);
 
   pi.on("session_start", async (_event, ctx) => {
-    currentSessionId = ctx.sessionManager.getSessionId();
+    const sessionId = ctx.sessionManager.getSessionId();
+    currentSessionId = sessionId;
+    updateStatus = () => {
+      const running = manager.list(sessionId).filter((task) => task.status === "running").length;
+      ctx.ui.setStatus("background-terminal", running === 0 ? undefined : `bg:${running}`);
+    };
+    updateStatus();
   });
 
   pi.on("session_shutdown", async (event, ctx) => {
@@ -38,6 +48,8 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
     if (event.reason === "reload") return;
 
     const sessionId = ctx.sessionManager.getSessionId();
+    ctx.ui.setStatus("background-terminal", undefined);
+    updateStatus = undefined;
     if (currentSessionId === sessionId) currentSessionId = null;
     await manager.clearSession(sessionId);
   });

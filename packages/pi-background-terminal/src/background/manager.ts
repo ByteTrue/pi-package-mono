@@ -38,10 +38,12 @@ const OUTPUT_DIR = join(tmpdir(), "pi-background-terminal");
 export class BackgroundManager {
   private readonly tasks = new Map<string, InternalTask>();
   private onExit?: (task: BackgroundTask) => void;
+  private onChange?: () => void;
 
-  /** Registers a callback invoked once, whenever any background task finishes. */
-  init(onExit: (task: BackgroundTask) => void): void {
+  /** Registers callbacks for completion notifications and task-count changes. */
+  init(onExit: (task: BackgroundTask) => void, onChange?: () => void): void {
     this.onExit = onExit;
+    this.onChange = onChange;
   }
 
   /**
@@ -127,6 +129,7 @@ export class BackgroundManager {
         return outputClosed;
       })
       .then(() => {
+        this.emitChange();
         if (task.notifyOnExit) this.onExit?.(this.toPublic(task));
       })
       // A throwing onExit would otherwise be an unhandled rejection, which Node promotes to an
@@ -134,6 +137,7 @@ export class BackgroundManager {
       .catch(() => {});
 
     this.tasks.set(id, task);
+    this.emitChange();
     return this.toPublic(task);
   }
 
@@ -174,6 +178,14 @@ export class BackgroundManager {
         await rm(task.outputPath, { force: true }).catch(() => {});
       }),
     );
+  }
+
+  private emitChange(): void {
+    try {
+      this.onChange?.();
+    } catch {
+      // UI callbacks must not disrupt process lifecycle.
+    }
   }
 
   private appendTail(task: InternalTask, chunk: string): void {

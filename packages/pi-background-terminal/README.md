@@ -9,6 +9,7 @@ Three independent tools to run a shell command in the background, check on it, a
 - Output streams to a file as it's produced; use the built-in `read` tool on that path for the full output instead of getting it dumped inline, which keeps a long command's output from flooding context.
 - `timeoutSeconds` is optional. Omit it for a long-lived development service; provide it when the command should be auto-terminated.
 - Task lifetime matches the current Pi session; a real session end (not `/reload`) waits for and stops all owned processes, then deletes their output files. Tasks survive `/reload`, which re-evaluates the extension module.
+- The footer shows `bg:N` while this session has running tasks; it disappears at zero.
 ## Install
 
 ```bash
