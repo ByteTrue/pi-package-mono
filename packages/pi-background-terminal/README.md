@@ -19,7 +19,7 @@ pi install npm:@bytetrue/pi-background-terminal
 
 ### `/background`
 
-Opens a menu for the current session's background commands. Select a command to open its output in the native editor, stop it, or return to the list. The menu owns the selection flow; users do not need to remember `list`/`kill` syntax or copy task ids.
+Opens a menu for the current session's running background commands. Finished, killed, timed-out, and failed tasks stay available through `background_status`, but do not clutter this management menu. Select a command to open its output in the native editor, stop it, or return to the list. The menu owns the selection flow; users do not need to remember `list`/`kill` syntax or copy task ids.
 
 ## Tools
 

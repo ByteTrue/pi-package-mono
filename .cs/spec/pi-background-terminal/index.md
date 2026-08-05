@@ -19,7 +19,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`。npm `latest`：`0.3.0`。
 - **输出落盘**：命令的 stdout/stderr 实时写入 `$TMPDIR/pi-background-terminal/<task-id>.log`；工具本身只维护一个小型内存 tail 预览（约 4000 字符）与累计行数，不重复实现 offset/limit 分页——需要看更多，直接用 Pi 内建 `read` 工具读那个文件路径。
 - **`background_status(id?)`**：不传 id 列出所有后台任务（id/command/status/输出文件路径）；传 id 看该任务详情（状态、退出码或超时、输出文件路径、行数、tail 预览、"用 read 工具看全部"提示）。
 - **`background_kill(id)`**：手动提前停止一个仍在运行的任务；已结束的任务返回友好提示而不报错；主动停止不发送自动完成 follow-up。
-- **`/background`**：用户菜单列出当前 session 的任务；进入任务后可查看落盘输出、确认停止运行中的任务或返回，不需要记 `list` / `kill` 或复制 id。
+- **`/background`**：用户菜单只列出当前 session 仍在运行的任务；终态任务仍可由 `background_status` 查询，但不进入管理菜单。进入任务后可查看落盘输出、确认停止或返回，不需要记 `list` / `kill` 或复制 id。
 - **自动完成通知**：任务自然退出或超时后，通过 `pi.sendMessage(..., {deliverAs:"followUp", triggerTurn:true})` 自动唤醒发起它的 Pi session 继续对话；主动 `background_kill` 和 session 清理不发送通知——这不是"发个消息给人看"，而是 Pi 明确设计用来在 agent 空闲时立即触发下一轮 LLM 调用的机制；`display:true` 只是顺带让人类也能在 TUI 里看到。
 - **会话隔离与清理**：任务按 `parentSessionId` 隔离；真正的 session 结束（quit/新会话/切换/fork）时等待并清理该 session 所有仍在跑的进程树与输出流，再删除对应输出文件；`/reload` 不算结束，任务原样保留（详见下文）。
 
@@ -52,7 +52,7 @@ Pi 的 `/reload` 会在**同一个 session** 上重新触发 `session_shutdown`�
 | 看所有后台任务 / 看某一个的状态和输出文件路径 | `background_status()` / `background_status(id)` |
 | 看某个后台任务的完整或大量输出 | Pi 内建 `read` 工具，读 `background_status` 给的输出文件路径 |
 | 提前停掉一个后台任务 | `background_kill(id)` |
-| 用户查看、看输出、停止或返回 | `/background` 菜单，不需要输入命令或 id |
+| 用户查看、看输出、停止仍在运行的任务或返回 | `/background` 菜单，不需要输入命令或 id |
 | 发 npm 版 | push tag `pi-background-terminal-v<version>`，由 repo `release.yml` + npm Trusted Publishing 自动发布 |
 
 ## 子系统地图
@@ -84,7 +84,7 @@ Extension entry (index.ts)
 
 **做**
 - `background_run` / `background_status` / `background_kill` 三个独立工具
-- `/background` 用户菜单：按 session 列出任务，进入后查看输出、确认停止或返回
+- `/background` 用户菜单：按 session 只列出仍在运行的任务，终态记录留给 `background_status` 查询
 - 输出实时落盘，内存只保留小型 tail 预览
 - 显式提供 `timeoutSeconds` 时自动终止 + 手动 `background_kill`；省略 timeout 表示不限时
 - 自然完成/超时自动唤醒 agent；主动 kill 与 session 清理静默

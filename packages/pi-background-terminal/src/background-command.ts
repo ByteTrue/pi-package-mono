@@ -11,9 +11,9 @@ export async function runBackgroundCommand(ctx: ExtensionCommandContext): Promis
 
   const sessionId = ctx.sessionManager.getSessionId();
   while (true) {
-    const tasks = manager.list(sessionId);
+    const tasks = manager.list(sessionId).filter((task) => task.status === "running");
     if (tasks.length === 0) {
-      ctx.ui.notify("No background commands.", "info");
+      ctx.ui.notify("No running background commands.", "info");
       return;
     }
 
@@ -29,7 +29,7 @@ export async function runBackgroundCommand(ctx: ExtensionCommandContext): Promis
 
 export function registerBackgroundCommand(pi: ExtensionAPI): void {
   pi.registerCommand("background", {
-    description: "Browse background commands, view their output, or stop one",
+    description: "Browse running background commands, view their output, or stop one",
     handler: async (_args, ctx) => runBackgroundCommand(ctx),
   });
 }

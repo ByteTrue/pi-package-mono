@@ -28,17 +28,21 @@ describe("/background command", () => {
     await manager.clearSession(SESSION_ID);
   });
 
-  it("lists a command, opens its output, then returns through the menus", async () => {
+  it("lists a running command, opens its output, then returns through the menus", async () => {
     manager.init(() => {});
-    const started = manager.start('node -e "console.log(\'menu output\')"', process.cwd(), SESSION_ID, 30);
-    await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.status).toBe("exited"), { timeout: 8000 });
+    const started = manager.start(
+      'node -e "console.log(\'menu output\'); setInterval(() => {}, 1000)"',
+      process.cwd(),
+      SESSION_ID,
+    );
+    await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.tail).toContain("menu output"), { timeout: 8000 });
 
     let selectCount = 0;
     const { ctx, ui } = makeContext((_title, options) => {
       selectCount += 1;
       if (selectCount === 1) return options[0];
       if (selectCount === 2) {
-        expect(options).toEqual(["View output", "Back"]);
+        expect(options).toEqual(["View output", "Kill", "Back"]);
         return "View output";
       }
       return options.at(-1);
@@ -48,6 +52,18 @@ describe("/background command", () => {
 
     expect(ui.editor).toHaveBeenCalledWith(expect.stringContaining("Output"), expect.stringContaining("menu output"));
     expect(ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not show finished commands in the management menu", async () => {
+    manager.init(() => {});
+    const started = manager.start("node -e \"\"", process.cwd(), SESSION_ID, 30);
+    await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.status).toBe("exited"), { timeout: 8000 });
+    const { ctx, ui } = makeContext(() => undefined);
+
+    await runBackgroundCommand(ctx);
+
+    expect(ui.select).not.toHaveBeenCalled();
+    expect(ui.notify).toHaveBeenCalledWith("No running background commands.", "info");
   });
 
   it("kills the selected running command without asking the user for an id", async () => {
@@ -95,6 +111,6 @@ describe("/background command", () => {
 
     await runBackgroundCommand(ctx);
 
-    expect(ui.notify).toHaveBeenCalledWith("No background commands.", "info");
+    expect(ui.notify).toHaveBeenCalledWith("No running background commands.", "info");
   });
 });
