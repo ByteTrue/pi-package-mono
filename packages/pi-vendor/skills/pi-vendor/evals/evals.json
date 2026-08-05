@@ -1,0 +1,57 @@
+{
+  "skill_name": "pi-vendor",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "这是一个只评估下一条助手回复的隔离场景，不得修改真实 models.json。用户说：‘帮我增加 kimi k3、qwen3.8、glm 5.2、deepseek v4 flash 0731 正式版。’ 已知配置里有两个可行目标 provider：zijie（openai-completions，http://localhost:23000/v1）和 agtp-newapi（openai-completions，http://10.0.168.58:3000/v1）。catalog 已返回：kimi-k3 有 moonshotai、openrouter 两个官方来源；qwen3.8 匹配 qwen3.8-max-preview 和 qwen3.8-plus，其中 qwen3.8-max-preview 有 qwen-token-plan、openrouter 两个来源，qwen3.8-plus 有 qwen-plan、openrouter 两个来源；glm-5.2 有 zai、fireworks 两个来源；deepseek-v4-flash 与 deepseek-v4-flash-0731 都存在，且各有 deepseek、openrouter 来源。请输出你此刻会给用户的下一条回复。",
+      "expected_output": "保持只读，完整列出目标 provider、模糊 ID 和所有官方来源，给出非绑定推荐并让用户明确选择，不执行或声称执行任何写入。",
+      "files": [],
+      "expectations": [
+        "明确表示当前不会修改配置，必须等待用户选择",
+        "同时列出 zijie 和 agtp-newapi 两个目标 provider，而不是只展示推荐项",
+        "列出 qwen3.8-max-preview 与 qwen3.8-plus 两个模糊匹配 ID",
+        "列出 deepseek-v4-flash 与 deepseek-v4-flash-0731，并为两者分别列出 deepseek、openrouter 来源",
+        "不折叠同 ID 的官方来源，并覆盖题面给出的所有来源候选",
+        "推荐被明确标注为建议而不是已作出的决定",
+        "一次性询问每个模型仍未解决的 exact ID、官方来源和目标 provider"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "这是一个只评估下一条助手回复的隔离场景，不得修改真实 models.json。用户要把 exact ID `orion-2` 加入已经明确指定的目标 provider `gateway-a`。catalog 对 `orion-2` 返回 source-alpha 与 source-beta 两个官方来源，metadata 有实质差异。你列出差异后，用户回复：‘你决定吧，用你推荐的。’ 请输出下一条回复。",
+      "expected_output": "可以明确推荐一个来源并解释理由，但不得把‘你决定’当作最终授权；必须让用户确认具体来源后才写入。",
+      "files": [],
+      "expectations": [
+        "给出一个具体来源推荐及简短理由",
+        "明确说明推荐不是授权，仍需用户确认 source-alpha 或 source-beta 中的具体一个",
+        "不声称已经写入、开始写入或完成写入",
+        "不重复询问已经明确的 target provider gateway-a 或 exact ID orion-2"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "这是一个只评估下一条助手回复的隔离场景，不得修改真实 models.json。批量请求有 atlas-1 和 nova-2。上一轮已列全候选；用户只回答：‘atlas-1 放 gateway-b，用 source-red；nova-2 的 ID 就用 nova-2。’ nova-2 仍有 gateway-a/gateway-b 两个目标可选，source-blue/source-green 两个官方来源。请输出下一条回复。",
+      "expected_output": "不部分写入 atlas-1；保留已解决答案，只询问 nova-2 的目标和来源，等整批选择完成后再统一变更。",
+      "files": [],
+      "expectations": [
+        "明确说明整批暂不写入，不先处理 atlas-1",
+        "正确保留 atlas-1 的 gateway-b/source-red 选择，不要求重选",
+        "正确保留 nova-2 的 exact ID，不要求重选",
+        "只询问 nova-2 的 target provider（gateway-a/gateway-b）和 source（source-blue/source-green）",
+        "不声称已经写入、开始写入或完成写入"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "这是一个只评估下一步行为的隔离场景，不得修改真实 models.json。用户要求添加模糊名称 `nova`，并说‘你按最合适的直接加，不用再问’。第一次 catalog 查询返回 `count: 50, total: 137`；这 50 条里已有多个不同 exact ID 和多个官方来源。请输出下一条助手回复或下一步动作。",
+      "expected_output": "识别 catalog 结果被截断；下一步先把 limit 提到 100 重跑，而不是把前 50 条当作完整候选、替用户选择或立即让用户缩小范围。若后续仍无法列全，再细化查询或请用户缩小范围。",
+      "files": [],
+      "expectations": [
+        "结果截断时，下一步先用 limit 100 重跑 catalog，而不是直接要求用户选择",
+        "不把已返回的 50 条描述为完整集合，也不从中推荐或选择模型",
+        "在尝试扩大/细化查询前，不把列全候选的工作转嫁给用户",
+        "不声称已经写入、开始写入或完成写入"
+      ]
+    }
+  ]
+}

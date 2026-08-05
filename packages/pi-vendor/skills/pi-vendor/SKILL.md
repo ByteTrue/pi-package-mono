@@ -5,75 +5,106 @@ description: >
   and modelOverrides in models.json. Use whenever the user asks to configure a
   model/provider, change routing or API adapters, import /models ids, repair or
   audit Pi model configuration, or mentions models.json. Prefer this skill over
-  inventing model metadata. It keeps apiKey values out of replies and requires
-  explicit choice when official templates are ambiguous.
+  inventing model metadata. It protects credentials and requires the user—not
+  the AI—to choose every ambiguous target provider, model ID, and official source.
 ---
 
 # Pi Vendor
 
-Manage Pi's `models.json` with the AI's normal read/edit tools and the bundled Node script:
+Manage Pi's `models.json` with normal read/edit tools and the bundled Node script:
 
 ```sh
 node '<absolute-skill-directory>/scripts/vendor.mjs' <catalog|discover|lint|set-key> [argument]
 ```
 
-Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value; never interpolate shell operators. `catalog`, `discover`, and `lint` are AI-facing commands. `set-key` is user-terminal-only because it prompts for a secret.
+Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value; never interpolate shell operators. `catalog`, `discover`, and `lint` are AI-facing. `set-key` is user-terminal-only because it prompts for a secret.
 
-The package deliberately has no AI tool or general write command. Make the smallest targeted edit with the normal edit tool, then run `lint`.
+The package deliberately has no general write tool. Make the smallest targeted edit with the normal edit tool, then run `lint`.
+
+## User decides; AI recommends
+
+Treat configuration as a two-phase transaction because a plausible model can still be the wrong provider, source, or ID.
+
+### Phase 1: inspect and ask — read-only
+
+Read the active file, run all useful catalog/discovery queries, and present the complete decision set. Do **not** call edit/write or partially mutate the file during this phase.
+
+The user owns these choices:
+
+- target provider key;
+- exact model ID when the request is fuzzy, has several matches, or has no official match;
+- official source provider whenever an exact model ID has multiple catalog sources;
+- overwrite/conflict resolution;
+- whether to create a custom model when no official template exists;
+- every removal or other destructive operation not already named exactly.
+
+Never infer a user-owned choice from the current routing, nearby models, prior conventions, the first catalog result, or your recommendation. A request such as “add these models” authorizes the operation, not unresolved placement or identity choices. If the user says “you choose”, give one recommendation with reasons and ask them to confirm that concrete option; a recommendation is not authorization.
+
+For a batch, resolve every item before editing. Ask once with a compact table or numbered list. If the user answers only some items, keep the whole batch read-only and ask only for the unresolved choices.
+
+When the `question` tool is available, use it for the unresolved choices and include every viable option plus the custom-answer path. Otherwise ask in plain text. Mark recommendations clearly, but do not preselect or execute them.
+
+### Phase 2: mutate — only after explicit selection
+
+Proceed only when the user's own words resolve every applicable choice. Restate the resulting plan as `(requested name → exact ID → official source/custom → target provider)` and then perform the narrow edit.
+
+A provider-qualified model such as `anthropic/claude-opus-4-5` resolves the official source only after catalog verification. An exact target provider named by the user resolves placement. Exact prior answers in the same conversation remain valid; do not ask twice.
+
+### Required comparison
+
+For every fuzzy query or exact ID with multiple sources, show **all** matches returned by `catalog`, grouped by exact model ID and then official source provider. Do not collapse duplicate IDs across sources. Include only useful differences:
+
+- exact model ID and name;
+- official source provider;
+- API adapter;
+- context window and max tokens;
+- input types, cost, and material compat differences.
+
+Also list every viable configured target provider when placement is unresolved, with its provider key and effective API/base URL. You may recommend one option with a short reason. Never describe a candidate as “the one” until the user selects it.
+
+If catalog returns no match, say that this is not proof the model is invalid. Ask whether to use the requested text as a custom ID or provide another exact ID; do not silently normalize, suffix, or substitute it.
 
 ## Non-negotiable boundaries
 
 - Treat every `apiKey` value as secret. You may read it to preserve the document, but never reproduce it in replies, proposed diffs, logs, tool arguments, or summaries. Refer to it only as “configured”, “missing”, or “changed”.
-- Never ask the user to paste a key into chat. Use the bundled terminal script described under **API keys**.
-- Distinguish the **target provider** (the key being edited) from the **official source provider** (the catalog template copied). They often differ.
-- Never invent pricing, capabilities, context limits, token limits, or compat fields. Copy an explicitly selected official template or leave unknown metadata absent.
-- Do not mutate `auth.json`, OAuth state, Pi settings, or unrelated providers unless the user explicitly asks.
-- Preserve unknown fields and unrelated formatting/content. Use narrow edits rather than rewriting the whole document.
+- Never ask the user to paste a key into chat. Use **API keys** below.
+- Distinguish the target provider being edited from the official source provider whose metadata is copied.
+- Never invent pricing, capabilities, context limits, token limits, or compat fields. Copy a user-selected official template or leave unknown metadata absent.
+- Do not mutate `auth.json`, OAuth state, Pi settings, or unrelated providers unless explicitly requested.
+- Preserve unknown fields and unrelated content. Use narrow edits rather than rewriting the document.
 
 ## Locate and inspect
 
-The file is:
+The active file is:
 
-1. `$PI_CODING_AGENT_DIR/models.json` when that environment variable is set;
+1. `$PI_CODING_AGENT_DIR/models.json` when set;
 2. otherwise `~/.pi/agent/models.json`.
 
-Read the active file before every mutation. Identify the requested operation and exact target provider/model. If the same model id exists under several target providers and the user did not name one, ask which target to edit. For ad hoc local inspection, use Node rather than assuming Python is installed; Pi itself guarantees a Node runtime.
+Read it before every mutation. For inspection or audit, summarize routing and model IDs without credential values. Include model-level `api`/`baseUrl` overrides because they can differ from provider defaults. Use Node for ad hoc inspection rather than assuming Python is installed.
 
-For inspection or audit, summarize provider routing and model ids without showing credential values. Include model-level `api`/`baseUrl` overrides because they can differ from provider defaults.
+## Official catalog
 
-## Official template selection
-
-Run the bundled script before adding or aligning a model:
+Before adding or aligning a model, run:
 
 ```sh
-node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<query>'
+node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<query>' ['<limit>']
 ```
 
-If it reports that the official catalog is unavailable, stop and repair/retry catalog resolution; do not reinterpret that failure as “no official match”.
-
-1. If several distinct model ids match the query, show a compact comparison and ask which id the user means.
-2. Once the id is exact, group candidates by official source provider.
-3. If more than one official source remains, show material differences and ask the user to choose. Never silently pick one; a recommendation with a reason is allowed.
-4. A provider-qualified request such as `anthropic/claude-opus-4-5` is an explicit source choice. Verify it exists and continue.
-5. With no official match, say so and ask whether to create a custom model. Require only facts the user knows; do not fill unknown metadata from memory.
-
-When displaying comparisons, include only useful differing fields: model id, name, source provider, API, context window, max tokens, cost, input types, and material compat differences. Catalog templates contain no credentials.
+If the official catalog is unavailable, stop and repair/retry catalog resolution; do not reinterpret the failure as “no match”. Run broad enough queries to find fuzzy IDs, but preserve the script's full result set for the user-choice phase. Check the returned `count` against `total`: when `count < total`, first rerun as `catalog '<query>' '100'`, then refine the query until every relevant match is enumerated. If the result still cannot be made complete, say it is truncated and ask the user to narrow the query; never present a partial set as complete or enter the mutation phase.
 
 ## Provider operations
 
 ### Add
 
-Decide whether this is a minimal override of a built-in provider or a new custom provider.
-
-For a built-in override, keep the built-in catalog and add only requested routing fields. For a custom provider, collect the provider key, `baseUrl`, API adapter, and required headers. Add only evidence-backed fields. If a key is required, create the provider without exposing a secret and then use **API keys**.
+Determine whether candidates are built-in overrides or custom providers, but leave ambiguous placement to the user. For a built-in override, keep the built-in catalog and add only requested routing fields. For a custom provider, collect the provider key, `baseUrl`, API adapter, and required headers. Add only evidence-backed fields. If a key is required, create the provider without exposing a secret and then use **API keys**.
 
 ### Update
 
-Patch only requested fields. Before changing provider-level `api`, `baseUrl`, or `compat`, identify models that inherit that value and preserve required model-level overrides.
+Patch only requested fields. Before changing provider-level `api`, `baseUrl`, or `compat`, identify models that inherit it and preserve required model-level overrides.
 
 ### Remove
 
-Name the exact provider and contained custom models. Check obvious references before deletion. Require confirmation unless the user's instruction already names the exact provider and explicitly requests removal. Explain that removing a built-in override restores built-in behavior rather than deleting Pi's built-in provider.
+Show the exact provider and contained custom models, and check obvious references before deletion. Confirm unless the user already named that exact provider and explicitly requested removal. Explain that removing a built-in override restores built-in behavior rather than deleting Pi's built-in provider.
 
 ## Model operations
 
@@ -85,60 +116,54 @@ For a configured target provider, run:
 node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>' ['<configured-model-id>']
 ```
 
-The optional configured model id makes discovery use that model's effective `api`, `baseUrl`, and headers together with the provider's `authHeader`; this is required for providers that mix OpenAI, Anthropic, and Google routes. For a heterogeneous provider, group configured models by effective route and run one representative model from each group.
+The optional model ID uses that model's effective `api`, `baseUrl`, and headers together with the provider's `authHeader`. For a heterogeneous provider, group configured models by effective route and run one representative from each group.
 
-Discovery is **positive evidence for support, and a useful warning signal when configured ids are not listed**. A returned id proves that route listed it. A configured id missing from the response should be reported as “not listed by this route; verify with a real request or upstream documentation”, because model-list APIs may be incomplete or paginated. Never promote that warning alone to “unsupported”, and never delete or reroute the model without stronger evidence. Still run `catalog` for metadata. When reporting discovery, preserve the script's exact unique `modelIds` and count; if routes return the same set, say so instead of retranscribing the list.
+Discovery is positive evidence only. A returned ID proves that route listed it. A configured ID missing from the response is a warning to verify with a real request or upstream documentation; list APIs may be incomplete or paginated. Never call it unsupported, delete it, or reroute it from absence alone. Still run `catalog` for metadata. Preserve exact unique IDs and counts; when routes return the same set, say so instead of duplicating the list.
 
 ### Add or update
 
-Copy the selected official template's non-routing metadata. Do not copy catalog `baseUrl`, credentials, or headers into the target provider.
+Copy non-routing metadata from the official source the user selected. Do not copy catalog `baseUrl`, credentials, or headers into the target provider.
 
-Routing rule:
+Routing rules:
 
 - if the selected model uses `anthropic-messages` and the target provider `baseUrl` ends in `/v1`, set a model-level `baseUrl` with that trailing `/v1` removed;
-- for other API adapters, do not add a model-level `baseUrl` unless the user explicitly needs a distinct endpoint;
+- otherwise add model-level `baseUrl` only when the user explicitly needs a distinct endpoint;
 - add model-level `api` only when it differs from the target provider's inherited adapter.
 
-Use `models` for new/custom model definitions and `modelOverrides` for partial changes to an existing built-in or extension model. Never create duplicate ids in one provider's `models` array.
+Use `models` for new/custom definitions and `modelOverrides` for partial changes to an existing built-in or extension model. Never create duplicate IDs in one provider's `models` array. A conflict is a user-owned choice: report the exact path and ask whether to update, replace, skip, or choose another target.
 
 ### Remove
 
-Identify whether the target is in `models` or `modelOverrides`, show the exact target, and confirm unless the user's instruction already explicitly requests that exact deletion. Delete only that occurrence.
+Identify whether the target is in `models` or `modelOverrides`, show the exact occurrence, and confirm unless the user explicitly requested that exact deletion. Delete only that occurrence.
 
 ## API keys
 
-The bundled script updates exactly one provider's `apiKey`, prompts in the user's terminal without echoing the value, and writes `models.json` atomically with mode `0600`:
+Give this command to the user; do not execute it because it needs interactive secret input:
 
 ```sh
 node '<absolute-skill-directory>/scripts/vendor.mjs' set-key '<provider-key>'
 ```
 
-Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`, and quote both paths safely. Give this command to the user; do not execute it on their behalf because it needs interactive secret input. The key never appears in the command line or chat.
-
-After the user reports completion, run `lint`. Do not ask them to reveal the value.
+The script updates one provider's `apiKey`, prompts without echo, and atomically writes mode `0600`. After the user reports completion, run `lint`; never ask them to reveal the value.
 
 ## Check every mutation
 
 After each edit:
 
 1. run `node '<absolute-skill-directory>/scripts/vendor.mjs' lint`;
-2. if lint fails, repair the targeted change or restore the previous value before proceeding;
-3. for additions, re-read the file and confirm the intended provider/model exists;
-4. report only changed JSON paths, the selected official source provider, and lint status.
+2. if lint fails, repair the targeted change or restore the previous value;
+3. re-read and confirm the intended provider/model exists;
+4. report changed JSON paths, the user-selected official source/custom status, and lint status only.
 
-`lint` checks JSON shape and duplicate model ids locally. It does not claim that a running Pi session has loaded the model; the user can reload Pi and select the model when runtime confirmation is needed.
-
-Do not print the whole edited provider or a full diff when it would expose `apiKey`.
+`lint` checks shape and duplicate IDs. It does not prove a running Pi session loaded the model. Do not print the whole provider or a full diff when it could expose `apiKey`.
 
 ## Audit
 
-For an audit:
-
-1. parse and lint the current file;
-2. inspect duplicate ids, missing routing facts, broken shapes, and suspicious model-level overrides;
-3. group heterogeneous providers by effective API, base URL, and merged headers, then run route-specific discovery; report configured ids missing from each route as **warnings requiring verification**, not proof that they are unsupported;
-4. compare official-aligned models with the script's `catalog` command, but report ambiguity instead of assuming a source provider;
-5. distinguish deliberate custom models from invalid models;
-6. report findings by severity with exact JSON paths and remediation, never credential values.
+1. Parse and lint the current file.
+2. Inspect duplicate IDs, missing routing facts, broken shapes, and suspicious model-level overrides.
+3. Group heterogeneous providers by effective API, base URL, and merged headers; use route-specific discovery and report missing configured IDs as warnings requiring verification.
+4. Compare official-aligned models with `catalog`; expose every source ambiguity instead of choosing.
+5. Distinguish deliberate custom models from invalid models.
+6. Report severity, exact JSON paths, and remediation without credential values.
 
 A clean audit says what was checked and that `lint` passed. Do not rewrite a clean file.
