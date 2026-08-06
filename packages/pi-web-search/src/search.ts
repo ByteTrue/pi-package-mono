@@ -141,7 +141,7 @@ export async function searchWithProvider(
 		if (signal?.aborted) throw error;
 		const message = truncateUtf8(error instanceof Error ? error.message : String(error), MAX_SEARCH_ERROR_BYTES).text;
 		const available = listAvailableSearchProviders(config).filter((candidate) => candidate !== name);
-		const retry = available.length ? ` Retry explicitly with provider: ${available.join(", ")}.` : "";
+		const retry = available.length ? ` Retry web_search with retry_provider: ${available.join(", ")}.` : "";
 		throw new Error(`${name} search failed: ${message}.${retry}`);
 	}
 }

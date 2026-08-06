@@ -53,8 +53,8 @@ Agent：pi-image-gen Skill ──bash──> bundled image-gen CLI ──> gener
 
 ### pi-web-search
 
-- `web_search` schema 增加可选 `provider`；省略时用 `/web` 选定 provider，显式提供时只尝试该 provider。不存在隐式跨 provider fallback，也不再保留 `autoFallback` 配置。
-- provider 失败信息列出可重试的已配置 search provider 名称，但不自动发送 query。
+- `web_search` schema 增加可选 `retry_provider`；首轮省略并使用 `/web` 选定 provider，只有前一调用失败后的新调用才显式提供。不存在隐式跨 provider fallback，也不再保留 `autoFallback` 配置。
+- provider 失败信息列出可重试的已配置 search provider 名称，并明确下一调用使用 `retry_provider`，但不自动发送 query。
 - `web_fetch` 无论当前 search provider 是什么，都只调用 `fetchViaGenericHtml`；search provider 与 fetch transport 解耦。
 - 两工具删除 `promptSnippet`、`promptGuidelines`、`renderCall`、`renderResult`；能力、边界与输出约定集中在 tool description / schema / result。
 - `/web` 保留 provider、key、base URL、proxy 的完整配置能力。
@@ -74,9 +74,9 @@ B. extension 在 `session_start` 把 `ctx.isProjectTrusted()` 写入绑定 canon
 
 A. 保留 `autoFallback`，只把默认改 false：仍保留隐式多供应商行为与配置/测试面，Agent 也无法在单次重试中选 provider。
 
-B. 删除 fallback orchestration，给 `web_search` 增加可选 provider。
+B. 删除 fallback orchestration，给 `web_search` 增加可选 `retry_provider`。
 
-选择 **B**。一次 tool call 只联系一个明确 provider；重试是新的可观察 tool call。
+选择 **B**。首轮必须省略该参数并使用 `/web` 当前 provider；失败后的重试才设置它。一次 tool call 只联系一个明确 provider。
 
 ## 质量目标
 

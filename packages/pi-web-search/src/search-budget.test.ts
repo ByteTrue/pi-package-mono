@@ -86,7 +86,7 @@ describe("search result budget", () => {
 		} catch (error) {
 			message = error instanceof Error ? error.message : String(error);
 		}
-		const providerPart = message.slice("exa-free search failed: ".length).split(". Retry explicitly")[0]!;
+		const providerPart = message.slice("exa-free search failed: ".length).split(". Retry web_search")[0]!;
 		expect(byteLength(providerPart)).toBeLessThanOrEqual(MAX_SEARCH_ERROR_BYTES);
 	});
 });

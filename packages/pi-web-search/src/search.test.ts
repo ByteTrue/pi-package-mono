@@ -27,7 +27,7 @@ describe("explicit search provider", () => {
 	it("does not fall back after a provider error and names explicit retry choices", async () => {
 		vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
 		await expect(searchWithProvider({ provider: "bing" }, undefined, "x", 3, undefined)).rejects.toThrow(
-			/bing search failed.*Retry explicitly with provider: exa-free/s,
+			/bing search failed.*Retry web_search with retry_provider: exa-free/s,
 		);
 	});
 

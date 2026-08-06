@@ -15,7 +15,6 @@ const targeted = process.argv.some((a) => a.includes("live.e2e.test"));
 const runLive = process.env.BYTE_PI_WEB_LIVE_E2E === "1" || process.env.npm_lifecycle_event === "test:e2e" || targeted;
 const liveDescribe = runLive ? describe : describe.skip;
 const QUERY = process.env.BYTE_PI_WEB_E2E_QUERY || "OpenAI Codex CLI documentation";
-const MAX_RESULTS = Number(process.env.BYTE_PI_WEB_E2E_MAX_RESULTS || 3);
 const SEARCH_PROVIDERS = PROVIDERS;
 const ALL_PROVIDER_NAMES = SEARCH_PROVIDERS.map((provider) => provider.name);
 
@@ -134,7 +133,7 @@ liveDescribe("live pi web_search provider e2e", () => {
 				const updates: any[] = [];
 				const result = await tool.execute(
 					`live-${provider}`,
-					{ query: QUERY, max_results: MAX_RESULTS, provider },
+					{ query: QUERY },
 					undefined,
 					(update: any) => updates.push(update),
 					{},
