@@ -157,4 +157,40 @@ describe('resolveModel', () => {
     if ('error' in b) throw new Error(b.error);
     expect(b.provider.id).toBe('wide');
   });
+  it('routes an explicitly configured keyless built-in provider', () => {
+    const previous = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const result = resolveModel('gpt-image-2', {
+        providers: { openai: { baseUrl: 'http://127.0.0.1:8188/v1' } },
+      });
+      if ('error' in result) throw new Error(result.error);
+      expect(result.provider.id).toBe('openai');
+      expect(result.provider.apiKey).toBeUndefined();
+      expect(result.provider.baseUrl).toBe('http://127.0.0.1:8188/v1');
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
+  });
+
+  it('resolves environment references inside custom headers', () => {
+    process.env.CORP_HEADER_TOKEN = 'header-secret';
+    try {
+      const result = resolveModel('corp/image-v1', {
+        customProviders: {
+          corp: {
+            api: 'openai',
+            baseUrl: 'https://images.example/v1',
+            headers: { authorization: 'Bearer $CORP_HEADER_TOKEN' },
+          },
+        },
+      });
+      if ('error' in result) throw new Error(result.error);
+      expect(result.provider.headers).toEqual({ authorization: 'Bearer header-secret' });
+    } finally {
+      delete process.env.CORP_HEADER_TOKEN;
+    }
+  });
+
 });

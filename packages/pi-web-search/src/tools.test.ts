@@ -1,67 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { formatSearchResults, needsBaseUrlPrompt, registerWebSearchTool } from "./tools.js";
+import { formatSearchResults, maskProxyUrl, needsBaseUrlPrompt, registerWebFetchTool, registerWebSearchTool } from "./tools.js";
 
-const theme = {
-	fg: (_color: string, text: string) => text,
-	bold: (text: string) => text,
-} as never;
+describe("minimal tool definitions", () => {
+	it("keeps behavior in descriptions/schema without prompt metadata or custom renderers", () => {
+		const tools: any[] = [];
+		const pi = { registerTool: (definition: any) => tools.push(definition) } as never;
+		registerWebSearchTool(pi);
+		registerWebFetchTool(pi);
 
-describe("web_search TUI rendering", () => {
-	it("shows provider in collapsed view and results when expanded", () => {
-		let tool: any;
-		registerWebSearchTool({ registerTool: (definition: any) => (tool = definition) } as never);
-
-		const result = {
-			content: [{ type: "text", text: "ignored" }],
-			details: {
-				backend: "exa-free",
-				resultCount: 1,
-				query: "OpenAI Codex CLI",
-				results: [{ title: "Example", url: "https://example.com", snippet: "A snippet" }],
-			},
-		};
-
-		expect(tool.renderResult(result, { expanded: false }, theme, {}).render(120).join("\n").trimEnd()).toBe(
-			"✓ 1 result via exa-free for \"OpenAI Codex CLI\"",
-		);
-		expect(tool.renderResult(result, { expanded: true }, theme, {}).render(120).join("\n")).toContain(
-			"OpenAI Codex CLI",
-		);
-		expect(tool.renderResult(result, { expanded: true }, theme, {}).render(120).join("\n")).toContain(
-			"https://example.com",
-		);
+		for (const tool of tools) {
+			expect(tool.promptSnippet).toBeUndefined();
+			expect(tool.promptGuidelines).toBeUndefined();
+			expect(tool.renderCall).toBeUndefined();
+			expect(tool.renderResult).toBeUndefined();
+		}
+		const search = tools.find((tool) => tool.name === "web_search");
+		expect(search.parameters.properties.provider).toBeDefined();
 	});
 });
 
-describe("web_search tool content", () => {
-	it("tells the agent which provider won and whether fallback happened", () => {
+describe("web_search content", () => {
+	it("reports the one provider that answered", () => {
 		const text = formatSearchResults(
 			"OpenAI Codex CLI",
 			[{ title: "Example", url: "https://example.com", snippet: "A snippet" }],
-			{ backend: "bing", fellBackFrom: ["exa-free: 0 results"] },
+			{ backend: "bing" },
 		);
-
 		expect(text).toContain("Search provider: bing");
-		expect(text).toContain("Fallback: exa-free: 0 results");
+		expect(text).not.toContain("Fallback:");
+	});
+});
+
+describe("proxy display", () => {
+	it("masks credentials and omits proxy path/query", () => {
+		expect(maskProxyUrl("http://user:secret@proxy.example:8080/path?token=x")).toBe(
+			"http://****:****@proxy.example:8080",
+		);
+		expect(maskProxyUrl("socks5://proxy.example:1080")).toBe("socks5://proxy.example:1080");
+		expect(maskProxyUrl(undefined)).toBe("(not set)");
 	});
 });
 
 describe("/web provider setup", () => {
+	const meta = { name: "searxng", label: "SearXNG", keyless: true, baseUrlEnvVar: "SEARXNG_URL" };
+
 	it("prompts for SearXNG URL when neither env nor config has one", () => {
-		expect(
-			needsBaseUrlPrompt(
-				{ name: "searxng", label: "SearXNG", roles: ["search"], keyless: true, baseUrlEnvVar: "SEARXNG_URL" },
-				{},
-			),
-		).toBe(true);
+		expect(needsBaseUrlPrompt(meta, {})).toBe(true);
 	});
 
 	it("does not prompt when SearXNG URL is already configured", () => {
-		expect(
-			needsBaseUrlPrompt(
-				{ name: "searxng", label: "SearXNG", roles: ["search"], keyless: true, baseUrlEnvVar: "SEARXNG_URL" },
-				{ baseUrls: { searxng: "http://localhost:8080" } },
-			),
-		).toBe(false);
+		expect(needsBaseUrlPrompt(meta, { baseUrls: { searxng: "http://localhost:8080" } })).toBe(false);
 	});
 });

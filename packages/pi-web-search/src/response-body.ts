@@ -1,4 +1,5 @@
 export const MAX_RESPONSE_BODY_BYTES = 10 * 1024 * 1024;
+export const MAX_SEARCH_RESPONSE_BODY_BYTES = 2 * 1024 * 1024;
 
 function overBudget(limit: number): Error {
 	return new Error(`Response body exceeds the ${limit}-byte limit`);
@@ -47,5 +48,10 @@ export async function readResponseJson<T>(
 	response: Pick<Response, "body" | "headers">,
 	maxBytes: number = MAX_RESPONSE_BODY_BYTES,
 ): Promise<T> {
-	return JSON.parse(await readResponseText(response, maxBytes)) as T;
+	const text = await readResponseText(response, maxBytes);
+	try {
+		return JSON.parse(text) as T;
+	} catch {
+		throw new Error("Response body is not valid JSON");
+	}
 }

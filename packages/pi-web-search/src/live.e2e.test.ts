@@ -16,8 +16,8 @@ const runLive = process.env.BYTE_PI_WEB_LIVE_E2E === "1" || process.env.npm_life
 const liveDescribe = runLive ? describe : describe.skip;
 const QUERY = process.env.BYTE_PI_WEB_E2E_QUERY || "OpenAI Codex CLI documentation";
 const MAX_RESULTS = Number(process.env.BYTE_PI_WEB_E2E_MAX_RESULTS || 3);
-const SEARCH_PROVIDERS = PROVIDERS.filter((p) => p.roles.includes("search"));
-const ALL_PROVIDER_NAMES = SEARCH_PROVIDERS.map((p) => p.name);
+const SEARCH_PROVIDERS = PROVIDERS;
+const ALL_PROVIDER_NAMES = SEARCH_PROVIDERS.map((provider) => provider.name);
 
 interface WebConfig {
 	provider?: string;
@@ -25,7 +25,6 @@ interface WebConfig {
 	apiKeys?: Record<string, string>;
 	baseUrls?: Record<string, string>;
 	proxy?: string;
-	autoFallback?: boolean;
 }
 
 function readJson(path: string): WebConfig {
@@ -53,7 +52,6 @@ function providerConfig(name: string, keyConfig: WebConfig, realConfig: WebConfi
 		baseUrls: keyConfig.baseUrls,
 		proxy: process.env.BYTE_PI_WEB_E2E_PROXY || keyConfig.proxy || realConfig.proxy,
 		provider: name,
-		autoFallback: false,
 	};
 }
 
@@ -136,7 +134,7 @@ liveDescribe("live pi web_search provider e2e", () => {
 				const updates: any[] = [];
 				const result = await tool.execute(
 					`live-${provider}`,
-					{ query: QUERY, max_results: MAX_RESULTS },
+					{ query: QUERY, max_results: MAX_RESULTS, provider },
 					undefined,
 					(update: any) => updates.push(update),
 					{},
@@ -144,7 +142,6 @@ liveDescribe("live pi web_search provider e2e", () => {
 
 				expect(updates.at(-1)?.details).toMatchObject({ backend: provider, query: QUERY });
 				expect(result.details).toMatchObject({ backend: provider, query: QUERY });
-				expect(result.details.fellBackFrom, JSON.stringify(result.details, null, 2)).toBeUndefined();
 				expect(result.details.results?.length, JSON.stringify(result.details, null, 2)).toBeGreaterThan(0);
 				expect(result.details.results[0].url).toMatch(/^https?:\/\//);
 			},

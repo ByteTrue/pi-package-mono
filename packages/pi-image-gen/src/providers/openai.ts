@@ -39,9 +39,6 @@ export const openaiAdapter: ImageProviderAdapter = {
     signal?: AbortSignal,
     inputs?: ResolvedImageInput[],
   ): Promise<RawImageResult[]> {
-    if (!provider.apiKey) {
-      throw new Error(missingKeyMessage(provider));
-    }
     const base = withDefaultPath(provider.baseUrl, '/v1');
     if (inputs && inputs.length > 0) {
       return generateWithImages(provider, base, remoteModelId, params, inputs, fetchImpl, signal);
@@ -169,12 +166,6 @@ export async function parseImagesResponse(
   return out;
 }
 
-export function missingKeyMessage(provider: ResolvedProvider): string {
-  if (provider.builtIn) {
-    return `Provider "${provider.id}" has no API key. Tell the user to set OPENAI_API_KEY (or pi-image-gen.providers.${provider.id}.apiKey in settings.json).`;
-  }
-  return `Provider "${provider.id}" has no API key. Tell the user to set pi-image-gen.customProviders.${provider.id}.apiKey in settings.json.`;
-}
 
 async function safeText(res: Response): Promise<string> {
   try {

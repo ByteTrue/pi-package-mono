@@ -1,6 +1,7 @@
-/** Brave Search — search only. API logic adapted from MIT rpiv-web-tools. */
+/** Brave Search. API logic adapted from MIT rpiv-web-tools. */
 
 import { fetchWithProxy as fetch } from "../proxy.js";
+import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
@@ -17,9 +18,7 @@ export class BraveProvider implements SearchProvider {
 	constructor(private readonly apiKey: string) {}
 
 	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
-		if (!this.apiKey) {
-			throw new Error(`${ENV_VAR} is not set. Run /web to configure a key, or export ${ENV_VAR}.`);
-		}
+		if (!this.apiKey) throw new Error(`${ENV_VAR} is not set. Run /web to configure a key, or export ${ENV_VAR}.`);
 		const url = new URL(BRAVE_SEARCH_URL);
 		url.searchParams.set("q", query);
 		url.searchParams.set("count", String(maxResults));
@@ -28,12 +27,15 @@ export class BraveProvider implements SearchProvider {
 			headers: { Accept: "application/json", "Accept-Encoding": "gzip", "X-Subscription-Token": this.apiKey },
 			signal,
 		});
-		if (!res.ok) throw new Error(`${this.label} search error (${res.status}): ${await res.text()}`);
-		const raw = (await res.json()) as BraveResponse;
-		const results: SearchResult[] = (raw.web?.results ?? []).map((r) => ({
-			title: r.title ?? "",
-			url: r.url ?? "",
-			snippet: r.description ?? "",
+		if (!res.ok) {
+			await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
+			throw new Error(`${this.label} search error (${res.status})`);
+		}
+		const raw = await readResponseJson<BraveResponse>(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
+		const results: SearchResult[] = (raw.web?.results ?? []).map((result) => ({
+			title: result.title ?? "",
+			url: result.url ?? "",
+			snippet: result.description ?? "",
 		}));
 		return { query, results };
 	}

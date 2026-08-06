@@ -31,9 +31,6 @@ export const arkAdapter: ImageProviderAdapter = {
     signal?: AbortSignal,
     inputs?: ResolvedImageInput[],
   ): Promise<RawImageResult[]> {
-    if (!provider.apiKey) {
-      throw new Error(missingKeyMessage(provider));
-    }
     const base = withDefaultPath(provider.baseUrl, '/api/v3');
     const url = `${base}/images/generations`;
     const body: Record<string, unknown> = {
@@ -60,10 +57,3 @@ export const arkAdapter: ImageProviderAdapter = {
     return parseImagesResponse(res, url, provider);
   },
 };
-
-function missingKeyMessage(provider: ResolvedProvider): string {
-  if (provider.builtIn) {
-    return `Provider "${provider.id}" has no API key. Tell the user to set ARK_API_KEY (or pi-image-gen.providers.${provider.id}.apiKey in settings.json).`;
-  }
-  return `Provider "${provider.id}" has no API key. Tell the user to set pi-image-gen.customProviders.${provider.id}.apiKey in settings.json.`;
-}

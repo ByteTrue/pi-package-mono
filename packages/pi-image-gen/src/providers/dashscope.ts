@@ -27,14 +27,11 @@ export const dashscopeAdapter: ImageProviderAdapter = {
     signal?: AbortSignal,
     inputs?: ResolvedImageInput[],
   ): Promise<RawImageResult[]> {
-    if (!provider.apiKey) {
-      throw new Error(missingKeyMessage(provider));
-    }
     const base = withDefaultPath(provider.baseUrl, '/api/v1');
     const headers: Record<string, string> = {
-      authorization: `Bearer ${provider.apiKey}`,
       'content-type': 'application/json',
     };
+    if (provider.apiKey) headers.authorization = `Bearer ${provider.apiKey}`;
     if (provider.headers) Object.assign(headers, provider.headers);
 
     const userContent: Array<{ text?: string; image?: string }> = [];
@@ -101,12 +98,6 @@ export const dashscopeAdapter: ImageProviderAdapter = {
   },
 };
 
-function missingKeyMessage(provider: ResolvedProvider): string {
-  if (provider.builtIn) {
-    return `Provider "${provider.id}" has no API key. Tell the user to set DASHSCOPE_API_KEY (or pi-image-gen.providers.${provider.id}.apiKey in settings.json).`;
-  }
-  return `Provider "${provider.id}" has no API key. Tell the user to set pi-image-gen.customProviders.${provider.id}.apiKey in settings.json.`;
-}
 
 async function safeText(res: Response): Promise<string> {
   try {

@@ -24,15 +24,12 @@ export const geminiAdapter: ImageProviderAdapter = {
     signal?: AbortSignal,
     inputs?: ResolvedImageInput[],
   ): Promise<RawImageResult[]> {
-    if (!provider.apiKey) {
-      throw new Error(missingKeyMessage(provider));
-    }
     const base = withDefaultPath(provider.baseUrl, '/v1beta');
     const url = `${base}/models/${encodeURIComponent(remoteModelId)}:generateContent`;
     const headers: Record<string, string> = {
       'content-type': 'application/json',
-      'x-goog-api-key': provider.apiKey,
     };
+    if (provider.apiKey) headers['x-goog-api-key'] = provider.apiKey;
     if (provider.headers) Object.assign(headers, provider.headers);
 
     const n = params.n ?? 1;
@@ -121,12 +118,6 @@ export const geminiAdapter: ImageProviderAdapter = {
   },
 };
 
-function missingKeyMessage(provider: ResolvedProvider): string {
-  if (provider.builtIn) {
-    return `Provider "${provider.id}" has no API key. Tell the user to set GEMINI_API_KEY (or pi-image-gen.providers.${provider.id}.apiKey in settings.json).`;
-  }
-  return `Provider "${provider.id}" has no API key. Tell the user to set pi-image-gen.customProviders.${provider.id}.apiKey in settings.json.`;
-}
 
 async function safeText(res: Response): Promise<string> {
   try {

@@ -4,14 +4,13 @@
  * Ported and trimmed from the MIT-licensed rpiv-web-tools fetch-helpers:
  *   - htmlToText / extractTitle  — tag-stripping HTML → readable text
  *   - SSRF guard                 — reject private / loopback / link-local hosts
- *   - fetchViaGenericHtml        — the keyless web_fetch path used for raw HTML
- *     or when the active provider has no usable native fetch endpoint
+ *   - fetchViaGenericHtml        — the single SSRF-safe web_fetch transport
  */
 
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch, ProxyAgent, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
-import type { FetchResponse } from "./providers/types.js";
+import type { FetchedContent } from "./providers/types.js";
 import { getInstalledProxyUrl } from "./proxy.js";
 import { readResponseText } from "./response-body.js";
 
@@ -253,10 +252,13 @@ export function parseAndAssertHttpUrl(raw: string): URL {
 	try {
 		parsed = new URL(raw);
 	} catch {
-		throw new Error(`Invalid URL: ${raw}`);
+		throw new Error("Invalid URL.");
 	}
 	if (!SUPPORTED_HTTP_PROTOCOLS.has(parsed.protocol)) {
 		throw new Error(`Unsupported URL protocol: ${parsed.protocol}. Only http and https are supported.`);
+	}
+	if (parsed.username || parsed.password) {
+		throw new Error("Refusing to fetch a URL with embedded credentials.");
 	}
 	if (isPrivateOrLoopbackHostname(parsed.hostname)) {
 		throw new Error(`Refusing to fetch private/loopback address: ${parsed.hostname}`);
@@ -387,9 +389,8 @@ async function extractBodyAsText(
 	return { text: body };
 }
 
-// Keyless web_fetch path: fetch → content-type assert → body extraction →
-// FetchResponse envelope. Used for raw HTML and native-fetch fallback.
-export async function fetchViaGenericHtml(url: string, raw: boolean, signal?: AbortSignal): Promise<FetchResponse> {
+// Single web_fetch transport: SSRF-safe direct fetch → content-type assert → extraction.
+export async function fetchViaGenericHtml(url: string, raw: boolean, signal?: AbortSignal): Promise<FetchedContent> {
 	const res = await fetchUrlOrThrow(url, signal);
 	const contentType = res.headers.get("content-type") ?? "";
 	try {

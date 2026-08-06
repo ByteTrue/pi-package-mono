@@ -1,4 +1,4 @@
-import { loadPiSettings } from '@amaster.ai/pi-shared/settings';
+export { loadImageGenSettings } from './settings.js';
 import {
   BUILT_IN_MODELS,
   DEFAULT_API_STYLE,
@@ -15,28 +15,16 @@ import type {
   ResolvedProvider,
 } from './types.js';
 
-const SETTINGS_KEY = 'pi-image-gen';
-
-export function loadImageGenSettings(cwd: string): ImageGenSettings {
-  try {
-    return loadPiSettings<ImageGenSettings>(SETTINGS_KEY, {
-      cwd,
-    });
-  } catch {
-    return {};
-  }
-}
 
 /**
  * Returns the resolved value for an apiKey/header field. Supports `$VAR`
  * and `${VAR}` env substitution; returns undefined for missing env vars
  * so downstream code can fall through to defaults.
  *
- * pi-shared/settings already runs `${VAR}` substitution on settings.json
- * payloads, but we re-run resolution here so that settings constructed in
- * code (or read from other sources) get the same treatment.
+ * Resolution happens here so settings from disk and settings constructed in
+ * code get identical behavior.
  */
-function resolveString(value: string | undefined): string | undefined {
+export function resolveConfigString(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const replaced = value.replace(/\$\{([^}]+)\}|\$([A-Z_][A-Z0-9_]*)/g, (_match, braced, bare) => {
     const name = (braced ?? bare) as string | undefined;
@@ -49,28 +37,54 @@ function resolveString(value: string | undefined): string | undefined {
   return replaced.length > 0 ? replaced : undefined;
 }
 
+export function configEnvironmentValues(value: string | undefined): string[] {
+  if (!value) return [];
+  const values: string[] = [];
+  for (const match of value.matchAll(/\$\{([^}]+)\}|\$([A-Z_][A-Z0-9_]*)/g)) {
+    const expression = (match[1] ?? match[2]) as string | undefined;
+    const name = expression?.split(':-')[0];
+    const resolved = name ? process.env[name] : undefined;
+    if (resolved) values.push(resolved);
+  }
+  return values;
+}
+
+function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const resolved = Object.fromEntries(
+    Object.entries(headers).flatMap(([name, value]) => {
+      const resolvedValue = resolveConfigString(value);
+      return resolvedValue === undefined ? [] : [[name, resolvedValue]];
+    }),
+  );
+  return Object.keys(resolved).length > 0 ? resolved : undefined;
+}
+
 function buildBuiltInProvider(
   id: BuiltInProviderId,
   settings: ImageGenSettings,
 ): ResolvedProvider | null {
   const override = settings.providers?.[id] ?? {};
-  const apiKey = resolveString(override.apiKey) ?? process.env[ENV_VARS[id]];
+  const apiKey = Object.prototype.hasOwnProperty.call(override, 'apiKey')
+    ? resolveConfigString(override.apiKey)
+    : process.env[ENV_VARS[id]];
   const provider: ResolvedProvider = {
     id,
     api: DEFAULT_API_STYLE[id],
-    baseUrl: resolveString(override.baseUrl) ?? DEFAULT_BASE_URL[id],
+    baseUrl: resolveConfigString(override.baseUrl) ?? DEFAULT_BASE_URL[id],
     name: PROVIDER_DISPLAY_NAME[id],
     builtIn: true,
   };
   if (apiKey) provider.apiKey = apiKey;
-  if (override.headers) provider.headers = override.headers;
+  const headers = resolveHeaders(override.headers);
+  if (headers) provider.headers = headers;
   return provider;
 }
 
 function buildCustomProvider(name: string, raw: CustomImageProvider): ResolvedProvider | null {
   const api = raw.api;
   if (!api) return null;
-  const baseUrl = resolveString(raw.baseUrl) ?? DEFAULT_BASE_URL[api as BuiltInProviderId];
+  const baseUrl = resolveConfigString(raw.baseUrl) ?? DEFAULT_BASE_URL[api as BuiltInProviderId];
   if (!baseUrl) return null;
   const provider: ResolvedProvider = {
     id: name,
@@ -79,9 +93,10 @@ function buildCustomProvider(name: string, raw: CustomImageProvider): ResolvedPr
     name: raw.name ?? name,
     builtIn: false,
   };
-  const apiKey = resolveString(raw.apiKey);
+  const apiKey = resolveConfigString(raw.apiKey);
   if (apiKey) provider.apiKey = apiKey;
-  if (raw.headers) provider.headers = raw.headers;
+  const headers = resolveHeaders(raw.headers);
+  if (headers) provider.headers = headers;
   return provider;
 }
 
@@ -127,11 +142,15 @@ export function resolveModel(
   );
   if (builtIn) {
     const provider = buildBuiltInProvider(builtIn.provider, settings);
-    if (provider?.apiKey) {
+    const explicitlyConfigured = Object.prototype.hasOwnProperty.call(
+      settings.providers ?? {},
+      builtIn.provider,
+    );
+    if (provider && (provider.apiKey || explicitlyConfigured)) {
       return { provider, remoteId: builtIn.remoteId ?? builtIn.id, requestedId: requested };
     }
-    // Built-in match without a configured API key — fall through so a
-    // catch-all customProvider can still pick this up.
+    // Built-in match without a credential or explicit route falls through so
+    // a catch-all customProvider can still pick it up.
   }
 
   const slash = requested.indexOf('/');
@@ -199,7 +218,9 @@ export function listConfiguredProviders(settings: ImageGenSettings): ConfiguredP
   const out: ConfiguredProvider[] = [];
   for (const id of ['openai', 'gemini', 'dashscope', 'openrouter', 'ark'] as BuiltInProviderId[]) {
     const provider = buildBuiltInProvider(id, settings);
-    if (provider?.apiKey) out.push({ ...provider, catchAll: false, modelCount: 0 });
+    if (provider && (provider.apiKey || Object.prototype.hasOwnProperty.call(settings.providers ?? {}, id))) {
+      out.push({ ...provider, catchAll: false, modelCount: 0 });
+    }
   }
   for (const [name, raw] of Object.entries(settings.customProviders ?? {})) {
     const provider = buildCustomProvider(name, raw);

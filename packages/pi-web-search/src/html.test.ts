@@ -68,6 +68,17 @@ describe("parseAndAssertHttpUrl (SSRF guard)", () => {
 		expect(() => parseAndAssertHttpUrl("ftp://example.com")).toThrow(/protocol/);
 	});
 
+	it("rejects embedded URL credentials without echoing them", () => {
+		const secret = "credential-canary";
+		try {
+			parseAndAssertHttpUrl(`https://user:${secret}@example.com/path`);
+			expect.fail("expected embedded credentials to be rejected");
+		} catch (error) {
+			expect((error as Error).message).toMatch(/embedded credentials/);
+			expect((error as Error).message).not.toContain(secret);
+		}
+	});
+
 	it("rejects malformed URLs", () => {
 		expect(() => parseAndAssertHttpUrl("not a url")).toThrow(/Invalid URL/);
 	});
@@ -115,6 +126,20 @@ describe("fetchUrlOrThrow (redirect SSRF)", () => {
 		});
 
 		await expect(fetchUrlOrThrow("https://public.example/x", undefined, resolvePublic, agent)).rejects.toThrow(/private\/loopback/);
+	});
+
+	it("rejects credentials introduced by a redirect without echoing them", async () => {
+		const agent = createMockAgent();
+		agent.get("https://public.example").intercept({ path: "/start" }).reply(302, "", {
+			headers: { location: "https://user:redirect-secret@next.example/path" },
+		});
+		try {
+			await fetchUrlOrThrow("https://public.example/start", undefined, resolvePublic, agent);
+			expect.fail("expected redirect credentials to be rejected");
+		} catch (error) {
+			expect((error as Error).message).toMatch(/embedded credentials/);
+			expect((error as Error).message).not.toContain("redirect-secret");
+		}
 	});
 
 	it("rejects a public hostname that resolves to a private address before fetch", async () => {

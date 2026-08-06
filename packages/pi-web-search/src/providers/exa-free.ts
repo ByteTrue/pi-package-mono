@@ -14,6 +14,7 @@
  */
 
 import { fetchWithProxy as fetch } from "../proxy.js";
+import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
@@ -66,25 +67,33 @@ async function mcpPost(
 		signal,
 	});
 
-	if (res.status === 429) throw new Error(RATE_LIMIT_HINT);
-	if (!res.ok) throw new Error(`Exa MCP HTTP error (${res.status}): ${await res.text()}`);
+	if (!res.ok) {
+		await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
+		if (res.status === 429) throw new Error(RATE_LIMIT_HINT);
+		throw new Error(`Exa MCP HTTP error (${res.status})`);
+	}
 
 	const newSessionId = res.headers.get("Mcp-Session-Id") ?? sessionId ?? undefined;
 	const contentType = res.headers.get("Content-Type") ?? "";
 
 	// SSE response: extract the last JSON-RPC message from data: lines.
 	if (contentType.includes("text/event-stream")) {
-		const raw = await res.text();
+		const raw = await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
 		const dataLines = raw.split("\n").filter((l) => l.startsWith("data: "));
 		const lastData = dataLines[dataLines.length - 1]?.slice(6);
 		if (!lastData) throw new Error("Exa MCP: empty SSE response");
-		const parsed = JSON.parse(lastData) as JsonRpcResponse;
-		if (parsed.error) throw new Error(`Exa MCP: ${parsed.error.message}`);
+		let parsed: JsonRpcResponse;
+		try {
+			parsed = JSON.parse(lastData) as JsonRpcResponse;
+		} catch {
+			throw new Error("Exa MCP response body is not valid JSON");
+		}
+		if (parsed.error) throw new Error(`Exa MCP returned JSON-RPC error ${parsed.error.code}`);
 		return { json: parsed, sessionId: newSessionId };
 	}
 
-	const parsed = (await res.json()) as JsonRpcResponse;
-	if (parsed.error) throw new Error(`Exa MCP: ${parsed.error.message}`);
+	const parsed = await readResponseJson<JsonRpcResponse>(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
+	if (parsed.error) throw new Error(`Exa MCP returned JSON-RPC error ${parsed.error.code}`);
 	return { json: parsed, sessionId: newSessionId };
 }
 
@@ -105,11 +114,8 @@ async function mcpNotify(
 		body: JSON.stringify({ jsonrpc: "2.0", method, params } as JsonRpcRequest),
 		signal,
 	});
-	// Notifications don't require a response body. Swallow errors.
-	if (!res.ok) {
-		// Non-fatal: some servers still process the notification.
-		await res.text().catch(() => {});
-	}
+	// Notifications are non-fatal, but their bodies still have the same hard budget.
+	await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------

@@ -31,9 +31,6 @@ export const WebConfigSchema = Type.Object(
 		// Needed because Node's fetch ignores proxy env vars, and TUN-mode proxies
 		// often set no env var at all. Takes precedence over HTTP(S)_PROXY env.
 		proxy: Type.Optional(Type.String()),
-		// When the active search provider fails or returns nothing, automatically
-		// try the other available providers. Default: true.
-		autoFallback: Type.Optional(Type.Boolean()),
 	},
 	{ additionalProperties: true },
 );
@@ -89,7 +86,8 @@ export function readConfig(): WebConfig {
 export function writeConfig(config: WebConfig): boolean {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-		const body = `${JSON.stringify(config, null, 2)}\n`;
+		const { autoFallback: _legacy, ...clean } = config as WebConfig & { autoFallback?: unknown };
+		const body = `${JSON.stringify(clean, null, 2)}\n`;
 		const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
 		// mode 0o600: may contain API keys. Atomic rename avoids half-written JSON.
 		writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });

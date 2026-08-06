@@ -1,28 +1,13 @@
-/**
- * SearXNG — keyless search via self-hosted metasearch engine.
- *
- * SearXNG aggregates 70+ search engines and exposes a clean JSON API.
- * Users must deploy their own instance (Docker or pip) and set SEARXNG_URL.
- * This provider is optional — it only appears in the candidate list when a
- * base URL is configured.
- *
- * API: GET ${baseUrl}/search?q=...&format=json&limit=N
- * Docs: https://docs.searxng.org/dev/search_api.html
- */
+/** SearXNG self-hosted metasearch JSON API. */
 
 import { fetchWithProxy as fetch } from "../proxy.js";
+import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
 import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
-interface SearxngResult {
-	title?: string;
-	url?: string;
-	content?: string;
-}
-
 interface SearxngResponse {
-	results?: SearxngResult[];
+	results?: Array<{ title?: string; url?: string; content?: string }>;
 }
 
 export class SearxngProvider implements SearchProvider {
@@ -37,24 +22,17 @@ export class SearxngProvider implements SearchProvider {
 			format: "json",
 			limit: String(maxResults),
 		}).toString()}`;
-
-		const res = await fetch(url, {
-			signal,
-			headers: { Accept: "application/json" },
-		});
-
+		const res = await fetch(url, { signal, headers: { Accept: "application/json" } });
 		if (!res.ok) {
-			const body = await res.text().catch(() => "");
-			throw new Error(`SearXNG error (${res.status}): ${body || "check SEARXNG_URL and that JSON format is enabled"}`);
+			await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
+			throw new Error(`SearXNG error (${res.status}); check the configured URL and JSON format support`);
 		}
-
-		const data = (await res.json()) as SearxngResponse;
-		const results: SearchResult[] = (data.results ?? []).slice(0, maxResults).map((r) => ({
-			title: r.title ?? "",
-			url: r.url ?? "",
-			snippet: r.content ?? "",
+		const data = await readResponseJson<SearxngResponse>(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
+		const results: SearchResult[] = (data.results ?? []).slice(0, maxResults).map((result) => ({
+			title: result.title ?? "",
+			url: result.url ?? "",
+			snippet: result.content ?? "",
 		}));
-
 		return { query, results };
 	}
 }

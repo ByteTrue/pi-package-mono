@@ -51,6 +51,89 @@ describe("readConfigResult", () => {
 	});
 });
 
+describe("writeConfig migration", () => {
+	it("removes legacy autoFallback while preserving the complete configuration", async () => {
+		writeRawConfig(JSON.stringify({
+			provider: "exa",
+			autoFallback: true,
+			apiKeys: { exa: "secret", bocha: "bocha-secret" },
+			baseUrls: { searxng: "https://search.example" },
+			proxy: "http://127.0.0.1:7890",
+			futureField: { keep: true },
+		}));
+		const { readConfigResult, writeConfig } = await import("./config.js");
+		const loaded = readConfigResult();
+		if (loaded.status === "invalid") throw new Error(loaded.error);
+		expect(writeConfig(loaded.config)).toBe(true);
+		const saved = JSON.parse(readFileSync(configPath(), "utf8"));
+		expect(saved).toEqual({
+			provider: "exa",
+			apiKeys: { exa: "secret", bocha: "bocha-secret" },
+			baseUrls: { searxng: "https://search.example" },
+			proxy: "http://127.0.0.1:7890",
+			futureField: { keep: true },
+		});
+	});
+});
+
+describe("/web provider selection", () => {
+	it("switches from paid Exa to Exa free without a label-prefix collision", async () => {
+		writeRawConfig(JSON.stringify({ provider: "exa", apiKeys: { exa: "secret" }, futureField: true }));
+		const { registerWebCommand } = await import("./tools.js");
+		let command: { handler(args: string, ctx: unknown): Promise<void> } | undefined;
+		registerWebCommand({
+			registerCommand: (_name: string, definition: typeof command) => { command = definition; },
+		} as never);
+		const select = vi.fn(async (_title: string, options: string[]) =>
+			options.find((option) => option.startsWith("Exa (free,")),
+		);
+		const notify = vi.fn();
+		await command!.handler("", { hasUI: true, ui: { select, notify, input: vi.fn() } });
+		const saved = JSON.parse(readFileSync(configPath(), "utf8"));
+		expect(saved).toEqual({ provider: "exa-free", apiKeys: { exa: "secret" }, futureField: true });
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Exa (free"), "info");
+	});
+	it("masks proxy credentials in /web --show", async () => {
+		writeRawConfig(JSON.stringify({ proxy: "http://proxy-user:proxy-secret@proxy.example:8080" }));
+		const { registerWebCommand } = await import("./tools.js");
+		let command: { handler(args: string, ctx: unknown): Promise<void> } | undefined;
+		registerWebCommand({
+			registerCommand: (_name: string, definition: typeof command) => { command = definition; },
+		} as never);
+		const notify = vi.fn();
+		await command!.handler("--show", { hasUI: true, ui: { notify } });
+		const visible = notify.mock.calls.flat().join(" ");
+		expect(visible).toContain("http://****:****@proxy.example:8080");
+		expect(visible).not.toMatch(/proxy-user|proxy-secret/);
+	});
+
+	it("masks proxy credentials in menu, placeholder, and save notification", async () => {
+		writeRawConfig(JSON.stringify({ proxy: "http://old-user:old-secret@proxy.example:8080" }));
+		const { registerWebCommand } = await import("./tools.js");
+		let command: { handler(args: string, ctx: unknown): Promise<void> } | undefined;
+		registerWebCommand({
+			registerCommand: (_name: string, definition: typeof command) => { command = definition; },
+		} as never);
+		const visible: string[] = [];
+		const select = vi.fn(async (_title: string, options: string[]) => {
+			visible.push(...options);
+			return options.find((option) => option.startsWith("⚙"));
+		});
+		const input = vi.fn(async (_title: string, placeholder?: string) => {
+			if (placeholder) visible.push(placeholder);
+			return "http://new-user:new-secret@new-proxy.example:8081";
+		});
+		const notify = vi.fn((message: string) => visible.push(message));
+		await command!.handler("", { hasUI: true, ui: { select, input, notify } });
+		expect(visible.join(" ")).not.toMatch(/old-user|old-secret|new-user|new-secret/);
+		expect(visible.join(" ")).toContain("****:****@");
+		expect(JSON.parse(readFileSync(configPath(), "utf8")).proxy).toBe(
+			"http://new-user:new-secret@new-proxy.example:8081",
+		);
+	});
+
+});
+
 describe("/web invalid-config guard", () => {
 	it("notifies and leaves malformed config byte-for-byte unchanged", async () => {
 		const token = "LEAKME";

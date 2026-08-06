@@ -8,7 +8,7 @@ import type {
   ResolvedProvider,
 } from '../types.js';
 import { withDefaultPath } from '../url.js';
-import { bearerHeaders, missingKeyMessage, parseImagesResponse } from './openai.js';
+import { bearerHeaders, parseImagesResponse } from './openai.js';
 
 /**
  * OpenRouter image API. Looks OpenAI-shaped but the endpoint differs:
@@ -27,7 +27,6 @@ export const openrouterAdapter: ImageProviderAdapter = {
     signal?: AbortSignal,
     inputs?: ResolvedImageInput[],
   ): Promise<RawImageResult[]> {
-    if (!provider.apiKey) throw new Error(missingKeyMessage(provider));
     const base = withDefaultPath(provider.baseUrl, '/api/v1');
     const url = `${base}/images`;
     const body: Record<string, unknown> = {

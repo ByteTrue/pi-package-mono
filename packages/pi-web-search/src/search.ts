@@ -1,12 +1,3 @@
-/**
- * Search with automatic provider fallback.
- *
- * Tries the active provider first, then every other available provider
- * (keyless, or keyed with a resolvable key), stopping at the first that returns
- * results. A dead/blocked/rate-limited provider therefore no longer requires a
- * manual /web switch. Kept free of TUI deps so it is unit-testable.
- */
-
 import { getActiveProviderName, resolveApiKey, resolveBaseUrl, type WebConfig } from "./config.js";
 import { createProvider } from "./providers/factory.js";
 import { PROVIDERS } from "./providers/registry.js";
@@ -34,7 +25,6 @@ function truncateUtf8(value: unknown, maxBytes: number): { text: string; bytes: 
 	const encoded = textEncoder.encode(text);
 	if (encoded.byteLength <= maxBytes) return { text, bytes: encoded.byteLength };
 	let end = maxBytes;
-	// Back up from UTF-8 continuation bytes so the prefix ends on a code-point boundary.
 	while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end--;
 	return { text: textDecoder.decode(encoded.subarray(0, end)), bytes: end };
 }
@@ -65,7 +55,7 @@ async function searchProviderWithTimeout(
 	maxResults: number,
 	signal: AbortSignal | undefined,
 	timeoutMs: number,
-): Promise<{ results: SearchResult[] }> {
+): Promise<SearchResult[]> {
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) throw new RangeError("timeoutMs must be a non-negative safe integer");
 	if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
 	const controller = new AbortController();
@@ -86,7 +76,7 @@ async function searchProviderWithTimeout(
 	try {
 		const response = await Promise.race([provider.search(query, maxResults, controller.signal), aborted]);
 		if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
-		return response;
+		return response.results;
 	} catch (error) {
 		if (signal?.aborted) throw signal.reason ?? error;
 		if (timedOut) throw timeoutError;
@@ -98,89 +88,60 @@ async function searchProviderWithTimeout(
 	}
 }
 
+function hasExplicitBaseUrl(name: string, config: WebConfig): boolean {
+	const meta = PROVIDERS.find((provider) => provider.name === name);
+	if (!meta?.baseUrlEnvVar) return true;
+	return Boolean(process.env[meta.baseUrlEnvVar]?.trim() || config.baseUrls?.[name]?.trim());
+}
+
+export function listAvailableSearchProviders(config: WebConfig): string[] {
+	return PROVIDERS.filter(
+		(provider) =>
+			(provider.keyless && hasExplicitBaseUrl(provider.name, config)) ||
+			resolveApiKey(provider.name, config) !== undefined,
+	).map((provider) => provider.name);
+}
+
 export interface SearchOutcome {
 	backend: string;
 	results: SearchResult[];
-	/** Per-provider notes ("name: 0 results" / "name: <error>") for providers that didn't win. */
-	attempted: string[];
-	/** True when the winner was not the first (active) candidate. */
-	fellBack: boolean;
 }
 
 export interface SearchProgress {
 	provider: string;
 	label: string;
-	index: number;
-	/** Name of the provider that just failed, when this is a fallback attempt. */
-	previousFailure?: string;
 }
 
-function hasExplicitBaseUrl(name: string, config: WebConfig): boolean {
-	const meta = PROVIDERS.find((p) => p.name === name);
-	if (!meta?.baseUrlEnvVar) return true;
-	return Boolean(process.env[meta.baseUrlEnvVar]?.trim() || config.baseUrls?.[name]?.trim());
-}
-// Active first, then other keyed providers, then keyless — prefer paid/configured quality over free fallbacks.
-export function buildSearchCandidates(config: WebConfig): string[] {
-	const active = getActiveProviderName(config);
-	const available = PROVIDERS.filter(
-		(p) =>
-			p.roles.includes("search") &&
-			((p.keyless && hasExplicitBaseUrl(p.name, config)) || resolveApiKey(p.name, config) !== undefined),
-	);
-	const rest = available.filter((p) => p.name !== active);
-	const keyed = rest.filter((p) => !p.keyless).map((p) => p.name);
-	const keyless = rest.filter((p) => p.keyless).map((p) => p.name);
-	return [active, ...keyed, ...keyless];
-}
-
-export async function searchWithFallback(
+/** One call contacts exactly one provider; retries are explicit new tool calls. */
+export async function searchWithProvider(
 	config: WebConfig,
+	providerName: string | undefined,
 	query: string,
 	maxResults: number,
 	signal: AbortSignal | undefined,
-	onProgress?: (p: SearchProgress) => void,
+	onProgress?: (progress: SearchProgress) => void,
 	attemptTimeoutMs: number = SEARCH_PROVIDER_TIMEOUT_MS,
 ): Promise<SearchOutcome> {
-	const candidates =
-		config.autoFallback === false ? [getActiveProviderName(config)] : buildSearchCandidates(config);
-
-	const attempted: string[] = [];
-	let anySucceeded = false;
-	let lastError: unknown;
-
-	for (let i = 0; i < candidates.length; i++) {
-		if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
-		const name = candidates[i];
-		if (!name) continue;
-		let provider: ReturnType<typeof createProvider>;
-		try {
-			provider = createProvider(name, { apiKey: resolveApiKey(name, config), baseUrl: resolveBaseUrl(name, config) });
-		} catch {
-			continue; // unknown provider name in config — skip
-		}
-
-		onProgress?.({ provider: name, label: provider.label, index: i, previousFailure: i > 0 ? candidates[i - 1] : undefined });
-
-		try {
-			const response = await searchProviderWithTimeout(provider, query, maxResults, signal, attemptTimeoutMs);
-			anySucceeded = true;
-			const results = normalizeSearchResults(response.results, maxResults);
-			if (results.length > 0) {
-				return { backend: name, results, attempted, fellBack: i > 0 };
-			}
-			attempted.push(`${name}: 0 results`);
-		} catch (err) {
-			if (signal?.aborted) throw err;
-			const message = truncateUtf8(err instanceof Error ? err.message : String(err), MAX_SEARCH_ERROR_BYTES).text;
-			attempted.push(`${name}: ${message}`);
-			lastError = err;
-		}
+	const name = providerName?.trim() || getActiveProviderName(config);
+	let provider: ReturnType<typeof createProvider>;
+	try {
+		provider = createProvider(name, {
+			apiKey: resolveApiKey(name, config),
+			baseUrl: resolveBaseUrl(name, config),
+		});
+	} catch (error) {
+		const available = listAvailableSearchProviders(config);
+		throw new Error(`${error instanceof Error ? error.message : String(error)} Available configured providers: ${available.join(", ") || "none"}.`);
 	}
-
-	// Every candidate threw (none even returned an empty set): a real failure.
-	if (!anySucceeded && lastError) {
-		throw new Error(`All search providers failed. Tried — ${attempted.join("; ")}.`);
+	onProgress?.({ provider: name, label: provider.label });
+	try {
+		const results = await searchProviderWithTimeout(provider, query, maxResults, signal, attemptTimeoutMs);
+		return { backend: name, results: normalizeSearchResults(results, maxResults) };
+	} catch (error) {
+		if (signal?.aborted) throw error;
+		const message = truncateUtf8(error instanceof Error ? error.message : String(error), MAX_SEARCH_ERROR_BYTES).text;
+		const available = listAvailableSearchProviders(config).filter((candidate) => candidate !== name);
+		const retry = available.length ? ` Retry explicitly with provider: ${available.join(", ")}.` : "";
+		throw new Error(`${name} search failed: ${message}.${retry}`);
 	}
-	return { backend: candidates[0] ?? "", results: [], attempted, fellBack: false };
 }

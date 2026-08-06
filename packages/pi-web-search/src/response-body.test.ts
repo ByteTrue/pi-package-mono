@@ -75,4 +75,15 @@ describe("readResponseJson", () => {
 	it("parses JSON through the same bounded reader", async () => {
 		await expect(readResponseJson<{ ok: boolean }>(new Response('{"ok":true}'), 32)).resolves.toEqual({ ok: true });
 	});
+	it("uses a body-free error for malformed JSON", async () => {
+		const canary = "SECRET_RESPONSE_CANARY";
+		try {
+			await readResponseJson(new Response(canary), 64);
+			expect.fail("expected malformed JSON to fail");
+		} catch (error) {
+			expect((error as Error).message).toBe("Response body is not valid JSON");
+			expect((error as Error).message).not.toContain(canary);
+		}
+	});
+
 });

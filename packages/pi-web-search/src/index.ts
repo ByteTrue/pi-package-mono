@@ -1,9 +1,8 @@
 /**
  * @bytetrue/pi-web — web_search + web_fetch for the pi coding agent.
  *
- * Zero-config: the default provider is keyless Exa MCP free, so the two tools
- * work the moment the package loads. Run /web (or set per-provider env vars) to
- * switch to a key-backed provider (Tavily, Exa, Brave, Jina, Firecrawl).
+ * work the moment the package loads. Run /web to configure search; web_fetch
+ * always uses the package's SSRF-safe generic transport.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -14,12 +13,11 @@ import { registerWebCommand, registerWebFetchTool, registerWebSearchTool } from 
 export { createProvider } from "./providers/factory.js";
 export { DEFAULT_PROVIDER_NAME, PROVIDERS } from "./providers/registry.js";
 export type {
-	AnyProvider,
-	FetchResponse,
-	FullProvider,
-	SearchProvider,
-	SearchResponse,
-	SearchResult,
+  AnyProvider,
+  FetchedContent,
+  SearchProvider,
+  SearchResponse,
+  SearchResult,
 } from "./providers/types.js";
 export { installProxyDispatcher } from "./proxy.js";
 export { registerWebCommand, registerWebFetchTool, registerWebSearchTool } from "./tools.js";

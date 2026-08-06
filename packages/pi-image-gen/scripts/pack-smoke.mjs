@@ -94,6 +94,9 @@ function assertPackFiles(paths) {
 		"LICENSE",
 		"NOTICE",
 		"dist/index.js",
+		"dist/cli.js",
+		"skills/pi-image-gen/SKILL.md",
+		"skills/pi-image-gen/scripts/image-gen.mjs",
 	];
 	for (const r of required) {
 		if (!normalized.includes(r)) throw new Error(`packed tarball missing required path: ${r}`);
@@ -102,7 +105,7 @@ function assertPackFiles(paths) {
 		if (p.includes("node_modules/")) throw new Error(`packed forbidden path: ${p}`);
 		if (p.endsWith(".test.ts") || p.includes("/__tests__/")) throw new Error(`packed test file: ${p}`);
 		if (p.startsWith("src/") || p.includes("/src/")) throw new Error(`packed source path: ${p}`);
-		if (p.startsWith("scripts/") || p.includes("/scripts/")) throw new Error(`packed scripts path: ${p}`);
+		if (p.startsWith("scripts/")) throw new Error(`packed package-maintenance script: ${p}`);
 	}
 	ok(`pack file list verified (${normalized.length} files)`);
 	return normalized;
@@ -146,7 +149,16 @@ async function main() {
 		const extractedPkg = await extractTgz(actualTgz, extractDir);
 		ok(`extracted to ${extractedPkg}`);
 
-		for (const rel of ["package.json", "LICENSE", "NOTICE", "dist/index.js", "README.md"]) {
+		for (const rel of [
+			"package.json",
+			"LICENSE",
+			"NOTICE",
+			"dist/index.js",
+			"dist/cli.js",
+			"skills/pi-image-gen/SKILL.md",
+			"skills/pi-image-gen/scripts/image-gen.mjs",
+			"README.md",
+		]) {
 			const p = join(extractedPkg, rel);
 			if (!existsSync(p)) throw new Error(`missing extracted file: ${rel}`);
 		}
@@ -162,19 +174,27 @@ async function main() {
 		if (ext !== "./dist/index.js") {
 			throw new Error(`unexpected pi.extensions entry: ${ext}`);
 		}
-
+		const skills = pkgJson?.pi?.skills;
+		if (!Array.isArray(skills) || !skills.includes("./skills")) {
+			throw new Error(`unexpected pi.skills entry: ${JSON.stringify(skills)}`);
+		}
 		const entryUrl = pathToFileURL(join(extractedPkg, "dist/index.js")).href;
 		const mod = await import(entryUrl);
-		if (typeof mod.default !== "function" && typeof mod !== "object") {
-			throw new Error("packed entry did not load as a module");
-		}
-		// Extension factory is default export (function) or named exports present.
-		const hasFactory =
-			typeof mod.default === "function" ||
-			typeof mod.createExtension === "function" ||
-			Object.keys(mod).length > 0;
-		if (!hasFactory) throw new Error("packed entry has no usable exports");
-		ok("loaded packed dist/index.js");
+
+		const registeredTools = [];
+		const registeredCommands = [];
+		mod.default({
+			registerTool: (tool) => registeredTools.push(tool.name),
+			registerCommand: (name) => registeredCommands.push(name),
+			on: () => {},
+		});
+		if (registeredTools.length !== 0) throw new Error(`unexpected packed tools: ${registeredTools.join(", ")}`);
+		if (!registeredCommands.includes("image-gen")) throw new Error("packed extension did not register /image-gen");
+		ok("loaded packed dist/index.js without an Agent tool");
+		await run("node", [join(extractedPkg, "skills/pi-image-gen/scripts/image-gen.mjs"), "--help"], {
+			cwd: extractedPkg,
+		});
+		ok("packed Skill CLI wrapper runs");
 
 		ok("pack smoke complete");
 	} finally {

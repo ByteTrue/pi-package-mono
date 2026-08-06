@@ -52,4 +52,22 @@ describe("ExaMcpFreeProvider", () => {
 		});
 		expect(fetch.mock.calls[1]![1]!.headers.Accept).toBe("application/json, text/event-stream");
 	});
+	it("uses a body-free error for malformed SSE JSON", async () => {
+		const canary = "SECRET_SSE_CANARY";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(`event: message\ndata: ${canary}\n\n`, {
+				status: 200,
+				headers: { "Content-Type": "text/event-stream", "Mcp-Session-Id": "session-1" },
+			})),
+		);
+		try {
+			await new ExaMcpFreeProvider().search("query", 2);
+			expect.fail("expected malformed SSE JSON to fail");
+		} catch (error) {
+			expect((error as Error).message).toBe("Exa MCP response body is not valid JSON");
+			expect((error as Error).message).not.toContain(canary);
+		}
+	});
+
 });

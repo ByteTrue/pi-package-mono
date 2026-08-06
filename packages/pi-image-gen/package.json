@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-image-gen",
   "version": "0.1.0",
-  "description": "Pi extension for image generation via OpenAI, Gemini, Qwen-Image, OpenRouter, and custom providers.",
+  "description": "Pi TUI configuration and an on-demand Skill/CLI for image generation.",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -16,6 +16,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "skills",
     "LICENSE",
     "NOTICE",
     "README.md"
@@ -23,6 +24,9 @@
   "pi": {
     "extensions": [
       "./dist/index.js"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "publishConfig": {
@@ -39,12 +43,9 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
-  "dependencies": {
-    "@amaster.ai/pi-shared": "^0.1.5"
-  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.79.10",
-    "typebox": "*"
+    "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
