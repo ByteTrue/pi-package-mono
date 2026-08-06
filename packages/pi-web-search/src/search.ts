@@ -131,7 +131,7 @@ export async function searchWithProvider(
 		});
 	} catch (error) {
 		const available = listAvailableSearchProviders(config);
-		throw new Error(`${error instanceof Error ? error.message : String(error)} Available configured providers: ${available.join(", ") || "none"}.`);
+		throw new Error(`${error instanceof Error ? error.message : String(error)} Available providers: ${available.join(", ") || "none"}.`);
 	}
 	onProgress?.({ provider: name, label: provider.label });
 	try {
@@ -141,7 +141,7 @@ export async function searchWithProvider(
 		if (signal?.aborted) throw error;
 		const message = truncateUtf8(error instanceof Error ? error.message : String(error), MAX_SEARCH_ERROR_BYTES).text;
 		const available = listAvailableSearchProviders(config).filter((candidate) => candidate !== name);
-		const retry = available.length ? ` Retry web_search with retry_provider: ${available.join(", ")}.` : "";
-		throw new Error(`${name} search failed: ${message}.${retry}`);
+		const alternatives = available.length ? ` Other available providers: ${available.join(", ")}.` : "";
+		throw new Error(`${name} search failed: ${message}.${alternatives}`);
 	}
 }

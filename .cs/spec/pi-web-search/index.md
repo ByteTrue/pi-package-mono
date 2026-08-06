@@ -7,7 +7,7 @@
 ## 它负责什么
 
 - **`web_search`**：查询 → 规范化标题 / URL / 摘要；默认 **exa-free**，无需 key。
-- **配置优先 + 显式重试**：首轮必须省略 `retry_provider`，使用 `/web` 当前 provider；只有前一轮失败后才指定 `retry_provider`。一次调用只联系一个 provider。
+- **可选 provider**：省略 `provider` 时使用 `/web` 当前配置；提供时用于本次调用。一次调用只联系一个 provider。
 - **`web_fetch`**：无论 search provider 是谁，raw 与 extracted 都只走 package 的 SSRF-safe generic transport。
 - **完整 TUI 配置**：安装后无需读 GitHub 或手写 JSON，即可在 `/web` 配 provider、key、base URL、proxy；`/web --show` 查看脱敏状态。
 - **代理凭据显示**：proxy URL 可含 userinfo 供 transport 使用，但 `/web --show`、provider menu、placeholder 与 notification 只显示脱敏 scheme/host/port。
@@ -27,7 +27,7 @@
 ## 统一语言
 
 - **exa-free**：默认、免 key 的 Exa MCP free search。
-- **explicit retry**：失败后 Agent 发起新的、可见的 `web_search(retry_provider=...)` tool call；首轮不带该参数。
+- **optional provider**：`web_search(provider=...)` 为单次可选覆盖；省略即使用 `/web` 当前配置。
 - **readConfigResult 三态**：`missing` | `valid` | `invalid`；`/web` 写路径 fail-closed，运行时 `readConfig` 可 soft-fail 为 `{}`。
 - **package-scoped proxy**：仅本包 provider 路由使用的 proxy dispatcher。
 - **generic SSRF fetcher**：`web_fetch` 唯一传输；任意目标不会因 `NO_PROXY` 退回不安全直连。
@@ -39,8 +39,7 @@
 | 零配置搜索 | 安装后直接 `web_search`（默认 exa-free） |
 | 换 provider / 设 key / base URL / proxy | `/web` |
 | 看当前配置 | `/web --show` |
-| 正常搜索 | 省略 `retry_provider` 与 `max_results`，使用 `/web` 当前 provider 并默认请求 5 条 |
-| 当前 provider 失败后重试 | 新调用设置 `retry_provider`；不得用于首轮 |
+| 搜索 | `query` 必填；`provider`、`max_results` 可选 |
 | 抓可读正文 | `web_fetch`（`raw` 省略或 false） |
 | 要原始 HTML | `web_fetch(raw=true)` |
 | 大陆无代理 | 在 `/web` 显式选择 Bing（keyless）或 Bocha |

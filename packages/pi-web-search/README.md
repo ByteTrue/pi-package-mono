@@ -4,7 +4,7 @@
 
 - **Zero config:** Exa MCP free is the default search provider.
 - **Regional choices:** keyless Bing works well in mainland China; Bocha is available for domestic API search.
-- **Configured first attempt:** the first `web_search` call uses the provider selected in `/web`; a failure never silently sends the same query elsewhere.
+- **Explicit behavior:** one `web_search` call contacts exactly one provider; omitted `provider` uses the selection from `/web`.
 - **Safe fetch:** every `web_fetch` uses one SSRF-safe generic transport with redirect revalidation and a 10 MiB decoded-body limit.
 
 ## Install
@@ -49,12 +49,10 @@ Environment variables take precedence over stored keys. Config lives at `~/.pi/b
 Arguments:
 
 - `query` — required search text;
-- `max_results` — optional integer from 1 to 10. Normally omit it to use the default 5; do not lower it unless the user asks for fewer results;
-- `retry_provider` — optional provider used only after a previous `web_search` failure.
+- `max_results` — optional integer from 1 to 10, default 5;
+- `provider` — optional provider for this call; omitted uses `/web`'s active provider.
 
-On the first attempt, both optional fields should normally be omitted: `/web`'s active provider is used and 5 results are requested. This makes the TUI provider selection authoritative during normal use.
-
-There is no implicit fallback. If the active provider fails, the error lists other configured provider ids; the agent may make a new, visible tool call with `retry_provider`. This keeps privacy, cost, and latency visible.
+There is no implicit fallback. A failure lists the other available provider ids.
 
 ### `web_fetch`
 

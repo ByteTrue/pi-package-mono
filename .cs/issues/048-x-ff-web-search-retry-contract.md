@@ -49,3 +49,7 @@ created: 2026-08-06
 ## 关闭结论
 
 正常首次搜索现在在 schema、提示词和运行验证三层都以 `/web` 配置为权威；只有失败后的显式重试才应覆盖 provider。两条结果仅来自先前 smoke 的人为上限，不是产品默认。
+
+## 后续修正
+
+该接口约束随后被 `.cs/issues/049-x-ff-simplify-web-search-schema.md` 取代：`retry_provider` 属于为限制模型行为而引入的非惯用 API，最终恢复为中性的 optional `provider` / `max_results`。本 issue 仅保留为决策历史。

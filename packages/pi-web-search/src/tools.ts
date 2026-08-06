@@ -77,21 +77,20 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "web_search",
 		label: "Web Search",
-		description:
-			"Search the web for current information. First attempt: omit retry_provider to use /web's active provider, and normally omit max_results to use the default 5. Set retry_provider only when retrying after a previous web_search failure. Returns bounded titles, URLs, and snippets from exactly one provider per call.",
+		description: "Search the web for current information. Returns bounded titles, URLs, and snippets from one provider per call.",
 		parameters: Type.Object({
-			query: Type.String({ description: "The search query. Be specific and use natural language." }),
+			query: Type.String({ description: "Search query." }),
 			max_results: Type.Optional(
 				Type.Number({
-					description: `Maximum results (${MIN_SEARCH_RESULTS}-${MAX_SEARCH_RESULTS}). Normally omit this field to use the default ${DEFAULT_SEARCH_RESULTS}; do not request fewer unless the user wants fewer results.`,
+					description: `Maximum results (${MIN_SEARCH_RESULTS}-${MAX_SEARCH_RESULTS}). Default: ${DEFAULT_SEARCH_RESULTS}.`,
 					default: DEFAULT_SEARCH_RESULTS,
 					minimum: MIN_SEARCH_RESULTS,
 					maximum: MAX_SEARCH_RESULTS,
 				}),
 			),
-			retry_provider: Type.Optional(
+			provider: Type.Optional(
 				Type.String({
-					description: `Retry provider after a previous web_search failure. MUST be omitted on the first attempt, which uses /web's active provider. Configured alternatives may include: ${PROVIDERS.map((provider) => provider.name).join(", ")}.`,
+					description: `Optional provider for this call. Omit to use /web's active provider: ${PROVIDERS.map((provider) => provider.name).join(", ")}.`,
 				}),
 			),
 		}),
@@ -101,7 +100,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			const config = readConfig();
 			const outcome = await searchWithProvider(
 				config,
-				params.retry_provider,
+				params.provider,
 				params.query,
 				maxResults,
 				signal,

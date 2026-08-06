@@ -39,11 +39,9 @@ describe("minimal tool definitions", () => {
 			expect(tool.renderResult).toBeUndefined();
 		}
 		const search = tools.find((tool) => tool.name === "web_search");
-		expect(search.parameters.properties.provider).toBeUndefined();
-		expect(search.parameters.properties.retry_provider).toBeDefined();
-		expect(search.description).toMatch(/First attempt: omit retry_provider/);
-		expect(search.parameters.properties.max_results.description).toMatch(/Normally omit.*default 5/);
-		expect(search.parameters.properties.retry_provider.description).toMatch(/MUST be omitted on the first attempt/);
+		expect(Object.keys(search.parameters.properties)).toEqual(["query", "max_results", "provider"]);
+		expect(search.parameters.required).toEqual(["query"]);
+		expect(search.parameters.properties.max_results.default).toBe(5);
 	});
 });
 
@@ -64,13 +62,13 @@ describe("web_search routing contract", () => {
 		);
 	});
 
-	it("passes retry_provider only on an explicit retry call", async () => {
+	it("passes optional provider and result count", async () => {
 		const tools: any[] = [];
 		registerWebSearchTool({ registerTool: (definition: any) => tools.push(definition) } as never);
 		const signal = new AbortController().signal;
 		await tools[0].execute(
-			"retry",
-			{ query: "q", retry_provider: "bing", max_results: 7 },
+			"call",
+			{ query: "q", provider: "bing", max_results: 7 },
 			signal,
 			undefined,
 			{},
