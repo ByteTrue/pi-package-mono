@@ -25,9 +25,8 @@ created: 2026-08-07
 - 全仓 490 tests passed；Web live E2E 9 skipped。
 - Web 0.2.0 pack：21 files / 76,564 bytes，关键入口存在。
 - Image 0.2.0 pack：63 files / 120,842 bytes；真实 tarball 经 production install 后可加载 `/image-gen`、零 Agent tool，Skill CLI wrapper 可运行。
-- 目标 npm 版本 `@bytetrue/pi-web-search@0.2.0`、`@bytetrue/pi-image-gen@0.2.0` 均尚未占用。
-
-发布 tag、GitHub Actions 与 npm registry 结果待完成后补入并关闭。
+- `@bytetrue/pi-web-search@0.2.0` 已由 release workflow 发布，npm provenance 指向 GitHub Actions。
+- `@bytetrue/pi-image-gen@0.2.0` 尚未占用；npm Trusted Publisher 配置已核对为 `ByteTrue/pi-package-mono` + `release.yml` + `npm publish`。首次 publish 遇到 npm OIDC 404；后续 rerun 遭遇 GitHub hosted runner acquisition 故障，待新 release run 完成后关闭。
 
 ## 对 `.cs/` 的影响
 
