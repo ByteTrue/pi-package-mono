@@ -2,8 +2,9 @@
 kind: issue
 title: "快改：发布所有落后于 main 的 npm 包"
 type: ff
-status: open
+status: closed
 created: 2026-08-07
+closed: 2026-08-07
 ---
 
 # 快改：发布所有落后于 main 的 npm 包
@@ -25,8 +26,9 @@ created: 2026-08-07
 - 全仓 490 tests passed；Web live E2E 9 skipped。
 - Web 0.2.0 pack：21 files / 76,564 bytes，关键入口存在。
 - Image 0.2.0 pack：63 files / 120,842 bytes；真实 tarball 经 production install 后可加载 `/image-gen`、零 Agent tool，Skill CLI wrapper 可运行。
-- `@bytetrue/pi-web-search@0.2.0` 已由 release workflow 发布，npm provenance 指向 GitHub Actions。
-- `@bytetrue/pi-image-gen@0.2.0` 尚未占用；npm Trusted Publisher 配置已核对为 `ByteTrue/pi-package-mono` + `release.yml` + `npm publish`。首次 publish 遇到 npm OIDC 404；后续 rerun 遭遇 GitHub hosted runner acquisition 故障，待新 release run 完成后关闭。
+- `@bytetrue/pi-web-search@0.2.0` 已由 release workflow 发布；npm registry 版本、integrity 与 SLSA provenance 已核对。
+- `@bytetrue/pi-image-gen@0.2.0` 在 GitHub Actions major outage 恢复后由全新 release run `31150095080` 发布；typecheck、490 tests、OIDC publish 全部通过，npm registry 版本、integrity、gitHead `7e4be44` 与 SLSA provenance 已核对。
+- 最终 npm latest：Web `0.2.0`、Image `0.2.0`、Vendor `0.3.1`、Background Terminal `0.3.1`、Vision `0.2.0`。
 
 ## 对 `.cs/` 的影响
 
