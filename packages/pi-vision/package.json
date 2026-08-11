@@ -23,6 +23,7 @@
     "src/**",
     "!src/**/*.test.ts",
     "!src/**/test-helpers.ts",
+    "docs/banner.webp",
     "README.md"
   ],
   "pi": {

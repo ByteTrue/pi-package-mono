@@ -26,6 +26,7 @@
     "src/**",
     "!src/**/*.test.ts",
     "skills/**",
+    "docs/banner.webp",
     "README.md"
   ],
   "pi": {

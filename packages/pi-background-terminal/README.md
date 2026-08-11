@@ -1,49 +1,74 @@
-# @bytetrue/pi-background-terminal
+<p align="center">
+  <img src="./docs/banner.webp" alt="A command stream continuing through a suspended terminal plane" width="100%">
+</p>
 
-Three independent tools that use Pi's local bash execution backend to run a shell command in the background, check on it, and stop it — without overriding the built-in `bash` tool — plus a `/background` menu for users.
+<h1 align="center">@bytetrue/pi-background-terminal</h1>
 
-- `background_run` starts a command and returns immediately with a task id; the command keeps running.
-- `background_status` reports one task's status, exit code, and output file.
-- `background_kill` stops a running one.
-- When a task finishes normally, a follow-up message wakes the agent automatically; manually stopped tasks are silent.
-- Output streams to a file as it's produced; use the built-in `read` tool on that path for the full output instead of getting it dumped inline, which keeps a long command's output from flooding context.
-- Task lifetime matches the current Pi session; a real session end (not `/reload`) waits for and stops all owned processes, then deletes their output files. Tasks survive `/reload`, which re-evaluates the extension module.
-- The footer shows `bg:N` while this session has running tasks; it disappears at zero.
+<p align="center">Run a shell command without making Pi wait for it.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@bytetrue/pi-background-terminal"><img src="https://img.shields.io/npm/v/@bytetrue/pi-background-terminal?style=flat-square" alt="npm version"></a>
+</p>
+
+Pi's built-in `bash` is the right tool for commands that finish during the current call. This extension adds a separate path for dev servers, watch mode, and long-running work—without overriding `bash`.
+
 ## Install
 
 ```bash
 pi install npm:@bytetrue/pi-background-terminal
 ```
 
-## User command
+Restart or reload Pi, then ask naturally:
 
-### `/background`
+> Start the development server in the background.
 
-Opens a menu for the current session's running background commands. Select a command to open its output in the native editor, stop it, or return to the list. The menu owns the selection flow; users do not need to remember task ids.
+The Agent starts the command, returns immediately, and receives a follow-up when the process exits on its own.
 
 ## Tools
 
-### `background_run`
+| Tool | Required input | Result |
+| --- | --- | --- |
+| `background_run` | `command` | Starts a command and returns a task id plus output-file path |
+| `background_status` | `id` | Returns status, exit code, line count, output path, and recent output |
+| `background_kill` | `id` | Stops a running task |
 
-- `command` (required)
+All three schemas contain required parameters only. There are no timeout, working-directory, environment, list, or pagination arguments.
 
-Returns a task id and the output file path immediately. Use this only for a command that must outlive the tool call (a dev server, a watch mode, a long build/test); for anything that finishes on its own, use `bash`.
+> [!NOTE]
+> Full stdout and stderr stream to the output file returned by `background_run`. The Agent uses Pi's built-in `read` tool when it needs more than the recent preview.
 
-### `background_status`
+## Manage tasks yourself
 
-- `id` (required) — task id returned by `background_run`
+Run `/background` to open the human-facing task menu. It lists running tasks for the current session and lets you inspect their output or stop them with confirmation.
 
-Returns status (`running`/`exited`/`killed`/`failed`), exit code, output file path, line count, and a short recent-output preview. Never returns the full output inline — use `read` on the file path for that.
+The footer shows `bg:N` while tasks are running.
 
-### `background_kill`
+## Lifecycle
 
-- `id` (required)
+A task ends when:
 
-Stops a running task. A manually stopped task does not generate a completion follow-up.
+- the command exits;
+- `background_kill` stops it; or
+- the owning Pi session shuts down.
 
-## Verification
+Natural completion wakes an idle Agent. Manual stops and session cleanup are silent. Tasks survive `/reload` inside the same session, but they do not survive Pi exiting.
+
+Output is stored under `$TMPDIR/pi-background-terminal/` and removed at real session shutdown. Tasks are isolated by session id.
+
+## Deliberate limits
+
+- No PTY or interactive stdin
+- No automatic timeout
+- No custom `cwd` or environment input
+- No daemon, tmux dependency, Web UI, or cross-session persistence
+- No replacement for Pi's built-in `bash` or `read`
+
+## Development
 
 ```bash
-npm --workspace @bytetrue/pi-background-terminal run typecheck
 npm --workspace @bytetrue/pi-background-terminal test
+npm --workspace @bytetrue/pi-background-terminal run typecheck
+npm --workspace @bytetrue/pi-background-terminal pack --dry-run
 ```
+
+Requires `@earendil-works/pi-coding-agent >=0.79.10`.

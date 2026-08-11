@@ -1,11 +1,16 @@
-# @bytetrue/pi-web-search
+<p align="center">
+  <img src="./docs/banner.webp" alt="A web radar selecting a source and returning a guarded document" width="100%">
+</p>
 
-`web_search` + `web_fetch` for the [Pi coding agent](https://pi.dev), with a complete `/web` configuration flow.
+<h1 align="center">@bytetrue/pi-web-search</h1>
 
-- **Zero config:** Exa MCP free is the default search provider.
-- **Regional choices:** keyless Bing works well in mainland China; Bocha is available for domestic API search.
-- **Explicit behavior:** one `web_search` call contacts exactly one provider; omitted `provider` uses the selection from `/web`.
-- **Safe fetch:** every `web_fetch` uses one SSRF-safe generic transport with redirect revalidation and a 10 MiB decoded-body limit.
+<p align="center">Search the current web and fetch public pages through explicit, bounded routes.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@bytetrue/pi-web-search"><img src="https://img.shields.io/npm/v/@bytetrue/pi-web-search?style=flat-square" alt="npm version"></a>
+</p>
+
+Zero-config search works immediately through Exa MCP free. `/web` adds provider, API-key, SearXNG, and proxy configuration without requiring manual JSON edits.
 
 ## Install
 
@@ -13,73 +18,60 @@
 pi install npm:@bytetrue/pi-web-search
 ```
 
-If another extension registers `web_search` or `web_fetch`, remove it first to avoid tool-name collisions.
+Restart or reload Pi, then ask it to search the web. Run `/web` only when you want to change provider or network settings.
 
-## Configure in Pi
-
-Run `/web`. The TUI lets you:
-
-- choose any search provider;
-- enter its API key when required;
-- configure a SearXNG base URL;
-- configure the package HTTP proxy.
-
-Selecting an already configured or keyless provider activates it immediately. `/web --show` reports the active provider, proxy, and masked key status.
-
-No GitHub documentation or manual config editing is required for normal setup.
-
-| Provider | Environment variable | Notes |
-| --- | --- | --- |
-| Exa MCP free | — | keyless default |
-| Bing | — | keyless; reachable from mainland China without a proxy |
-| SearXNG | `SEARXNG_URL` | self-hosted; `/web` prompts for the URL |
-| Bocha 博查 | `BOCHA_API_KEY` | China AI-search API |
-| Tavily | `TAVILY_API_KEY` | search |
-| Exa | `EXA_API_KEY` | search |
-| Brave | `BRAVE_SEARCH_API_KEY` | search |
-| Jina | `JINA_API_KEY` | search |
-| Firecrawl | `FIRECRAWL_API_KEY` | search |
-
-Environment variables take precedence over stored keys. Config lives at `~/.pi/byte-pi-web/config.json`; set `PI_CONFIG_DIR` to override the base directory. The file is written atomically with mode `0600`, and `/web` refuses to overwrite malformed JSON.
+> [!IMPORTANT]
+> Remove any extension that already registers `web_search` or `web_fetch`; Pi tool names must be unique.
 
 ## Tools
 
 ### `web_search`
 
-Arguments:
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `query` | Yes | Search text |
+| `max_results` | No | 1–10 results; default 5 |
+| `provider` | No | One-call override; omitted uses the `/web` selection |
 
-- `query` — required search text;
-- `max_results` — optional integer from 1 to 10, default 5;
-- `provider` — optional provider for this call; omitted uses `/web`'s active provider.
-
-There is no implicit fallback. A failure lists the other available provider ids.
+One call contacts exactly one provider. There is no implicit fallback, hidden retry through another service, or fan-out that multiplies privacy, cost, and latency.
 
 ### `web_fetch`
 
-Arguments:
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `url` | Yes | Public HTTP(S) URL |
+| `raw` | No | Return raw HTML instead of extracted text |
 
-- `url` — required public `http(s)` URL;
-- `raw` — optional; return raw HTML instead of extracted text.
+Search-provider choice never changes fetch routing. Every URL uses the same generic transport with redirect revalidation, SSRF checks, text-only enforcement, and a 10 MiB decoded-body limit. Large accepted text is truncated for context and saved to a temporary file for later reading.
 
-Search-provider choice never changes fetch routing. Both raw and extracted fetches use the package's generic transport, which:
+## Configure with `/web`
 
-- rejects credentials in URLs;
-- blocks private, loopback, link-local, metadata, and other non-public targets after local DNS resolution on direct routes;
-- revalidates every redirect;
-- when an explicit proxy is configured, still rejects local/private hostnames and IP literals, while the proxy becomes the trusted boundary for target DNS resolution;
-- rejects non-text/binary content;
-- rejects decoded bodies over 10 MiB;
-- truncates large accepted text to Pi's context budget and saves the full accepted content to a temp file.
+The TUI can select a provider, enter its key, set a SearXNG base URL, and configure an HTTP proxy. `/web --show` reports the active route with credentials masked. The API-key field is visible while typing; prefer the provider's environment variable when sharing or recording your terminal.
 
-## Proxy support
+| Provider | Environment variable | Notes |
+| --- | --- | --- |
+| Exa MCP free | — | Keyless default |
+| Bing | — | Keyless; useful in mainland China without a proxy |
+| SearXNG | `SEARXNG_URL` | Self-hosted base URL |
+| Bocha 博查 | `BOCHA_API_KEY` | China AI-search API |
+| Tavily | `TAVILY_API_KEY` | Search API |
+| Exa | `EXA_API_KEY` | Search API |
+| Brave | `BRAVE_SEARCH_API_KEY` | Search API |
+| Jina | `JINA_API_KEY` | Search API |
+| Firecrawl | `FIRECRAWL_API_KEY` | Search API |
 
-Node's global `fetch` does not automatically honor proxy environment variables. Configure a proxy through `/web`, or set `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` before starting Pi.
+Provider API-key and base-URL environment variables override stored provider values; a configured proxy overrides proxy environment variables. Configuration lives at `~/.pi/byte-pi-web/config.json`; set `PI_CONFIG_DIR` to move the base directory. Writes are atomic with mode `0600`, and malformed JSON is never overwritten.
 
-The proxy dispatcher is package-scoped; the extension never changes the process-global dispatcher. Provider requests honor `NO_PROXY`. Arbitrary `web_fetch` targets intentionally do not use `NO_PROXY` to bypass the SSRF-safe route. Set `BYTE_PI_WEB_NO_PROXY=1` to disable proxy use.
+## Proxy behavior
 
-## Optional file shape
+Configure a proxy through `/web`, or set `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` before starting Pi. Provider requests honor `NO_PROXY`.
 
-The TUI owns normal setup. For automation, the resulting file is small:
+The dispatcher is package-scoped and never changes Node's process-global dispatcher. Arbitrary `web_fetch` targets intentionally do not use `NO_PROXY` to escape the guarded route. Set `BYTE_PI_WEB_NO_PROXY=1` to disable proxy use for this package.
+
+Direct fetches block private, loopback, link-local, metadata, and other non-public destinations after local DNS resolution and at redirect/connect time. With an explicit proxy, local/private hostnames and IP literals remain blocked while the proxy becomes the trusted boundary for target DNS resolution.
+
+<details>
+<summary>Optional configuration shape</summary>
 
 ```json
 {
@@ -90,7 +82,9 @@ The TUI owns normal setup. For automation, the resulting file is small:
 }
 ```
 
-Legacy `autoFallback` is ignored and removed on the next `/web` save.
+The `/web` flow is preferred. Legacy `autoFallback` is ignored and removed on the next save.
+
+</details>
 
 ## Development
 
@@ -103,5 +97,5 @@ npm --workspace @bytetrue/pi-web-search pack --dry-run
 Live provider tests are opt-in:
 
 ```bash
-npm run test:e2e --workspace @bytetrue/pi-web-search
+npm --workspace @bytetrue/pi-web-search run test:e2e
 ```

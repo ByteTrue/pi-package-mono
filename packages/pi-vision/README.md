@@ -1,86 +1,100 @@
-# @bytetrue/pi-vision
+<p align="center">
+  <img src="./docs/banner.webp" alt="A crystalline lens translating an image into structured marks" width="100%">
+</p>
 
-Let a text-only model read images by delegating to a vision-capable model from your own `models.json`.
+<h1 align="center">@bytetrue/pi-vision</h1>
 
-Use the opt-in automatic mode to analyze attached images before the first main-model call, or keep the
-`image_ask` tool for explicit local files and follow-up questions.
+<p align="center">Let a text-only Pi model understand images through a vision-capable model you already configured.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@bytetrue/pi-vision"><img src="https://img.shields.io/npm/v/@bytetrue/pi-vision?style=flat-square" alt="npm version"></a>
+</p>
+
+`pi-vision` uses models and credentials from your existing `models.json`. It adds no provider configuration and chooses no model for you.
 
 ## Install
 
 ```bash
-pi install @bytetrue/pi-vision
-# or, from a local checkout
-pi install /absolute/path/to/pi-package-mono/packages/pi-vision
+pi install npm:@bytetrue/pi-vision
 ```
 
-## Configure
+Restart or reload Pi, then select a model:
 
-```
+```text
 /vision
-/vision auto on
 ```
 
-`/vision` picks from the vision-capable models already in your `models.json`. `/vision auto on` then
-opts into analyzing images attached to the current user message before the first main-model call;
-`/vision auto off` disables it. Settings are saved to `~/.pi/agent/settings.json`, preserving every
-other setting and the file's permissions.
+The menu lists models whose Pi configuration declares image input. There is deliberately no default, so the extension cannot silently choose an expensive provider.
 
-There is no default model and automatic mode is off by default. This prevents an unexpected provider
-from receiving attachments or silently choosing an expensive model.
+If the list is empty, first add a model whose `input` includes `image` to Pi's `models.json`, then rerun `/vision`. [`@bytetrue/pi-vendor`](https://www.npmjs.com/package/@bytetrue/pi-vendor) can manage that configuration.
 
-Equivalent by hand, in `~/.pi/agent/settings.json` (or `<project>/.pi/settings.json`, which wins only
-after Pi marks the project trusted):
+## Two ways to use it
+
+| Mode | Best for | How it works |
+| --- | --- | --- |
+| `image_ask(paths, question)` | Local files, comparisons, and focused follow-ups | The Agent sends one or more local images plus a specific question to the configured vision model |
+| Automatic attachment analysis | Images attached through Pi startup, print mode, or RPC | The extension analyzes the whole batch before the first text-only main-model call |
+
+Enable or disable automatic mode explicitly:
+
+```text
+/vision auto on
+/vision auto off
+```
+
+Automatic mode is off by default because enabling it sends attachments and the current request to another provider.
+
+> [!NOTE]
+> Pi's interactive <kbd>Ctrl</kbd>+<kbd>V</kbd> image paste becomes a local file path in the input. That path uses `image_ask`; it is not an automatic attachment. The same applies when you paste or mention any local image path.
+
+## `image_ask`
+
+```text
+image_ask(paths, question)
+```
+
+- `paths` — local PNG, JPEG, GIF, or WebP files, absolute or relative to the current working directory.
+- `question` — the specific detail the vision model should answer.
+
+Ask naturally:
+
+> Compare `/tmp/mockup.png` with `/tmp/render.png` and list the visible layout differences.
+
+Pass several paths together to compare a mockup with a rendered page, or successive screenshots of the same flow. HTTP(S) URLs are not accepted; download the image first.
+
+If a text-only model tries Pi's built-in `read` tool on an image, the extension appends a short pointer to `image_ask` instead of leaving the model at a dead end.
+
+## Automatic-mode limits
+
+One request may contain up to four images with a combined decoded size of 20 MiB. The batch has a fixed 60-second deadline and is rejected as a whole if validation fails.
+
+Success or failure is injected before the main model starts. A failure explicitly tells the main model that it did not see the images, reducing the risk of a fabricated visual answer.
+
+Trusted project settings may override the global configuration. An untrusted project cannot enable attachment forwarding.
+
+## Settings
+
+`/vision` writes only the `pi-vision` section and preserves every other Pi setting:
 
 ```json
 {
   "pi-vision": {
-    "model": "bytetrueapi/qwen3.7-plus",
-    "autoAnalyzeAttachments": true
+    "model": "provider/vision-model",
+    "autoAnalyzeAttachments": false
   }
 }
 ```
 
-Credentials come from your existing `models.json`; this package stores none of its own.
+The global file is normally `~/.pi/agent/settings.json`. A trusted project may override it with `<project>/.pi/settings.json`.
 
-## Use
-
-With automatic mode enabled, attach up to four PNG/JPEG/GIF/WebP images to a user message. The
-extension sends the complete batch plus that user request to the configured vision provider once,
-then injects the answer before the text-only main model starts. The batch must stay within 20MB and
-passes MIME header validation; it is rejected as a whole rather than silently dropping images.
-
-The UI reports the provider/model used or a failure. A failure is also injected into model context so
-the main model cannot claim it saw the images and can explicitly retry with `image_ask`.
-
-For local image paths or a more specific follow-up, ask normally:
-
-```
-/tmp/pi-clipboard-3f2a.png the submit button looks misaligned, fix it
-```
-
-The agent calls `image_ask` with that path and its own focused question.
-
-If the agent reaches for the built-in `read` tool instead and pi tells it the image was dropped,
-this extension appends a pointer to `image_ask` so it isn't a dead end.
-
-### `image_ask(paths, question)`
-
-- `paths` — local image files (PNG, JPEG, GIF, WebP), absolute or relative to cwd. Pass several
-  at once to compare them, e.g. a mockup and the actual render.
-- `question` — what you need to know. You get one text answer, not the image, so ask for the
-  specific detail; ask again for follow-ups.
-
-## What it does not do
-
-- No provider config or API keys of its own — vision models and credentials stay in `models.json`.
-- `/vision` writes only `pi-vision.model` and `pi-vision.autoAnalyzeAttachments`.
-- No URLs. Download the file first, then pass the path.
-- No fallback chains, automatic model switching or cache.
-- Nothing when your current model already accepts images — `read` behaves exactly as before.
+When the current main model already accepts images, `image_ask` is removed from active tools and the extension stays out of Pi's normal image path.
 
 ## Development
 
 ```bash
 npm --workspace @bytetrue/pi-vision test
 npm --workspace @bytetrue/pi-vision run typecheck
+npm --workspace @bytetrue/pi-vision pack --dry-run
 ```
+
+Requires `@earendil-works/pi-coding-agent >=0.79.10`.

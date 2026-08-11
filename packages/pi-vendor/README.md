@@ -1,15 +1,16 @@
-# @bytetrue/pi-vendor
+<p align="center">
+  <img src="./docs/banner.webp" alt="A secure routing board connecting model providers" width="100%">
+</p>
 
-AI-first provider and model configuration for the [Pi coding agent](https://pi.dev).
+<h1 align="center">@bytetrue/pi-vendor</h1>
 
-- The bundled `pi-vendor` skill handles routine `models.json` inspection, CRUD, discovery, and audits.
-- A bundled Node script provides catalog lookup, `/models` discovery, local linting, and secret entry only when the skill invokes it.
-- `/vendor` is a minimal cold-start TUI that adds one provider or one model per run.
+<p align="center">AI-first provider and model management for Pi's <code>models.json</code>.</p>
 
-Configuration path: `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.json` by default.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@bytetrue/pi-vendor"><img src="https://img.shields.io/npm/v/@bytetrue/pi-vendor?style=flat-square" alt="npm version"></a>
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@bytetrue/pi-vendor?style=flat-square)](https://www.npmjs.com/package/@bytetrue/pi-vendor)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](../../LICENSE)
+The package uses an on-demand Skill for routine work and keeps `/vendor` as a small cold-start wizard for the moment when no usable model exists. It registers no permanent Agent tools.
 
 ## Install
 
@@ -17,17 +18,11 @@ Configuration path: `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.j
 pi install npm:@bytetrue/pi-vendor
 ```
 
-Or install a local checkout:
+Restart or reload Pi. Configuration lives at `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.json` by default.
 
-```bash
-pi install /absolute/path/to/pi-package-mono/packages/pi-vendor
-```
+## Ask Pi
 
-Restart or reload Pi after installation. The package requires `@earendil-works/pi-coding-agent >=0.79.10`.
-
-## Ask the AI
-
-The package installs `skills/pi-vendor/SKILL.md`; Pi discovers it automatically. Ask naturally, for example:
+The bundled `pi-vendor` Skill is discovered automatically. Ask naturally:
 
 - “Add `claude-opus-4-5` to provider `my-gateway` using Anthropic's official template.”
 - “Discover the models exposed by `my-gateway`.”
@@ -35,42 +30,48 @@ The package installs `skills/pi-vendor/SKILL.md`; Pi discovers it automatically.
 - “Audit my Pi model configuration.”
 - “Remove model `old-model` from provider `local`.”
 
-The skill edits `models.json` with the AI's normal file tools. There is deliberately no general-purpose mutation tool: changes stay inspectable and narrow.
+The Skill uses Pi's normal read/edit flow, so changes stay narrow and inspectable. It never invents model cost, context, capabilities, or compatibility metadata when no authoritative source provides them.
 
-### API keys
+> [!CAUTION]
+> When a working Agent is available, never paste an API key into chat. Let the Skill give you the bundled `vendor.mjs set-key` command, then run it yourself; terminal input is hidden and the key never enters argv or the assistant response. The cold-start `/vendor` key field is visible while typing, so do not use it while sharing or recording your terminal.
 
-Never paste an API key into chat. For key entry or rotation, the skill gives you a command for its bundled `vendor.mjs set-key` command. The script:
-
-- prompts in your terminal without echoing the key;
-- updates only the selected provider's `apiKey`;
-- writes atomically with file mode `0600`;
-- never places the key in the command line or assistant response.
-
-Keys are stored as literals in `models.json`, matching Pi's native configuration. When a key contains Pi metacharacters, the package writes Pi's escaped form (`$` as `$$`, leading `!` as `$!`) so it cannot be expanded or executed. Protect the file accordingly.
-
-## Cold-start TUI
+## Cold-start setup
 
 Run `/vendor` when no working model is available or when you prefer a manual path:
 
-- **Add provider** — provider key → base URL → API format → API key → discover or enter one model → save.
-- **Add model** — select an existing provider → discover or enter one model → save.
+1. **Add provider** — provider key, base URL, API format, API key, and first model.
+2. **Add model** — choose an existing provider, then discover or enter a model id.
 
-Each run adds exactly one provider/model and ends. Run `/vendor` again for another. Model candidate lists show at most ten rows; use `←`/`→` to page and `↑`/`↓` to move.
+Each run adds exactly one provider or model and exits. Use `←`/`→` to page model candidates and `↑`/`↓` to move. `Esc` cancels without writing.
 
-`Esc` cancels without writing. Successful saves use an atomic `0600` write, refresh Pi's active model registry, and report any runtime validation error.
+Successful saves are atomic, use file mode `0600`, refresh Pi's model registry, and report any runtime validation error.
 
-## Bundled script
+## On-demand helper
 
-The skill invokes one on-demand script instead of registering permanent AI tools:
+The Skill calls one bundled script only when needed:
 
 | Command | Purpose |
-|---|---|
-| `vendor.mjs catalog <query>` | Search credential-free templates from the active Pi installation. |
-| `vendor.mjs discover <provider> [configured-model]` | Probe the provider default route or one configured model's effective OpenAI/Anthropic/Google route; return listed ids only. |
-| `vendor.mjs lint` | Check JSON shape and duplicate model ids without starting Pi. |
-| `vendor.mjs set-key <provider>` | Prompt the user privately and update one key atomically. |
+| --- | --- |
+| `vendor.mjs catalog <query>` | Search credential-free templates from the active Pi installation |
+| `vendor.mjs discover <provider> [configured-model]` | Probe the effective OpenAI, Anthropic, or Google model-list route and return ids |
+| `vendor.mjs lint` | Check local JSON shape and duplicate model ids |
+| `vendor.mjs set-key <provider>` | Privately update one provider key from the user's terminal |
 
-Discovery uses protocol-specific model-list URLs, authentication, and response shapes for OpenAI-compatible, Anthropic Messages, and Google Generative AI routes. It accepts only HTTP(S), rejects redirects and credential-bearing URLs, enforces a 15-second deadline and 2 MiB decoded-body limit, and never outputs configured credentials. A returned id is positive evidence; a configured but unlisted id is reported as a warning to verify, not proof that the upstream cannot serve it. `lint` is deliberately local; reload Pi and select the model when runtime confirmation is required.
+Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, and applies fixed time/body limits. A returned id is positive evidence; an unlisted configured id is only a warning to verify, never proof that the upstream does not support it.
+
+## Safety boundaries
+
+`/vendor` and `set-key` use strict JSON handling and atomic `0600` writes. Their core operations reject stale revisions and identity conflicts instead of silently upserting or overwriting them.
+
+The Skill uses Pi's normal read/edit tools rather than that transaction core; review its diff, then let it run the bundled local `lint` check.
+
+Across both paths:
+
+- official templates never copy credentials or routing fields into the target provider;
+- the target provider and template source remain separate choices;
+- there is no Web UI, background server, OAuth manager, or general mutation tool.
+
+API keys are stored as literals in `models.json`, matching Pi's native configuration. Keys containing Pi metacharacters are escaped before storage so Pi cannot expand or execute them.
 
 ## Development
 
@@ -80,6 +81,6 @@ npm --workspace @bytetrue/pi-vendor test
 npm --workspace @bytetrue/pi-vendor pack --dry-run
 ```
 
-The package is loaded from TypeScript source through Pi; it has no build step or generated browser assets.
+Use an isolated `PI_CODING_AGENT_DIR` for tests and smoke runs. They must never read or write the user's Pi configuration.
 
-Set `PI_CODING_AGENT_DIR` to an isolated directory for tests or smoke runs. Tests must not read or write the user's Pi configuration.
+Requires `@earendil-works/pi-coding-agent >=0.79.10`.
