@@ -25,13 +25,9 @@ export type CompleteFn = typeof complete;
 
 const parameters = Type.Object({
   paths: Type.Array(Type.String(), {
-    description:
-      "Local image file paths (absolute, or relative to cwd). Pass every image relevant to the question in one call so they can be compared.",
+    description: "Local image paths, absolute or relative to cwd; group related images for comparison.",
   }),
-  question: Type.String({
-    description:
-      "What you need to know about the image(s). Be specific — you get one text answer back, not the image itself.",
-  }),
+  question: Type.String({ description: "A specific question about the images." }),
 });
 
 function credentialEcho(raw: string, auth: VisionAuth): "the API key" | "a configured credential" | undefined {
@@ -155,12 +151,10 @@ export function registerImageAskTool(pi: ExtensionAPI, completeFn: CompleteFn = 
   pi.registerTool({
     name: TOOL_NAME,
     label: "Image Ask",
-    description:
-      "Ask a vision-capable model about local image files and get a text answer. Use this when you need to know what an image shows — screenshots, mockups, diagrams, error dialogs. Pass related images together to compare them.",
-    promptSnippet: "Ask a vision model about local image files, get a text answer",
+    description: "Ask a vision model about local images and return a text answer.",
+    promptSnippet: "Ask a vision model about local images.",
     promptGuidelines: [
-      `Use ${TOOL_NAME} whenever the work depends on what an image shows; do not guess an image's contents from its filename.`,
-      `${TOOL_NAME} answers only the question asked, so ask for the specific detail you need, and ask again for follow-ups.`,
+      `${TOOL_NAME}: use when work depends on image contents; never infer contents from filenames.`,
     ],
     parameters,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {

@@ -53,7 +53,7 @@ describe("search provider response budget", () => {
 			));
 		vi.stubGlobal("fetch", fetch);
 
-		await expect(new ExaMcpFreeProvider().search("query", 3)).resolves.toEqual({ query: "query", results: [] });
+		await expect(new ExaMcpFreeProvider().search("query", 3)).resolves.toEqual([]);
 		expect(cancelled).toBe(true);
 		expect(fetch).toHaveBeenCalledTimes(3);
 	});

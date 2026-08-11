@@ -18,8 +18,6 @@ export type GenerateImageOptions = {
   fetchImpl?: typeof fetch;
   /** Cancellation signal — propagated to every fetch and the DashScope poll loop. */
   signal?: AbortSignal;
-  /** Override the wall-clock used for filenames. Useful for tests. */
-  now?: () => Date;
 };
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -35,7 +33,6 @@ export async function generateImage(
   options: GenerateImageOptions,
 ): Promise<ImageGenResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const now = options.now ?? (() => new Date());
 
   const requested = (options.settings.defaultModel ?? '').trim();
   if (!requested) {
@@ -63,7 +60,7 @@ export async function generateImage(
   const outDir = resolveOutputDir(params.outputDir ?? options.settings.outputDir, options.cwd);
   await mkdir(outDir, { recursive: true });
 
-  const stamp = formatStamp(now());
+  const stamp = formatStamp(new Date());
   const baseFilename = sanitizeFilename(params.filename ?? `${resolved.requestedId}-${stamp}`);
   const images: GeneratedImage[] = [];
   for (let i = 0; i < raws.length; i++) {

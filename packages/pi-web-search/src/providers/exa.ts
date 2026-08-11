@@ -2,7 +2,7 @@
 
 import { fetchWithProxy as fetch } from "../proxy.js";
 import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResult } from "./types.js";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const ENV_VAR = "EXA_API_KEY";
@@ -18,7 +18,7 @@ export class ExaProvider implements SearchProvider {
 
 	constructor(private readonly apiKey: string) {}
 
-	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
+	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
 		if (!this.apiKey) throw new Error(`${ENV_VAR} is not set. Run /web to configure a key, or export ${ENV_VAR}.`);
 		const res = await fetch(EXA_SEARCH_URL, {
 			method: "POST",
@@ -36,6 +36,6 @@ export class ExaProvider implements SearchProvider {
 			url: result.url ?? "",
 			snippet: result.text ?? "",
 		}));
-		return { query, results };
+		return results;
 	}
 }

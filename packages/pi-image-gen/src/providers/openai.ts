@@ -1,4 +1,4 @@
-import { classifyHttpError, describeNetworkError } from '../errors.js';
+import { classifyHttpError, describeNetworkError, safeText } from '../errors.js';
 import { classifyImageOutput, sniffMime } from '../image-input.js';
 import type {
   GenerateImageParams,
@@ -164,13 +164,4 @@ export async function parseImagesResponse(
     );
   }
   return out;
-}
-
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '<unreadable response body>';
-  }
 }

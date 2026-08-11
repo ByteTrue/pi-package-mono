@@ -9,9 +9,9 @@ import { FirecrawlProvider } from "./firecrawl.js";
 import { JinaProvider } from "./jina.js";
 import { SearxngProvider } from "./searxng.js";
 import { TavilyProvider } from "./tavily.js";
-import type { AnyProvider, ProviderCredentials } from "./types.js";
+import type { ProviderCredentials, SearchProvider } from "./types.js";
 
-export function createProvider(name: string, creds: ProviderCredentials = {}): AnyProvider {
+export function createProvider(name: string, creds: ProviderCredentials = {}): SearchProvider {
 	const apiKey = creds.apiKey ?? "";
 	const baseUrl = creds.baseUrl ?? "";
 	switch (name) {

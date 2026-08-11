@@ -74,3 +74,11 @@ const BUILT_IN_ENV_VAR: Record<string, string> = {
   dashscope: 'DASHSCOPE_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
 };
+
+export async function safeText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return '<unreadable response body>';
+  }
+}

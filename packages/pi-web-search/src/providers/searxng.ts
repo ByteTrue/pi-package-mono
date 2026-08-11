@@ -2,7 +2,7 @@
 
 import { fetchWithProxy as fetch } from "../proxy.js";
 import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResult } from "./types.js";
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
 
@@ -16,7 +16,7 @@ export class SearxngProvider implements SearchProvider {
 
 	constructor(private readonly baseUrl: string = DEFAULT_BASE_URL) {}
 
-	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
+	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
 		const url = `${this.baseUrl.replace(/\/+$/, "")}/search?${new URLSearchParams({
 			q: query,
 			format: "json",
@@ -33,6 +33,6 @@ export class SearxngProvider implements SearchProvider {
 			url: result.url ?? "",
 			snippet: result.content ?? "",
 		}));
-		return { query, results };
+		return results;
 	}
 }

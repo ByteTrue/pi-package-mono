@@ -62,7 +62,7 @@ describe("pi-background-terminal extension", () => {
     const sessionId = "notify-session";
     await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctxFor(sessionId));
 
-    manager.start('node -e "console.log(\'notify-payload\')"', process.cwd(), sessionId, 30);
+    manager.start('node -e "console.log(\'notify-payload\')"', process.cwd(), sessionId);
     await vi.waitFor(() => expect(sent).toHaveLength(1), { timeout: 8000 });
 
     expect(sent[0]?.options).toEqual({ deliverAs: "followUp", triggerTurn: true });
@@ -77,7 +77,7 @@ describe("pi-background-terminal extension", () => {
     const { sent, handlers } = harness();
     await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctxFor("mine"));
 
-    const foreign = manager.start('node -e "console.log(\'other\')"', process.cwd(), "someone-else", 30);
+    const foreign = manager.start('node -e "console.log(\'other\')"', process.cwd(), "someone-else");
     // Wait for it to genuinely finish, so "nothing was sent" means filtered, not merely not-yet-done.
     await vi.waitFor(() => expect(manager.get(foreign.id, "someone-else")?.status).toBe("exited"), { timeout: 8000 });
 
@@ -92,8 +92,8 @@ describe("pi-background-terminal extension", () => {
     const ctx = ctxFor(sessionId, setStatus);
     await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctx);
 
-    const first = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId, 30);
-    const second = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId, 30);
+    const first = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId);
+    const second = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId);
     expect(setStatus).toHaveBeenLastCalledWith("background-terminal", "bg:2");
 
     manager.kill(first.id, sessionId);
@@ -112,7 +112,7 @@ describe("pi-background-terminal extension", () => {
     const ctx = ctxFor(sessionId);
     await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctx);
 
-    const task = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId, 30);
+    const task = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), sessionId);
 
     await handlers.session_shutdown?.({ type: "session_shutdown", reason: "reload" }, ctx);
     expect(manager.get(task.id, sessionId)?.status).toBe("running");

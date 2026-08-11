@@ -1,4 +1,4 @@
-import { classifyHttpError, describeNetworkError } from '../errors.js';
+import { classifyHttpError, describeNetworkError, safeText } from '../errors.js';
 import { classifyImageOutput, toDataUri } from '../image-input.js';
 import type {
   GenerateImageParams,
@@ -97,12 +97,3 @@ export const dashscopeAdapter: ImageProviderAdapter = {
     return out;
   },
 };
-
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '<unreadable response body>';
-  }
-}

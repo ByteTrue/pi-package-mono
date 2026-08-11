@@ -6,10 +6,10 @@ export function registerBackgroundKillTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "background_kill",
     label: "Stop Background Task",
-    description: "Stops a running command started with background_run.",
-    promptSnippet: "Stop a running background task started with background_run.",
+    description: "Stop a running background task by id.",
+    promptSnippet: "Stop one background task.",
     parameters: Type.Object({
-      id: Type.String({ minLength: 1, description: "The task id returned by background_run" }),
+      id: Type.String({ minLength: 1, description: "Task id from background_run." }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const parentSessionId = ctx.sessionManager.getSessionId();

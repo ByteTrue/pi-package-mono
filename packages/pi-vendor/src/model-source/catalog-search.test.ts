@@ -29,28 +29,16 @@ describe("searchOfficialModels", () => {
 		await expect(searchOfficialModels("gpt-4o")).rejects.toMatchObject({ code: "catalog_unavailable" });
 	});
 
-	it("fails visibly when a matching catalog entry has unknown fields", async () => {
-		mockLoad.mockResolvedValue({ openai: { test: { id: "test", futureField: true } } });
-		await expect(searchOfficialModels("test")).rejects.toMatchObject({ code: "catalog_unavailable" });
-
-		mockLoad.mockResolvedValue({ openai: { test: { id: "test", thinkingLevelMap: { future: "value" } } } });
-		await expect(searchOfficialModels("test")).rejects.toMatchObject({ code: "catalog_unavailable" });
-	});
 
 	it("finds models by exact id match", async () => {
 		mockLoad.mockResolvedValue(fakeCatalog());
 		const results = await searchOfficialModels("gpt-4o");
-		expect(results).toHaveLength(1);
-		expect(results[0]!.provider).toBe("openai");
-		expect(results[0]!.modelId).toBe("gpt-4o");
-		expect(results[0]!.model.name).toBe("GPT-4o");
+		expect(results).toEqual(["gpt-4o"]);
 	});
 
 	it("finds models by exact name match", async () => {
 		mockLoad.mockResolvedValue(fakeCatalog());
-		const results = await searchOfficialModels("Claude Sonnet 4.5");
-		expect(results).toHaveLength(1);
-		expect(results[0]!.modelId).toBe("claude-sonnet-4-5");
+		expect(await searchOfficialModels("Claude Sonnet 4.5")).toEqual(["claude-sonnet-4-5"]);
 	});
 
 	it("finds models by prefix match", async () => {
@@ -61,18 +49,13 @@ describe("searchOfficialModels", () => {
 
 	it("finds models by substring match", async () => {
 		mockLoad.mockResolvedValue(fakeCatalog());
-		const results = await searchOfficialModels("mini");
-		expect(results).toHaveLength(1);
-		expect(results[0]!.modelId).toBe("o4-mini");
+		expect(await searchOfficialModels("mini")).toEqual(["o4-mini"]);
 	});
 
 	it("returns exact matches before prefix matches", async () => {
 		mockLoad.mockResolvedValue(fakeCatalog());
-		const results = await searchOfficialModels("gpt");
-		// gpt-4o, gpt-4.1 should be prefix matches (no exact id match for "gpt")
-		expect(results.length).toBeGreaterThanOrEqual(2);
-		// first-seen order within prefix group
-		expect(results.map(r => r.modelId)).toEqual(["gpt-4o", "gpt-4.1"]);
+		// First-seen order within the prefix group.
+		expect(await searchOfficialModels("gpt")).toEqual(["gpt-4o", "gpt-4.1"]);
 	});
 
 	it("respects the limit parameter", async () => {
@@ -91,7 +74,7 @@ describe("searchOfficialModels", () => {
 		await expect(searchOfficialModels(query)).resolves.toEqual([]);
 	});
 
-	it("strips routing/credential fields from results", async () => {
+	it("returns only model ids, never catalog metadata", async () => {
 		mockLoad.mockResolvedValue({
 			test: {
 				"secret-model": {
@@ -99,19 +82,9 @@ describe("searchOfficialModels", () => {
 					apiKey: "sk-secret",
 					baseUrl: "https://evil.com",
 					headers: { Authorization: "Bearer x" },
-					authHeader: true,
-					provider: "test",
 				},
 			},
 		});
-		const results = await searchOfficialModels("secret-model");
-		expect(results).toHaveLength(1);
-		const model = results[0]!.model;
-		expect(model).not.toHaveProperty("apiKey");
-		expect(model).not.toHaveProperty("baseUrl");
-		expect(model).not.toHaveProperty("headers");
-		expect(model).not.toHaveProperty("authHeader");
-		expect(model).not.toHaveProperty("provider");
-		expect(model.id).toBe("secret-model");
+		expect(await searchOfficialModels("secret-model")).toEqual(["secret-model"]);
 	});
 });

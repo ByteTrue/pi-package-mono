@@ -3,7 +3,7 @@ import { createScriptedQuickUI } from "./quick-adapter.js";
 import { runAddProviderFlow } from "./quick-add-provider.js";
 import type { ModelsJson } from "../models-json.js";
 
-const NO_CATALOG = { catalog: null, templates: [] };
+const NO_CATALOG = { catalog: null };
 
 /**
  * Answer each prompt by message substring exactly once; every repeat (and any
@@ -93,11 +93,9 @@ describe("runAddProviderFlow", () => {
 
 		expect(result.kind).toBe("saved");
 		if (result.kind !== "saved") return;
-		// No official template: safe defaults, and the user is warned about them.
-		expect(result.models.providers?.relay?.models).toEqual([
-			{ id: "hand-typed", name: "hand-typed", api: "openai-completions", reasoning: false, input: ["text"], contextWindow: 128000, maxTokens: 16384 },
-		]);
-		expect(ui.notifies.some((n) => n.level === "warning" && n.message.includes("safe defaults"))).toBe(true);
+		// No official catalog match: keep the model minimal and report it.
+		expect(result.models.providers?.relay?.models).toEqual([{ id: "hand-typed", api: "openai-completions" }]);
+		expect(ui.notifies.some((n) => n.level === "warning" && n.message.includes("minimal model entry"))).toBe(true);
 	});
 
 	it("rejects a provider key that already exists", async () => {

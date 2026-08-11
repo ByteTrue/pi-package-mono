@@ -20,7 +20,7 @@ export interface FetchedContent {
 export interface SearchProvider {
 	readonly name: string;
 	readonly label: string;
-	search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse>;
+	search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]>;
 }
 
 export type AnyProvider = SearchProvider;

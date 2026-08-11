@@ -82,10 +82,19 @@ describe("installProxyDispatcher", () => {
 	it("routes generic fetch through the authenticated proxy even when NO_PROXY matches", async () => {
 		const connectTargets: string[] = [];
 		const proxyAuthorizations: Array<string | undefined> = [];
-		const proxyServer = createServer();
+		const recordRequest = (target: string | undefined, authorization: string | undefined) => {
+			connectTargets.push(target ?? "");
+			proxyAuthorizations.push(authorization);
+		};
+		const proxyServer = createServer((request, response) => {
+			const target = new URL(request.url ?? "");
+			recordRequest(`${target.hostname}:${target.port || (target.protocol === "https:" ? "443" : "80")}`, request.headers["proxy-authorization"]);
+			const binary = target.pathname.includes("/binary");
+			response.writeHead(200, { "Content-Type": binary ? "image/png" : "text/plain" });
+			response.end("ok");
+		});
 		proxyServer.on("connect", (request, socket) => {
-			connectTargets.push(request.url ?? "");
-			proxyAuthorizations.push(request.headers["proxy-authorization"]);
+			recordRequest(request.url, request.headers["proxy-authorization"]);
 			socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
 			socket.once("data", (requestBytes) => {
 				const binary = requestBytes.toString().includes("/binary");

@@ -19,26 +19,20 @@ export async function readResponseText(
 	if (!response.body) return "";
 
 	const reader = response.body.getReader();
-	let buffer = new Uint8Array(Math.min(maxBytes, 64 * 1024));
+	const chunks: Uint8Array[] = [];
 	let bytes = 0;
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();
 			if (done) break;
-			const nextBytes = bytes + value.byteLength;
-			if (nextBytes > maxBytes) {
+			bytes += value.byteLength;
+			if (bytes > maxBytes) {
 				await reader.cancel().catch(() => {});
 				throw overBudget(maxBytes);
 			}
-			if (nextBytes > buffer.byteLength) {
-				const grown = new Uint8Array(Math.min(maxBytes, Math.max(nextBytes, buffer.byteLength * 2)));
-				grown.set(buffer.subarray(0, bytes));
-				buffer = grown;
-			}
-			buffer.set(value, bytes);
-			bytes = nextBytes;
+			chunks.push(value);
 		}
-		return new TextDecoder().decode(buffer.subarray(0, bytes));
+		return new TextDecoder().decode(Buffer.concat(chunks, bytes));
 	} finally {
 		reader.releaseLock();
 }

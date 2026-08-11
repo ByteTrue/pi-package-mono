@@ -14,7 +14,7 @@ describe("background_run tool", () => {
   it("returns immediately with a task id and an already-created output file, even for a long command", async () => {
     const tool = registerOne(registerBackgroundRunTool);
     const start = Date.now();
-    const result = await call(tool, { command: 'node -e "setTimeout(() => {}, 5000)"', timeoutSeconds: 30 }, SESSION_ID);
+    const result = await call(tool, { command: 'node -e "setTimeout(() => {}, 5000)"' }, SESSION_ID);
 
     expect(Date.now() - start).toBeLessThan(2000);
     expect(result.content[0]?.text).toContain("Started in background");
@@ -24,11 +24,9 @@ describe("background_run tool", () => {
     expect(manager.get(details.id, SESSION_ID)?.status).toBe("running");
   });
 
-  it("allows an omitted timeout and still rejects an invalid explicit timeout", async () => {
-    const tool = registerOne(registerBackgroundRunTool);
-    const result = await call(tool, { command: 'node -e "setInterval(() => {}, 1000)"' }, SESSION_ID);
-    const details = result.details as { id: string; status: string };
-    expect(details.status).toBe("running");
-    await expect(call(tool, { command: "echo hi", timeoutSeconds: 0 }, SESSION_ID)).rejects.toThrow(/timeoutSeconds/);
+  it("exposes command as its only required input", () => {
+    const { parameters } = registerOne(registerBackgroundRunTool);
+    expect(parameters.required).toEqual(["command"]);
+    expect(Object.keys(parameters.properties ?? {})).toEqual(["command"]);
   });
 });

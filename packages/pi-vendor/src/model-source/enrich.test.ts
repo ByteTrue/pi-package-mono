@@ -19,15 +19,6 @@ describe("model enrichment", () => {
 					},
 				},
 			},
-			templates: [
-				{
-					id: "gpt-4o",
-					name: "Template GPT-4o",
-					contextWindow: 1,
-					maxTokens: 1,
-					input: ["text"],
-				},
-			],
 		});
 
 		// Even with a single candidate, should require user confirmation
@@ -68,41 +59,13 @@ describe("model enrichment", () => {
 		}
 	});
 
-	it("prefers the longest template prefix and falls back to safe defaults", async () => {
-		const prefixed = await enrichModelId("gpt-4.1-mini", {
-			catalog: null,
-			templates: [
-				{ prefix: "gpt", name: "GPT family", contextWindow: 1, maxTokens: 1 },
-				{ prefix: "gpt-4.1", name: "GPT-4.1 family", reasoning: true, input: ["text", "image"], contextWindow: 2, maxTokens: 2 },
-			],
-		});
-
-		expect(prefixed).toMatchObject({
+	it("uses a minimal entry when the official catalog has no match", async () => {
+		const result = await enrichModelId("mystery-model", { catalog: null });
+		expect(result).toMatchObject({
 			kind: "ready",
-			source: "template",
-			model: {
-				id: "gpt-4.1-mini",
-				name: "GPT-4.1 family",
-				reasoning: true,
-				input: ["text", "image"],
-				contextWindow: 2,
-				maxTokens: 2,
-			},
-		});
-
-		const unknown = await enrichModelId("mystery-model", { catalog: null, templates: [] });
-		expect(unknown).toMatchObject({
-			kind: "ready",
-			source: "default",
 			warning: expect.stringContaining("mystery-model"),
-			model: {
-				id: "mystery-model",
-				name: "mystery-model",
-				reasoning: false,
-				input: ["text"],
-				contextWindow: 128000,
-				maxTokens: 16384,
-			},
+			model: { id: "mystery-model" },
 		});
+		if (result.kind === "ready") expect(result.model).toEqual({ id: "mystery-model" });
 	});
 });

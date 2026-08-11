@@ -3,7 +3,7 @@
 import { BROWSER_USER_AGENT, htmlToText } from "../html.js";
 import { fetchWithProxy as fetch } from "../proxy.js";
 import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseText } from "../response-body.js";
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResult } from "./types.js";
 
 const BING_ENDPOINT = "https://www.bing.com/search";
 const MAX_ATTEMPTS = 2;
@@ -54,7 +54,7 @@ export class BingProvider implements SearchProvider {
 	readonly name = "bing";
 	readonly label = "Bing";
 
-	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
+	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
 		const url = `${BING_ENDPOINT}?${new URLSearchParams({ q: query, form: "QBLH" }).toString()}`;
 		let lastError: unknown;
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -73,13 +73,13 @@ export class BingProvider implements SearchProvider {
 				const body = await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
 				if (!res.ok) throw new Error(`Bing search error (${res.status})`);
 				const results = parseBing(body, maxResults);
-				if (results.length > 0) return { query, results };
+				if (results.length > 0) return results;
 			} catch (error) {
 				if (signal?.aborted) throw error;
 				lastError = error;
 			}
 		}
 		if (lastError) throw new Error(`Bing search failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
-		return { query, results: [] };
+		return [];
 	}
 }

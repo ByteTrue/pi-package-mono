@@ -59,11 +59,9 @@ function formatExitMessage(task: BackgroundTask): string {
   const outcome =
     task.status === "killed"
       ? "was stopped"
-      : task.status === "timed_out"
-        ? "timed out"
-        : task.status === "failed"
-          ? `failed: ${task.error ?? "unknown error"}`
-          : `exited with code ${task.exitCode}`;
+      : task.status === "failed"
+        ? `failed: ${task.error ?? "unknown error"}`
+        : `exited with code ${task.exitCode}`;
   const lastLine = task.tail.trim().split("\n").at(-1);
   const summary = lastLine ? ` Last line: ${truncateLine(lastLine, 250).text}` : "";
   return `[${task.id}] ${task.command} ${outcome}.${summary} Output: ${task.outputPath}`;

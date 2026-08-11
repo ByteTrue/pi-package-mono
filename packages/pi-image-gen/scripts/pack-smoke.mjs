@@ -3,86 +3,26 @@
  * Real tarball smoke for @bytetrue/pi-image-gen.
  * npm pack → allowlist paths → extract → production install → load extension entry.
  */
-import { spawn } from "node:child_process";
-import { mkdtemp, rm, mkdir, readdir, readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "..");
 const monoRoot = resolve(packageRoot, "../..");
 
-function fail(msg) {
-	console.error(`[pack-smoke] FAIL: ${msg}`);
-	process.exitCode = 1;
-}
-
 function ok(msg) {
 	console.log(`[pack-smoke] OK: ${msg}`);
 }
 
-async function run(cmd, args, opts = {}) {
-	return new Promise((resolvePromise, reject) => {
-		const child = spawn(cmd, args, {
-			cwd: opts.cwd ?? monoRoot,
-			stdio: ["ignore", "pipe", "pipe"],
-			env: { ...process.env, ...opts.env },
-		});
-		let stdout = "";
-		let stderr = "";
-		child.stdout.on("data", (c) => {
-			stdout += c;
-		});
-		child.stderr.on("data", (c) => {
-			stderr += c;
-		});
-		child.on("error", reject);
-		child.on("close", (code) => {
-			if (code !== 0) {
-				reject(new Error(`${cmd} ${args.join(" ")} exited ${code}\n${stderr || stdout}`));
-				return;
-			}
-			resolvePromise({ stdout, stderr });
-		});
-	});
-}
+const execFileAsync = promisify(execFile);
 
-function parseNpmPackJson(stdout) {
-	const arrStart = stdout.indexOf("[");
-	const objStart = stdout.indexOf("{");
-	let start = -1;
-	let end = -1;
-	if (arrStart >= 0 && (objStart < 0 || arrStart < objStart)) {
-		start = arrStart;
-		end = stdout.lastIndexOf("]");
-	} else if (objStart >= 0) {
-		start = objStart;
-		end = stdout.lastIndexOf("}");
-	}
-	if (start < 0 || end < start) {
-		throw new Error(`npm pack --json did not emit JSON:\n${stdout.slice(0, 400)}`);
-	}
-	return JSON.parse(stdout.slice(start, end + 1));
-}
-
-function listTarPaths(packJson) {
-	let entry;
-	if (Array.isArray(packJson)) {
-		entry = packJson[0];
-	} else if (packJson && typeof packJson === "object") {
-		if (Array.isArray(packJson.files)) {
-			entry = packJson;
-		} else {
-			entry = Object.values(packJson)[0];
-		}
-	}
-	const files = entry?.files ?? [];
-	return {
-		entry,
-		paths: files.map((f) => (typeof f === "string" ? f : f.path)),
-	};
+function run(command, args, { cwd = monoRoot } = {}) {
+	return execFileAsync(command, args, { cwd, encoding: "utf8" });
 }
 
 function assertPackFiles(paths) {
@@ -131,19 +71,16 @@ async function main() {
 			"--pack-destination",
 			packDest,
 		]);
-		const packJson = parseNpmPackJson(stdout);
-		const { entry, paths } = listTarPaths(packJson);
-		const filename = entry?.filename ?? entry?.name;
-		const tgzPath = filename
-			? join(packDest, filename.endsWith(".tgz") ? filename : `${filename}`)
-			: "";
-		const actualTgz = existsSync(tgzPath)
-			? tgzPath
-			: join(packDest, (await readdir(packDest)).find((f) => f.endsWith(".tgz")));
-		if (!actualTgz || !existsSync(actualTgz)) throw new Error("packed tgz not found");
+		const packJson = JSON.parse(stdout);
+		const entry = Array.isArray(packJson) ? packJson[0] : Object.values(packJson)[0];
+		if (!entry?.filename || !Array.isArray(entry.files)) {
+			throw new Error("npm pack --json returned an unexpected result");
+		}
+		const actualTgz = join(packDest, entry.filename);
+		if (!existsSync(actualTgz)) throw new Error("packed tgz not found");
 		ok(`packed ${actualTgz}`);
 
-		assertPackFiles(paths);
+		assertPackFiles(entry.files.map((file) => file.path));
 
 		const extractDir = join(tempRoot, "extract");
 		const extractedPkg = await extractTgz(actualTgz, extractDir);

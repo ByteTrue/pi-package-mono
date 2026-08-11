@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-web-search",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension: web_search + web_fetch with zero-config Exa MCP free search, keyless Bing, self-hosted SearXNG, and pluggable providers (Bocha, Tavily, Exa, Brave, Jina, Firecrawl).",
   "keywords": [
     "pi-package",
@@ -50,7 +50,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "undici": "^8.0.0"
+    "undici": "8.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

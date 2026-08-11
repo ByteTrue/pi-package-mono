@@ -3,11 +3,10 @@ import { acquireOneModel, resolveModelConfig, stripTrailingV1 } from "./model-pi
 import { createScriptedQuickUI } from "./quick-adapter.js";
 
 // Fully hermetic defaults: no official catalog, no catalog search hits.
-const NO_CATALOG = { enrich: { catalog: null, templates: [] }, searchCatalog: async () => [] };
+const NO_CATALOG = { enrich: { catalog: null }, searchCatalog: async () => [] };
 
-/** Fake catalog search returning one choice per (provider, modelId) pair. */
 function catalogHits(...pairs: [provider: string, modelId: string][]) {
-	return async () => pairs.map(([provider, modelId]) => ({ provider, modelId, model: { id: modelId } }));
+	return async () => [...new Set(pairs.map(([, modelId]) => modelId))];
 }
 
 function officialModel(id: string, extra: Record<string, unknown> = {}) {

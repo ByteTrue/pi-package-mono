@@ -74,9 +74,9 @@ async function searchProviderWithTimeout(
 		controller.signal.addEventListener("abort", onAttemptAbort, { once: true });
 	});
 	try {
-		const response = await Promise.race([provider.search(query, maxResults, controller.signal), aborted]);
+		const results = await Promise.race([provider.search(query, maxResults, controller.signal), aborted]);
 		if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
-		return response.results;
+		return results;
 	} catch (error) {
 		if (signal?.aborted) throw signal.reason ?? error;
 		if (timedOut) throw timeoutError;

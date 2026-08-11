@@ -1,12 +1,11 @@
 ---
 name: pi-vendor
 description: >
-  Inspect, add, update, remove, discover, and audit Pi providers, custom models,
-  and modelOverrides in models.json. Use whenever the user asks to configure a
-  model/provider, change routing or API adapters, import /models ids, repair or
-  audit Pi model configuration, or mentions models.json. Prefer this skill over
-  inventing model metadata. It protects credentials and requires the user—not
-  the AI—to choose every ambiguous target provider, model ID, and official source.
+  Manage and audit Pi providers, custom models, modelOverrides, routing/API
+  adapters, and /models discovery in models.json. Use for any models.json or
+  provider/model configuration request. Never invent model metadata, expose
+  credentials, or choose ambiguous providers, model IDs, or official sources
+  for the user.
 ---
 
 # Pi Vendor

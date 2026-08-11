@@ -8,8 +8,6 @@ export type BuiltInModelEntry = {
   id: string;
   aliases?: string[];
   provider: BuiltInProviderId;
-  /** Remote model id sent to the provider (defaults to id). */
-  remoteId?: string;
 };
 
 export const BUILT_IN_MODELS: BuiltInModelEntry[] = [

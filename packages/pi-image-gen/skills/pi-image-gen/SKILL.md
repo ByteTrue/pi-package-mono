@@ -1,6 +1,6 @@
 ---
 name: pi-image-gen
-description: Generate or edit images with the user's configured pi-image-gen model. Use when the user asks to create, generate, draw, render, transform, restyle, or edit an image. Do not use for merely viewing or analyzing an existing image.
+description: Generate or edit images with pi-image-gen. Use for requests to create, draw, render, transform, or restyle images—not for viewing or analysis.
 ---
 
 # Pi Image Gen

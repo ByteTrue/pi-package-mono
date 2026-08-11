@@ -7,7 +7,7 @@ import { StringDecoder } from "node:string_decoder";
 import { finished } from "node:stream/promises";
 import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
 
-export type BackgroundStatus = "running" | "exited" | "killed" | "timed_out" | "failed";
+export type BackgroundStatus = "running" | "exited" | "killed" | "failed";
 
 export interface BackgroundTask {
   id: string;
@@ -48,16 +48,9 @@ export class BackgroundManager {
 
   /**
    * Starts a command in the background and returns immediately with its task info.
-   * Output streams to a file on disk as it's produced; omitting `timeoutSeconds` leaves the command running
-   * until it exits or the owning Pi session ends.
+   * Output streams to a file on disk until the command exits or the owning Pi session ends.
    */
-  start(command: string, cwd: string, parentSessionId: string, timeoutSeconds?: number): BackgroundTask {
-    // Pi does not validate tool parameters against the TypeBox schema before calling execute(),
-    // so this is the real enforcement for an explicitly supplied timeout.
-    if (timeoutSeconds !== undefined && (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0)) {
-      throw new Error("timeoutSeconds must be a positive number when provided.");
-    }
-
+  start(command: string, cwd: string, parentSessionId: string): BackgroundTask {
     mkdirSync(OUTPUT_DIR, { recursive: true });
     const id = `bg_${randomBytes(8).toString("hex")}`;
     const outputPath = join(OUTPUT_DIR, `${id}.log`);
@@ -94,7 +87,6 @@ export class BackgroundManager {
     const execution = ops
       .exec(command, cwd, {
         signal: controller.signal,
-        timeout: timeoutSeconds,
         onData: (chunk) => {
           // ponytail: ignores write() backpressure. Only matters if a chatty command outpaces the
           // disk; add a pause/resume shim if that ever shows up in practice.
@@ -105,21 +97,15 @@ export class BackgroundManager {
         },
       })
       .then(({ exitCode }) => {
-        // exec throws for the abort and timeout cases, so reaching here is a natural exit.
         task.status = "exited";
         task.exitCode = exitCode;
       })
       .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.startsWith("timeout:")) {
-          task.status = "timed_out";
-        } else if (controller.signal.aborted) {
+        if (controller.signal.aborted) {
           task.status = "killed";
         } else {
-          // Never ran or died before producing an exit code: bad cwd, no shell on this machine,
-          // an out-of-range timeout. Reporting this as "exited" would be a lie.
           task.status = "failed";
-          task.error = message;
+          task.error = error instanceof Error ? error.message : String(error);
         }
       });
 

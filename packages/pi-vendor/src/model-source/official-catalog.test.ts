@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { collectOfficialCandidates, findOfficialCatalogPath, formatOfficialCandidate, groupOfficialModelsById, stripOfficialRoutingFields } from "./official-catalog.js";
+import { collectOfficialCandidates, findOfficialCatalogPath, formatOfficialCandidate, stripOfficialRoutingFields } from "./official-catalog.js";
 
 describe("official catalog helpers", () => {
 
@@ -87,14 +87,4 @@ describe("official catalog helpers", () => {
 		expect(config).not.toHaveProperty("authHeader");
 	});
 
-	it("groups official entries by model id while preserving first-seen order", () => {
-		const groups = groupOfficialModelsById([
-			{ provider: "anthropic", modelId: "claude-sonnet-4-5", model: { id: "claude-sonnet-4-5" } },
-			{ provider: "cloudflare", modelId: "claude-sonnet-4-5", model: { id: "claude-sonnet-4-5" } },
-			{ provider: "anthropic", modelId: "claude-sonnet-4-6", model: { id: "claude-sonnet-4-6" } },
-		]);
-
-		expect(groups.map((group) => group.modelId)).toEqual(["claude-sonnet-4-5", "claude-sonnet-4-6"]);
-		expect(groups[0]?.entries.map((entry) => entry.provider)).toEqual(["anthropic", "cloudflare"]);
-	});
 });

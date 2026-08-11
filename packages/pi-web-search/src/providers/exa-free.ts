@@ -15,7 +15,7 @@
 
 import { fetchWithProxy as fetch } from "../proxy.js";
 import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResult } from "./types.js";
 
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
 const PROTOCOL_VERSION = "2025-03-26";
@@ -177,7 +177,7 @@ export class ExaMcpFreeProvider implements SearchProvider {
 	readonly name = "exa-free";
 	readonly label = "Exa (free, no key)";
 
-	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
+	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
 		// 1. Initialize MCP session.
 		const init = await mcpPost(
 			{
@@ -216,11 +216,9 @@ export class ExaMcpFreeProvider implements SearchProvider {
 		);
 
 		const textContent = callResult.json.result?.content?.find((c) => c.type === "text")?.text ?? "";
-		if (!textContent) {
-			return { query, results: [] };
-		}
+		if (!textContent) return [];
 
 		const results = parseSearchText(textContent).slice(0, maxResults);
-		return { query, results };
+		return results;
 	}
 }

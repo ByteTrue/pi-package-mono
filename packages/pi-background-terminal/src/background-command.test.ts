@@ -56,7 +56,7 @@ describe("/background command", () => {
 
   it("does not show finished commands in the management menu", async () => {
     manager.init(() => {});
-    const started = manager.start("node -e \"\"", process.cwd(), SESSION_ID, 30);
+    const started = manager.start("node -e \"\"", process.cwd(), SESSION_ID);
     await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.status).toBe("exited"), { timeout: 8000 });
     const { ctx, ui } = makeContext(() => undefined);
 
@@ -105,12 +105,5 @@ describe("/background command", () => {
     expect(manager.get(started.id, SESSION_ID)?.status).toBe("running");
     expect(ui.confirm).toHaveBeenCalledOnce();
     expect(ui.notify).not.toHaveBeenCalled();
-  });
-  it("reports an empty list without opening a command menu", async () => {
-    const { ctx, ui } = makeContext(() => undefined);
-
-    await runBackgroundCommand(ctx);
-
-    expect(ui.notify).toHaveBeenCalledWith("No running background commands.", "info");
   });
 });

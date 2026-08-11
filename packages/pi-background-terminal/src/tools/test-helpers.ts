@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export interface RegisteredTool {
   name: string;
+  parameters: { properties?: Record<string, unknown>; required?: string[] };
   execute: (
     toolCallId: string,
     params: Record<string, unknown>,

@@ -13,7 +13,7 @@ export type ModelsSnapshot = {
 	revision: ConfigRevision;
 };
 
-export type ConfigIssueCode = "invalid_structure" | "duplicate_model_id" | "pi_incompatible" | "validator_unavailable";
+export type ConfigIssueCode = "invalid_structure" | "duplicate_model_id";
 
 export type ConfigIssue = {
 	path: string;
@@ -21,13 +21,7 @@ export type ConfigIssue = {
 	message: string;
 };
 
-export type ConfigErrorCode =
-	| "invalid_config"
-	| "invalid_revision"
-	| "config_changed"
-	| "read_failed"
-	| "write_failed"
-	| "validator_unavailable";
+export type ConfigErrorCode = "invalid_config" | "invalid_revision" | "config_changed" | "read_failed" | "write_failed";
 
 export class ConfigCoreError extends Error {
 	readonly code: ConfigErrorCode;
@@ -43,16 +37,7 @@ export class ConfigCoreError extends Error {
 	}
 }
 
-export type PiOracle = (path: string) => string | undefined;
-
 type ConfigCoreDependencies = {
-	/**
-	 * Optional pre-write compatibility check. Production omits it: Pi 0.82 removed
-	 * `AuthStorage` and `ModelRegistry.create`, so a temp-file oracle cannot be built
-	 * against the running Pi. The authoritative verdict is the caller's post-save
-	 * `modelRegistry.refresh()` + `getError()`, which works on every version.
-	 */
-	oracle?: PiOracle;
 	readFile: typeof readFileSync;
 	writeFile: typeof writeFileSync;
 	rename: typeof renameSync;
@@ -153,39 +138,6 @@ function tempPath(path: string, prefix: string): string {
 	return `${path}.${prefix}-${randomBytes(16).toString("hex")}.tmp`;
 }
 
-function validateWithOracle(models: ModelsJson, path: string, deps: ConfigCoreDependencies): void {
-	const localIssues = validateModelsJson(models);
-	if (localIssues.length > 0) throw new ConfigCoreError("invalid_config", "Models configuration is invalid", { issues: localIssues });
-
-	const oracle = deps.oracle;
-	if (!oracle) return;
-
-	const temp = tempPath(path, "oracle");
-	try {
-		const bytes = canonicalBytes(models);
-		deps.mkdir(dirname(path), { recursive: true });
-		deps.writeFile(temp, bytes, { encoding: "utf8", mode: 0o600 });
-		let oracleError: string | undefined;
-		try {
-			oracleError = oracle(temp);
-		} catch {
-			throw new ConfigCoreError("validator_unavailable", "Models validator is unavailable");
-		}
-		if (oracleError) {
-			const oracleIssue = issue("$", "pi_incompatible", "Models configuration is incompatible with Pi");
-			throw new ConfigCoreError("invalid_config", "Models configuration is invalid", { issues: [oracleIssue] });
-		}
-	} catch (error) {
-		if (error instanceof ConfigCoreError) throw error;
-		throw new ConfigCoreError("validator_unavailable", "Models validator is unavailable");
-	} finally {
-		try {
-			deps.unlink(temp);
-		} catch {
-			// Cleanup is best effort; never expose a temporary pathname.
-		}
-	}
-}
 
 function commitWithDependencies(
 	input: { models: ModelsJson; expectedRevision: ConfigRevision },
@@ -195,7 +147,8 @@ function commitWithDependencies(
 	if (input.expectedRevision !== "missing" && !/^sha256:[0-9a-f]{64}$/.test(input.expectedRevision)) {
 		throw new ConfigCoreError("invalid_revision", "Invalid models configuration revision");
 	}
-	validateWithOracle(input.models, path, deps);
+	const issues = validateModelsJson(input.models);
+	if (issues.length > 0) throw new ConfigCoreError("invalid_config", "Models configuration is invalid", { issues });
 	const currentRevision = readRevision(path, deps);
 	if (currentRevision !== input.expectedRevision) {
 		throw new ConfigCoreError("config_changed", "Models configuration changed before save");

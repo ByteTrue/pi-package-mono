@@ -14,7 +14,7 @@ describe("background_kill tool", () => {
 
   it("stops a running background task", async () => {
     manager.init(() => {});
-    const started = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), SESSION_ID, 30);
+    const started = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), SESSION_ID);
 
     const result = await call(registerOne(registerBackgroundKillTool), { id: started.id }, SESSION_ID);
 
@@ -22,19 +22,19 @@ describe("background_kill tool", () => {
     await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.status).toBe("killed"), { timeout: 8000 });
   });
 
-  it("reports an already-finished task (including timed_out) without erroring", async () => {
+  it("reports an already-finished task without erroring", async () => {
     manager.init(() => {});
-    const started = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), SESSION_ID, 1);
-    await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.status).toBe("timed_out"), { timeout: 8000 });
+    const started = manager.start('node -e ""', process.cwd(), SESSION_ID);
+    await vi.waitFor(() => expect(manager.get(started.id, SESSION_ID)?.status).toBe("exited"), { timeout: 8000 });
 
     const result = await call(registerOne(registerBackgroundKillTool), { id: started.id }, SESSION_ID);
 
-    expect(result.content[0]?.text).toContain("already timed_out");
+    expect(result.content[0]?.text).toContain("already exited");
   });
 
   it("cannot stop another session's task", async () => {
     manager.init(() => {});
-    const started = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), OTHER_SESSION, 30);
+    const started = manager.start('node -e "setInterval(() => {}, 1000)"', process.cwd(), OTHER_SESSION);
 
     await expect(call(registerOne(registerBackgroundKillTool), { id: started.id }, SESSION_ID)).rejects.toThrow(
       /No background task found/,

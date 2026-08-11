@@ -37,7 +37,6 @@ describe('generateImage', () => {
         cwd,
         settings: { defaultModel: 'gpt-image-2' },
         fetchImpl,
-        now: () => new Date(Date.UTC(2026, 5, 4, 12, 0, 0)),
       },
     );
 
@@ -152,7 +151,6 @@ describe('generateImage', () => {
         cwd,
         settings: { defaultModel: 'gpt-image-2' },
         fetchImpl,
-        now: () => new Date(Date.UTC(2026, 5, 5, 0, 0, 0)),
       },
     );
     expect(calls).toHaveLength(1);

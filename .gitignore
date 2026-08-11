@@ -9,6 +9,6 @@ coverage/
 .tmp/
 .pi-subagents/
 .playwright-mcp/
-vendor-web-*.png
+.codegraph/
 
 packages/pi-web-search/live.e2e.local.json

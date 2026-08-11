@@ -4,7 +4,7 @@
 
 `@bytetrue/pi-vision` 让一个**没有视觉能力**的主力模型（如 DeepSeek、`qwen3.7-max`）也能“看图”：既可由 `image_ask(paths, question)` 把本地图片交给已配置的视觉模型，也可显式开启附件自动预分析，让首轮主模型调用直接拿到视觉模型的文本结论。
 
-Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm `latest`：`0.2.0`。
+Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm `latest`：`0.2.1`。
 
 ## 起点：用户诉求 vs 业界直觉
 

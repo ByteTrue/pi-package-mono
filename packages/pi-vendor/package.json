@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-vendor",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "AI-first Pi provider and model management with a bundled skill, script, and cold-start wizard.",
   "keywords": [
     "pi-package",

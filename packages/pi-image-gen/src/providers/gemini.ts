@@ -1,4 +1,4 @@
-import { classifyHttpError, describeNetworkError } from '../errors.js';
+import { classifyHttpError, describeNetworkError, safeText } from '../errors.js';
 import type {
   GenerateImageParams,
   ImageProviderAdapter,
@@ -117,12 +117,3 @@ export const geminiAdapter: ImageProviderAdapter = {
     return out;
   },
 };
-
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '<unreadable response body>';
-  }
-}

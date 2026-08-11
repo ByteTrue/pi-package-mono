@@ -77,7 +77,7 @@ export async function pickModelId(ui: QuickUI, ids: string[]): Promise<string | 
 
 /**
  * Resolve the model config for `modelId` against the official catalog.
- * - no candidate: template match or minimal entry, reported to the user
+ * - no candidate: minimal entry, reported to the user
  * - one candidate: applied automatically, source reported
  * - several candidates: the user picks the official source provider
  */
@@ -218,7 +218,7 @@ async function resolveTypedId(
 	let matches: string[] = [];
 	try {
 		const results = await searchCatalog(text, CATALOG_SEARCH_LIMIT);
-		matches = [...new Set(results.map((result) => result.modelId))];
+		matches = results;
 	} catch {
 		// Catalog trouble must not block a custom id.
 	}

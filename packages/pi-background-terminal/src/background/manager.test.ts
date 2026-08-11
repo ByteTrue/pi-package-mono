@@ -17,7 +17,6 @@ import * as fs from "node:fs";
 
 const SESSION_A = "session-a";
 const SESSION_B = "session-b";
-const LONG_TIMEOUT = 30;
 const FOREVER = 'node -e "setInterval(() => {}, 1000)"';
 
 describe("BackgroundManager", () => {
@@ -40,20 +39,12 @@ describe("BackgroundManager", () => {
     return manager;
   }
 
-  it("allows an omitted timeout for long-lived commands and rejects invalid values", () => {
-    const manager = createManager();
-    const started = manager.start("echo hi", process.cwd(), SESSION_A, undefined);
-    expect(started.status).toBe("running");
-    expect(() => manager.start("echo hi", process.cwd(), SESSION_A, 0)).toThrow(/timeoutSeconds/);
-    expect(() => manager.start("echo hi", process.cwd(), SESSION_A, Number.NaN)).toThrow(/timeoutSeconds/);
-  });
-
   it("runs a command in the background, streams output to a real file, and resolves exit status", async () => {
     const manager = createManager();
     const exits: Array<{ id: string; status: string }> = [];
     manager.init((task) => exits.push({ id: task.id, status: task.status }));
 
-    const started = manager.start('node -e "console.log(\'hello from background\')"', process.cwd(), SESSION_A, LONG_TIMEOUT);
+    const started = manager.start('node -e "console.log(\'hello from background\')"', process.cwd(), SESSION_A);
     expect(started.status).toBe("running");
     expect(started.exitCode).toBeNull();
 
@@ -69,19 +60,9 @@ describe("BackgroundManager", () => {
     expect(readFileSync(finished!.outputPath, "utf8")).toContain("hello from background");
   });
 
-  it("auto-terminates and marks timed_out when timeoutSeconds elapses, distinct from a manual kill", async () => {
-    const manager = createManager();
-    const exits: string[] = [];
-    manager.init((task) => exits.push(task.status));
-    const started = manager.start(FOREVER, process.cwd(), SESSION_A, 1);
-
-    await vi.waitFor(() => expect(manager.get(started.id, SESSION_A)?.status).toBe("timed_out"), { timeout: 8000 });
-    await vi.waitFor(() => expect(exits).toEqual(["timed_out"]), { timeout: 8000 });
-  });
-
   it("marks a command that never ran as failed, not as exited with a null code", async () => {
     const manager = createManager();
-    const started = manager.start("echo hi", "/definitely/not/a/real/directory", SESSION_A, LONG_TIMEOUT);
+    const started = manager.start("echo hi", "/definitely/not/a/real/directory", SESSION_A);
 
     await vi.waitFor(() => expect(manager.get(started.id, SESSION_A)?.status).toBe("failed"), { timeout: 8000 });
     const failed = manager.get(started.id, SESSION_A);
@@ -91,7 +72,7 @@ describe("BackgroundManager", () => {
 
   it("scopes get/list to the owning session", () => {
     const manager = createManager();
-    const started = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
+    const started = manager.start(FOREVER, process.cwd(), SESSION_A);
 
     expect(manager.get(started.id, SESSION_B)).toBeNull();
     expect(manager.list(SESSION_B)).toEqual([]);
@@ -102,7 +83,7 @@ describe("BackgroundManager", () => {
     const manager = createManager();
     const exits: BackgroundTask[] = [];
     manager.init((task) => exits.push(task));
-    const started = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
+    const started = manager.start(FOREVER, process.cwd(), SESSION_A);
 
     expect(manager.kill(started.id, SESSION_A)).toBe(true);
     await vi.waitFor(() => expect(manager.get(started.id, SESSION_A)?.status).toBe("killed"), { timeout: 8000 });
@@ -114,8 +95,8 @@ describe("BackgroundManager", () => {
     const manager = createManager();
     const exits: BackgroundTask[] = [];
     manager.init((task) => exits.push(task));
-    const a = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
-    const b = manager.start(FOREVER, process.cwd(), SESSION_B, LONG_TIMEOUT);
+    const a = manager.start(FOREVER, process.cwd(), SESSION_A);
+    const b = manager.start(FOREVER, process.cwd(), SESSION_B);
 
     await manager.clearSession(SESSION_A);
 
@@ -124,7 +105,7 @@ describe("BackgroundManager", () => {
     expect(manager.get(b.id, SESSION_B)?.status).toBe("running");
     await vi.waitFor(() => expect(existsSync(a.outputPath)).toBe(false), { timeout: 8000 });
   });
-  it("waits for an unlimited command's process tree to die before clearing its session", async () => {
+  it("waits for a command's process tree to die before clearing its session", async () => {
     const manager = createManager();
     const pidDir = mkdtempSync(join(tmpdir(), "pi-background-pid-"));
     const pidPath = join(pidDir, "pid");
@@ -147,7 +128,7 @@ describe("BackgroundManager", () => {
 
   it("does not leak internals into the task snapshot handed to callers", () => {
     const manager = createManager();
-    const started = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
+    const started = manager.start(FOREVER, process.cwd(), SESSION_A);
 
     expect(started).not.toHaveProperty("controller");
     expect(started).not.toHaveProperty("done");
@@ -159,7 +140,7 @@ describe("BackgroundManager", () => {
 
   it("records a write failure on the task instead of letting the stream error crash the process", async () => {
     const manager = createManager();
-    const started = manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
+    const started = manager.start(FOREVER, process.cwd(), SESSION_A);
 
     const stream = vi.mocked(fs.createWriteStream).mock.results.at(-1)?.value as ReturnType<typeof fs.createWriteStream>;
     expect(stream.listenerCount("error")).toBeGreaterThan(0);
@@ -174,7 +155,7 @@ describe("BackgroundManager", () => {
 
   it("survives Pi's /reload, which re-evaluates this module and would otherwise orphan tasks", async () => {
     const first = await import("./manager.js");
-    const task = first.manager.start(FOREVER, process.cwd(), SESSION_A, LONG_TIMEOUT);
+    const task = first.manager.start(FOREVER, process.cwd(), SESSION_A);
 
     // Reproduces what Pi's loader does on /reload: re-import with the module cache disabled.
     vi.resetModules();

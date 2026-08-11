@@ -2,7 +2,7 @@
 
 import { fetchWithProxy as fetch } from "../proxy.js";
 import { MAX_SEARCH_RESPONSE_BODY_BYTES, readResponseJson, readResponseText } from "../response-body.js";
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResult } from "./types.js";
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 const ENV_VAR = "BRAVE_SEARCH_API_KEY";
@@ -17,7 +17,7 @@ export class BraveProvider implements SearchProvider {
 
 	constructor(private readonly apiKey: string) {}
 
-	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
+	async search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
 		if (!this.apiKey) throw new Error(`${ENV_VAR} is not set. Run /web to configure a key, or export ${ENV_VAR}.`);
 		const url = new URL(BRAVE_SEARCH_URL);
 		url.searchParams.set("q", query);
@@ -37,6 +37,6 @@ export class BraveProvider implements SearchProvider {
 			url: result.url ?? "",
 			snippet: result.description ?? "",
 		}));
-		return { query, results };
+		return results;
 	}
 }

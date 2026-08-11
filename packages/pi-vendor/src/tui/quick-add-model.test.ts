@@ -5,7 +5,7 @@ import type { ModelsJson } from "../models-json.js";
 
 // Hermetic: no official catalog, no catalog search hits.
 const upstream = {
-	enrich: { catalog: null, templates: [] },
+	enrich: { catalog: null },
 	searchCatalog: async () => [],
 	discover: async () => ["upstream-a", "upstream-b"],
 };

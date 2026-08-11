@@ -1,12 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import registerWebTools from "./index.js";
 import { PROVIDERS } from "./providers/registry.js";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const REPO_ROOT = resolve(PACKAGE_ROOT, "../..");
 const KEY_FILE = process.env.BYTE_PI_WEB_E2E_CONFIG
 	? resolve(process.env.BYTE_PI_WEB_E2E_CONFIG)
 	: join(PACKAGE_ROOT, "live.e2e.local.json");
@@ -66,33 +67,6 @@ function providerSkipReason(name: string, keyConfig: WebConfig): string | undefi
 	return undefined;
 }
 
-function piDistUrl(file: string): string {
-	return pathToFileURL(join(REPO_ROOT, "node_modules/@earendil-works/pi-coding-agent/dist", file)).href;
-}
-
-async function loadPiModule(file: string): Promise<any> {
-	return import(piDistUrl(file));
-}
-
-async function loadPiExtensions(paths: string[], cwd: string): Promise<any> {
-	const mod = await loadPiModule("core/extensions/loader.js");
-	return mod.loadExtensions(paths, cwd);
-}
-
-async function resolveProjectWebExtension(repoRoot: string): Promise<string> {
-	const [{ SettingsManager }, { DefaultPackageManager }, { getAgentDir }] = await Promise.all([
-		loadPiModule("core/settings-manager.js"),
-		loadPiModule("core/package-manager.js"),
-		loadPiModule("config.js"),
-	]);
-	const settingsManager = SettingsManager.create(repoRoot, getAgentDir(), { projectTrusted: true });
-	const packageManager = new DefaultPackageManager({ cwd: repoRoot, agentDir: getAgentDir(), settingsManager });
-	const resolved = await packageManager.resolve(async () => "skip");
-	const extension = resolved.extensions.find((e: any) => e.path.includes("pi-web-search") && e.enabled);
-	if (!extension) throw new Error("pi-web-search project extension was not resolved from .pi/settings.json");
-	return extension.path;
-}
-
 liveDescribe("live pi web_search provider e2e", () => {
 	let tmpPiConfigDir = "";
 	let configPath = "";
@@ -110,10 +84,12 @@ liveDescribe("live pi web_search provider e2e", () => {
 		mkdirSync(dirname(configPath), { recursive: true });
 		writeFileSync(configPath, JSON.stringify(providerConfig(providers[0] ?? "exa-free", keyConfig, realConfig), null, 2), "utf8");
 
-		const extensionPath = await resolveProjectWebExtension(REPO_ROOT);
-		const result = await loadPiExtensions([extensionPath], REPO_ROOT);
-		if (result.errors.length) throw new Error(JSON.stringify(result.errors, null, 2));
-		tool = result.extensions[0]?.tools.get("web_search")?.definition;
+		await registerWebTools({
+			registerTool: (definition: Parameters<ExtensionAPI["registerTool"]>[0]) => {
+				if (definition.name === "web_search") tool = definition;
+			},
+			registerCommand: () => {},
+		} as unknown as ExtensionAPI);
 		if (!tool) throw new Error("web_search tool was not registered");
 	}, 30_000);
 

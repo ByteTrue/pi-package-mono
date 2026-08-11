@@ -89,7 +89,7 @@ describe("web_search content", () => {
 		const text = formatSearchResults(
 			"OpenAI Codex CLI",
 			[{ title: "Example", url: "https://example.com", snippet: "A snippet" }],
-			{ backend: "bing" },
+			"bing",
 		);
 		expect(text).toContain("Search provider: bing");
 		expect(text).not.toContain("Fallback:");

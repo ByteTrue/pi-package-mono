@@ -42,7 +42,7 @@ describe("ExaMcpFreeProvider", () => {
 			);
 		vi.stubGlobal("fetch", fetch);
 
-		const { results } = await new ExaMcpFreeProvider().search("codex cli", 2);
+		const results = await new ExaMcpFreeProvider().search("codex cli", 2);
 
 		expect(results).toHaveLength(2);
 		expect(results[0]).toEqual({

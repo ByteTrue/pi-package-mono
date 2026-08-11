@@ -17,7 +17,7 @@
 - `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
 - `pi-web-search` 保留高频 `web_search` / `web_fetch` 与完整 `/web` 配置面；一次搜索只联系一个 provider，失败后显式重试，fetch 固定走 SSRF-safe generic transport。
 - `pi-image-gen` 是低频 Skill + bundled CLI；`/image-gen` 继续在 TUI 内闭合 built-in/custom 首次配置，所有配置仍写 Pi `settings.json` 的 `pi-image-gen` 节。
-- `pi-background-terminal` 经历三次重设计，当前版本是三个完全独立的工具：`background_run(command, timeoutSeconds?)` 立即返回任务 id，timeout 省略时支持长驻服务，输出实时落盘（不是内存 buffer，为了不把大量输出一次性塑进 agent 上下文，需要全量时用 Pi 内建 `read` 工具自己去读）；`background_status(id?)` 列表/详情；`background_kill(id)` 手动停止且静默；自然退出/超时自动唤醒 agent；`/background` 提供无需记命令或 id 的用户菜单。session 结束等待并清理进程树、输出流与文件，`/reload` 保留任务。完全不覆盖、不影响 `bash`。无 PTY、无原生 addon、无 Web UI。
+- `pi-background-terminal` 保持三个必填参数工具：`background_run(command)` 立即返回并把输出落盘，`background_status(id)` 查看单个任务，`background_kill(id)` 静默停止；`/background` 提供用户菜单。自然完成自动唤醒 Agent，session 结束清理进程树、输出流与文件，`/reload` 保留任务。它不覆盖 `bash`，不提供 timeout、PTY、原生 addon 或 Web UI。
 - **`pi-vision`**：解决“主力模型没有视觉能力却需要按图工作”的诉求。`image_ask` 保留模型主动提出精确问题的路径；0.2.0 新增 opt-in 附件预分析，把 `before_agent_start.images` 在首轮主模型调用前批量交给所选视觉模型。自动模式默认关闭，不处理 TUI 粘贴后形成的路径文本，并受 project trust、数量/总字节与 60 秒 deadline 约束。
 - 近期优先：五个扩展的维护、回归与按需发版。
 
@@ -79,7 +79,7 @@
 
 - 维护五个扩展，并按需回归与发版
 - 安全/正确性回归（SSRF、密钥权限、配置损坏保护、revision 冲突）
-- 以 package-only 方式提供后台执行：三个独立 Agent 工具、可选 timeout（显式时自动终止）、输出落盘、session-scoped cleanup、自然完成/超时自动通知、`/background` 用户菜单，全程不覆盖任何 Pi 原生工具
+- 以 package-only 方式提供后台执行：三个独立且只含必填参数的 Agent 工具、输出落盘、session-scoped cleanup、自然完成自动通知、`/background` 用户菜单，全程不覆盖任何 Pi 原生工具
 - 用新 CodeStable（`.cs/`）承载真相、epic、issue、notes
 
 **不做**
@@ -95,7 +95,7 @@
 - **默认源码直装，单一例外**：多数扩展以 TS 源 + jiti 加载；`pi-image-gen` 构建 `dist`，让 extension 与 bundled Skill CLI 共享同一生产 core，不复制 provider 实现。
 - **Worktree extension 隔离**：新 worktree 默认没有 `node_modules`，且 Pi 对 local package 按绝对路径判 identity；repo 不提交 `.pi/settings.json` 自动加载 workspace package，避免启动期缺依赖及与用户级来源重复注册 tools。`byspace.json` 在 worktree 创建后异步执行 `npm ci` 做开发环境准备；测试当前 worktree 源码前须等 setup 完成，再停用同名全局来源并隔离加载。
 - **包隔离**：proxy、fetch dispatcher 不改全局，避免多扩展互踩。
-- **background terminal 走 package-only**：复用 Pi 官方的 `createLocalBashOperations`（含 timeout 校验、跨平台进程树 kill）与内建 `read` 工具（大文件截断），不重新实现 shell 解析与分页读取；不覆盖任何 Pi 原生工具，不把这类能力偷渡成 tmux 或 Pi core 依赖。
+- **background terminal 走 package-only**：复用 Pi 官方的 `createLocalBashOperations` 与内建 `read`，不重新实现 shell backend 或分页读取；不覆盖任何 Pi 原生工具，不把能力偷渡成 tmux 或 Pi core 依赖。
 - **配置 fail-closed 写路径**：运行时可读可 soft-fail；交互写配置必须先证明基底有效。
 - **真相分层**：稳定结论进 project spec；一次执行进 issue；大变更线进 epic；旧流水与 gate JSON 进 archive。
 

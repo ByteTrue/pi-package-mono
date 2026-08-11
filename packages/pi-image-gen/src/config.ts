@@ -147,7 +147,7 @@ export function resolveModel(
       builtIn.provider,
     );
     if (provider && (provider.apiKey || explicitlyConfigured)) {
-      return { provider, remoteId: builtIn.remoteId ?? builtIn.id, requestedId: requested };
+      return { provider, remoteId: builtIn.id, requestedId: requested };
     }
     // Built-in match without a credential or explicit route falls through so
     // a catch-all customProvider can still pick it up.
@@ -207,30 +207,6 @@ export function listKnownModelIds(): string[] {
   return BUILT_IN_MODELS.flatMap((m) => [m.id, ...(m.aliases ?? [])]);
 }
 
-export type ConfiguredProvider = ResolvedProvider & {
-  /** True for customProviders without an explicit `models` list — accepts any unknown id. */
-  catchAll: boolean;
-  /** Number of model entries explicitly declared. */
-  modelCount: number;
-};
-
-export function listConfiguredProviders(settings: ImageGenSettings): ConfiguredProvider[] {
-  const out: ConfiguredProvider[] = [];
-  for (const id of ['openai', 'gemini', 'dashscope', 'openrouter', 'ark'] as BuiltInProviderId[]) {
-    const provider = buildBuiltInProvider(id, settings);
-    if (provider && (provider.apiKey || Object.prototype.hasOwnProperty.call(settings.providers ?? {}, id))) {
-      out.push({ ...provider, catchAll: false, modelCount: 0 });
-    }
-  }
-  for (const [name, raw] of Object.entries(settings.customProviders ?? {})) {
-    const provider = buildCustomProvider(name, raw);
-    if (provider) {
-      const modelCount = raw.models?.length ?? 0;
-      out.push({ ...provider, catchAll: modelCount === 0, modelCount });
-    }
-  }
-  return out;
-}
 
 function isBuiltInProviderId(value: string): value is BuiltInProviderId {
   return (

@@ -209,7 +209,7 @@ async function configureBuiltIn(
     } else {
       const model = known[modelLabels.indexOf(selectedModel)];
       if (!model) return;
-      remoteModel = model.remoteId ?? model.id;
+      remoteModel = model.id;
       defaultModel = model.id;
     }
   } else {

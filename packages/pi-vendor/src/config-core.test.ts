@@ -39,7 +39,7 @@ describe("models snapshots and local validation", () => {
 		const snapshot = readModelsSnapshot(path);
 		expect(snapshot.models).toEqual(models);
 		expect(snapshot.revision).toMatch(/^sha256:[0-9a-f]{64}$/);
-		const core = createConfigCoreForTesting({ oracle: () => undefined });
+		const core = createConfigCoreForTesting();
 		const next = core.commitModelsSnapshot({ models, expectedRevision: snapshot.revision }, path);
 		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(models);
 		expect(next.revision).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -90,7 +90,7 @@ describe("conditional commit", () => {
 		const path = tempPath();
 		const original = '{"providers":{}}\n';
 		writeFileSync(path, original, "utf8");
-		const core = createConfigCoreForTesting({ oracle: () => undefined });
+		const core = createConfigCoreForTesting();
 		expect(() => core.commitModelsSnapshot({ models: { providers: {} }, expectedRevision: "sha256:bad" }, path)).toThrowError(
 			new ConfigCoreError("invalid_revision", "Invalid models configuration revision"),
 		);
@@ -105,40 +105,12 @@ describe("conditional commit", () => {
 		expect(readFileSync(path, "utf8")).not.toBe(`${JSON.stringify({ providers: {} }, null, 2)}\n`);
 	});
 
-	it("maps oracle errors and cleans oracle temp files", () => {
-		const path = tempPath();
-		const models: ModelsJson = { providers: {} };
-		const seen: string[] = [];
-		const core = createConfigCoreForTesting({
-			oracle: (oraclePath) => {
-				seen.push(oraclePath);
-				return "invalid";
-			},
-		});
-		expect(() => core.commitModelsSnapshot({ models, expectedRevision: "missing" }, path)).toThrowError(ConfigCoreError);
-		try {
-			core.commitModelsSnapshot({ models, expectedRevision: "missing" }, path);
-		} catch (error) {
-			expect(error).toMatchObject({ code: "invalid_config", issues: [{ code: "pi_incompatible", path: "$" }] });
-		}
-		expect(seen).toHaveLength(2);
-		expect(readdirSync(join(path, ".."))).not.toContain(seen[0]!.split("/").pop());
-
-		const unavailable = createConfigCoreForTesting({ oracle: () => { throw new Error("boom"); } });
-		expect(() => unavailable.commitModelsSnapshot({ models, expectedRevision: "missing" }, path)).toThrowError(ConfigCoreError);
-		try {
-			unavailable.commitModelsSnapshot({ models, expectedRevision: "missing" }, path);
-		} catch (error) {
-			expect(error).toMatchObject({ code: "validator_unavailable" });
-		}
-	});
 
 	it("maps commit write and rename failures without leaving temp files", () => {
 		const path = tempPath();
 		writeFileSync(path, '{"providers":{}}\n', "utf8");
 		const snapshot = readModelsSnapshot(path);
 		const failingWrite = createConfigCoreForTesting({
-			oracle: () => undefined,
 			writeFile: (file, data, options) => {
 				if (String(file).includes(".commit-")) throw new Error("write failed");
 				return writeFileSync(file, data, options);
@@ -150,7 +122,6 @@ describe("conditional commit", () => {
 		expect(readdirSync(join(path, "..")).filter((entry) => entry.includes(".tmp"))).toEqual([]);
 
 		const failingRename = createConfigCoreForTesting({
-			oracle: () => undefined,
 			rename: () => {
 				throw new Error("rename failed");
 			},
@@ -161,7 +132,7 @@ describe("conditional commit", () => {
 		expect(readdirSync(join(path, "..")).filter((entry) => entry.includes(".tmp"))).toEqual([]);
 	});
 
-	it("runs the installed Pi oracle on the public path", () => {
+	it("commits through the public API", () => {
 		const path = tempPath();
 		const models = {
 			unknownRoot: true,

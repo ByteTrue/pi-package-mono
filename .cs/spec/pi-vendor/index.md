@@ -53,7 +53,7 @@ TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/c
 
 - strict JSON；拒绝 BOM、comments 与非 object root；root 必须含 object `providers`；
 - revision 为原始 bytes 的 `sha256:…`；
-- commit 顺序：revision 格式 → 可选 oracle → current bytes/revision → stale check → atomic write；
+- commit 顺序：revision 格式 → 本地 shape/duplicate 校验 → current bytes/revision → stale check → atomic write；
 - 写入 canonical `JSON.stringify(value, null, 2) + "\n"`；随机 128-bit temp 名；create/write/rename 期间保持 `0600`；失败清理 temp；
 - mutation pure functions 继续使用 `MutationResult<T>` + explicit `ConflictPolicy`，不隐式 upsert。
 
@@ -67,7 +67,7 @@ TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited
 
 ### Active catalog
 
-Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；按 exact/prefix/substring 稳定排序，并移除 provider/baseUrl/headers/apiKey/authHeader。TUI 继续复用 package 内现有 closed DTO catalog core。
+Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。TUI 直接加载同一官方 catalog：autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。
 
 ### Discovery 安全边界
 

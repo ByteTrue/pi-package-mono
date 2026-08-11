@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-image-gen",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi TUI configuration and an on-demand Skill/CLI for image generation.",
   "keywords": [
     "pi-package",

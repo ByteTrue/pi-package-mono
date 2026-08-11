@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-vision",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension: let a text-only model read images by asking a vision-capable model from your own models.json.",
   "keywords": [
     "pi-package",

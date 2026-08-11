@@ -56,16 +56,9 @@ export function maskProxyUrl(raw: string | undefined): string {
 	}
 }
 
-interface SearchDetails {
-	query?: string;
-	backend?: string;
-	resultCount?: number;
-	results?: SearchResult[];
-}
-
-export function formatSearchResults(query: string, results: SearchResult[], details: SearchDetails = {}): string {
+export function formatSearchResults(query: string, results: SearchResult[], backend?: string): string {
 	let text = `**Search results for "${query}":**\n`;
-	if (details.backend) text += `Search provider: ${details.backend}\n`;
+	if (backend) text += `Search provider: ${backend}\n`;
 	text += "\n";
 	results.forEach((result, index) => {
 		text += `${index + 1}. **${result.title}**\n   ${result.url}\n   ${result.snippet}\n\n`;
@@ -77,12 +70,11 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "web_search",
 		label: "Web Search",
-		description: "Search the web for current information. Returns bounded titles, URLs, and snippets from one provider per call.",
+		description: "Search the web for current information. Returns titles, URLs, and snippets from one provider.",
 		parameters: Type.Object({
-			query: Type.String({ description: "Search query." }),
+			query: Type.String(),
 			max_results: Type.Optional(
 				Type.Number({
-					description: `Maximum results (${MIN_SEARCH_RESULTS}-${MAX_SEARCH_RESULTS}). Default: ${DEFAULT_SEARCH_RESULTS}.`,
 					default: DEFAULT_SEARCH_RESULTS,
 					minimum: MIN_SEARCH_RESULTS,
 					maximum: MAX_SEARCH_RESULTS,
@@ -90,7 +82,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			),
 			provider: Type.Optional(
 				Type.String({
-					description: `Optional provider for this call. Omit to use /web's active provider: ${PROVIDERS.map((provider) => provider.name).join(", ")}.`,
+					description: `Provider override; omit to use /web's active provider: ${PROVIDERS.map((provider) => provider.name).join(", ")}.`,
 				}),
 			),
 		}),
@@ -119,7 +111,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 				};
 			}
 			return {
-				content: [{ type: "text", text: formatSearchResults(params.query, outcome.results, { backend: outcome.backend }) }],
+				content: [{ type: "text", text: formatSearchResults(params.query, outcome.results, outcome.backend) }],
 				details: {
 					query: params.query,
 					backend: outcome.backend,
@@ -168,13 +160,10 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "web_fetch",
 		label: "Web Fetch",
-		description:
-			"Fetch one public http(s) URL through the package's SSRF-safe direct transport. Returns raw HTML when raw=true; otherwise extracts readable text. Decoded bodies over 10 MiB are rejected and large accepted output is truncated to a temp file.",
+		description: "Fetch one public HTTP(S) URL as readable text, or raw HTML when raw=true.",
 		parameters: Type.Object({
-			url: Type.String({ description: "The public http or https URL to fetch." }),
-			raw: Type.Optional(
-				Type.Boolean({ description: "Return raw HTML instead of extracted text. Default: false.", default: false }),
-			),
+			url: Type.String(),
+			raw: Type.Optional(Type.Boolean({ description: "Return raw HTML.", default: false })),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate) {

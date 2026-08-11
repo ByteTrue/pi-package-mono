@@ -67,7 +67,6 @@ describe('ark provider (Volcengine Seedream)', () => {
         cwd,
         settings: { defaultModel: 'seedream' },
         fetchImpl,
-        now: () => new Date(Date.UTC(2026, 5, 4, 12, 0, 0)),
       },
     );
 
