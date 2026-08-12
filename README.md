@@ -92,7 +92,7 @@ packages/
   pi-vendor/               models.json provider/model management
   pi-vision/               Vision delegation for text-only models
   pi-web-search/           Search providers and safe page fetching
-.cs/spec/                  Current architecture and project decisions
+codestable/spec/           Current architecture and project decisions
 ```
 
 For package-specific installation, configuration, examples, and limits, follow the links in [Choose a package](#choose-a-package).
