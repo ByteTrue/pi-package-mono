@@ -1,5 +1,13 @@
 {
   "worktree": {
     "setup": "npm ci"
+  },
+  "scripts": {
+    "typecheck": {
+      "command": "npm run typecheck --workspaces --if-present"
+    },
+    "test": {
+      "command": "npm test"
+    }
   }
 }

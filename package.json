@@ -12,8 +12,11 @@
   },
   "allowScripts": {
     "@google/genai@1.52.0": true,
-    "esbuild@0.27.7": true,
-    "protobufjs@7.6.4": true,
+    "esbuild@0.27.2": true,
+    "protobufjs@7.6.5": true,
     "fsevents": false
+  },
+  "overrides": {
+    "undici": "8.9.0"
   }
 }
