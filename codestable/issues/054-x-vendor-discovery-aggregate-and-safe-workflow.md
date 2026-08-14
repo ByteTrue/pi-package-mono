@@ -2,7 +2,7 @@
 kind: issue
 title: "pi-vendor 修复异构上游发现与 Skill 主路径"
 type: bug
-status: open
+status: closed
 created: 2026-08-14
 labels: [pi-vendor, bug, discovery, skill, security]
 ---
@@ -92,7 +92,17 @@ labels: [pi-vendor, bug, discovery, skill, security]
 - actual pack/extract smoke：packed `catalog` 返回 official-catalog，packed `discover` 返回 4 条 provider-level adapter route；`compare` 与 `lint` 均以 usage status 2 拒绝。
 - active Pi oracle fixture：合法配置 status 0、目标 `test-model` 可见且无 warning；漏逗号配置 status 0 但产生 `errors loading models.json` warning，验证 Skill 不能只看退出码。
 - `git diff --check`：通过。
-- 尚未执行真实上游 session 重放；当前 discovery 证据来自隔离配置目录与本地 HTTP fixture。
+- 两份历史 session 未逐字重放到动态真实上游；当前回归证据使用隔离配置目录、本地 HTTP fixture、固定 Skill eval 和已执行的真实 `bytetrueapi` 同步。该限制保留为未来兼容性监测边界，不表示已知产品缺陷或后续实现阻塞。
+
+## 关闭结论
+
+Issue 054 的目标已达成并于 `@bytetrue/pi-vendor@0.3.3` 发布：AI-facing 脚本收敛到安全、语义明确的 `catalog` 与 `discover` 查询；Skill 将模型 CRUD、四种 adapter discovery、Pi load oracle 与 exact sync 的结构化 plan/stale/after/union 门槛统一为可重复执行的流程。
+
+> 质量证据：信息安全性由 credential-free 输出、echo fail-closed 与 ID-only plan 保障；功能适用性由四种 adapter、route 去重、partial failure、fuzzy catalog、exact-sync assertion 与低能力模型 eval 覆盖；可靠性由 Pi warning gate、stale gate、post-write exact-set 与 discovery-union gate 保障。
+
+> 毕业位置：[pi-vendor 当前规格](../spec/pi-vendor/index.md) 的 AI Skill、Discovery 安全边界与 Exact synchronization 章节。
+
+> 发布证据：commit `7e07cf8`、tag `pi-vendor-v0.3.3`、npm `@bytetrue/pi-vendor@0.3.3`，GitHub Release workflow `31817601988` 成功完成。
 ## 相关事实
 
 - `codestable/issues/034-x-vendor-protocol-discovery.md`：已关闭的协议级异构 discovery 支持。
