@@ -17,20 +17,22 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 - 模板有歧义时要求用户明确选择，不静默猜测；
 - 不编造 cost、context、capabilities、compat 等元数据；
 - 任何回复、diff 或工具参数都不复现 `apiKey`；
-- 修改后用 bundled script 做本地 lint；需要 runtime 确认时让用户 reload Pi 并实际选择模型。
+- 每次修改后必须运行 active Pi 的 `pi --list-models --offline`，检查两条输出流没有 `errors loading models.json` warning，并验证目标模型列表变化；exact sync 还必须执行 Skill 固定 Node 模板生成且用户确认的 plan 文件、写前 stale assertion、写后 exact-set assertion 与 discovery union assertion。
 
 通用 mutation tool 明确不存在：配置修改属于 AI 自己的 edit 能力。
 
 ### Bundled script
 
+AI-facing script 固定只有两个只读查询：
+
 | 子命令 | 调用方 | 输出/边界 |
 |---|---|---|
-| `catalog <query> [limit]` | AI | 从 active Pi catalog 搜索并移除 routing/credential 字段；默认 50，范围 1–100 |
-| `discover <provider-key> [configured-model-id]` | AI | 按 provider 默认路由或指定模型的 effective api/baseUrl/headers + provider authHeader 探查；OpenAI/Anthropic/Google 协议分支；只输出排序去重后的 id |
-| `lint` | AI | 本地 strict JSON、root/providers shape、model id/duplicate 检查；不宣称 runtime 可用 |
-| `set-key <provider-key>` | 用户终端 | 无回显输入，只更新一个 key，原子 `0600` 写入 |
+| `catalog <keyword> [limit]` | AI | 从 active Pi catalog 模糊搜索并移除 routing/credential 字段；空格、连字符和下划线差异可归一匹配；输出 `source: official-catalog` 与 `officialProvider`；默认 50，范围 1–100 |
+| `discover <provider-key>` | AI | 从 provider route 固定派生四种 API adapter，再追加并去重 model-level effective overrides；每条 route 只输出 API、状态和排序去重后的 upstream ID，标记 `source: upstream-discovery` |
 
-AI 通过 bash 按需执行前三项，因此没有常驻 tool schema。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
+`compare`、`lint` 与 AI-facing CRUD 子命令不存在。`set-key <provider-key>` 是独立的用户终端密钥入口：无回显输入，只更新一个 key，原子 `0600` 写入；它不属于 AI 查询协议。
+
+AI 不得用 `catalog all`、手工 route 循环或完整输出 `models.json` 替代这两个查询。Exact sync 的本地结构化 set 运算属于 Skill 固定 Node 模板，不是第三个 bundled 命令；模板内部只读取目标 provider 的 `models`，只输出 model ID plan，且固定执行计划生成、写前 stale、写后 exact-set、最终 discovery-union 四次断言。`modelOverrides` 不进入 exact sync。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
 
 ### `/vendor` 冷启动 TUI
 
@@ -57,25 +59,29 @@ TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/c
 - 写入 canonical `JSON.stringify(value, null, 2) + "\n"`；随机 128-bit temp 名；create/write/rename 期间保持 `0600`；失败清理 temp；
 - mutation pure functions 继续使用 `MutationResult<T>` + explicit `ConflictPolicy`，不隐式 upsert。
 
-Pi 0.79 与 0.82 没有共同的独立 `ModelRegistry` 构造 API，所以生产写前只做本地 shape/duplicate 校验。TUI 保存后使用其现成 command context：`await ctx.modelRegistry.refresh()` 再 `getError()`；Skill 脚本不依赖 Pi runtime API，并明确只称为 lint。不静态 import 已移除的 `AuthStorage` 等窄 Pi API。
+Pi 0.79 与 0.82 没有共同的独立 `ModelRegistry` 构造 API，所以不构造 package-local oracle。TUI 保存后使用其现成 command context：`await ctx.modelRegistry.refresh()` 再 `getError()`。Skill 修改后调用 active Pi CLI 的 `pi --list-models --offline`，由当前安装版本完成 strict JSON 与 registry 验证；Pi 对 malformed models.json 可能 warning 后仍 exit 0，所以 Skill 必须检查两条输出流而非只看状态码。不静态 import 已移除的 `AuthStorage` 等窄 Pi API。
 
 ### 保存后语义
 
-TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited registry refresh。refresh 后若 Pi 报错，配置已落盘且错误明确展示；不伪装成写前 rollback。Skill 修改后只做本地 lint；需要 runtime 确认时由用户 reload Pi 并实际选择模型。
+TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited registry refresh。refresh 后若 Pi 报错，配置已落盘且错误明确展示；不伪装成写前 rollback。Skill 每次 mutation 后必须运行 `pi --list-models --offline`，要求无 models.json loading warning，并确认目标 model ID 按请求出现或消失；失败时继续修复或恢复自己的改动，不得以不可加载配置结束。Exact sync 还要求 configured sorted ID set 与 confirmed `after` 完全相等，并要求再次 discovery 的 successful ID union 同样等于 `after`；Pi status 0 不能替代集合断言。provider-only mutation 至少要求无 warning；路由或认证变化要求所有 intended route 为 `ok`。真实 generation 因可能消耗额度，仅在用户明确要求时执行。
 
 ## 模型来源
 
 ### Active catalog
 
-Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。TUI 直接加载同一官方 catalog：autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。
+Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；token 与去除空格/连字符/下划线后的文本参与匹配，按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。Skill 把“千问 3.7”一类自然称呼当成搜索意图，必要时改用 `qwen 3.7` 等 catalog 关键词重试；匹配只产生候选，不静默决定 canonical ID。TUI 直接加载同一官方 catalog：autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。
 
 ### Discovery 安全边界
 
-- Skill script：按 effective API 选择 list URL/auth/response shape：OpenAI-compatible `data[].id` + Bearer；Anthropic `/v1/models` + `x-api-key`/version；Google `/v1|v1beta/models` + `x-goog-api-key` + `models[].name`；`authHeader` 或显式 header 优先。
-- 可传 configured model id 使用 model-level api/baseUrl/headers；异构 provider 由 Skill 按 effective route 分组后各探一次。
-- discovery 中出现的 id 是 route 支持的 positive evidence；配置存在但 route 未列出的 id 必须作为待验证 warning 报告，但缺失本身不能推出上游不支持（list API 可能不完整或分页），不得据此自动删除或改路由。
-- http/https only；拒绝 username/password；redirect error；fetch 15 秒；credential command 10 秒/64 KiB；response 2 MiB chunk-counted；只输出 id 或本地错误。
+- `discover <provider-key>` 先从 provider-level baseUrl/headers/authHeader 固定派生 OpenAI Completions、OpenAI Responses、Anthropic Messages 与 Google Generative AI 四种 adapter route，再追加每个 configured model 引入的不同 effective override；按 api/baseUrl/headers/authHeader 去重后并发探查。
+- 单 route 失败只在该 route 返回 `status: error`，其他成功 route 仍可用；不得把失败或未列出解释成上游不支持。credential echo 使整个 discovery fail closed。
+- discovery 中出现的 ID 是该 route 的 positive evidence；脚本不计算 configured/unconfigured/not-listed/unsupported 集合。普通列表场景 Skill 也不得推断这些集合；只有用户明确要求 exact sync 且所有 intended route 为 `ok` 时，才可通过本地结构化 set 运算生成 mutation plan。
+- http/https only；拒绝 username/password；redirect error；fetch 15 秒；credential command 10 秒/64 KiB；response 2 MiB chunked；AI-facing 输出只包含来源标签、route API、状态与模型 ID，不包含 apiKey、resolved credential、headers 或完整配置。
 - TUI：继续使用 package 内 bounded-discover core，同样按 provider API 分支，并保留 overall deadline、exact-path command preflight 与 typed errors。
+
+### Exact synchronization
+
+Exact sync 的唯一写入授权是 Skill 固定 Node 模板生成并排序的 `{"before":[],"add":[],"remove":[],"after":[]}` plan 文件。`after` 是成功 intended routes 的 model ID 去重并集，`add = after - before`，`remove = before - after`；Agent 必须原样展示 plan JSON，禁止在自然语言中手抄或改写 ID。新增项仍逐个经过 catalog source 选择，删除与 final set 必须由用户确认，整批选择解决前保持只读。固定模板分别拒绝写前 `plan_stale`、写后 `plan_after_mismatch` 与最终 `discovery_union_mismatch`；Pi 可加载不能替代这些断言。`modelOverrides` 不参与 exact sync，必须走定向 update/delete。
 
 ## 模板与路由
 

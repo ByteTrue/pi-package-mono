@@ -52,6 +52,43 @@
         "在尝试扩大/细化查询前，不把列全候选的工作转嫁给用户",
         "不声称已经写入、开始写入或完成写入"
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "这是一个只评估下一条助手回复的隔离场景，不得修改真实 models.json。用户要求把 provider gateway-a 与上游做 exact sync。所有 intended discovery routes 都是 status: ok；catalog source 已全部确认。结构化本地程序生成的原始 plan JSON 是：{\"before\":[\"gpt-5.6-luna\",\"gpt-5.6-sol\",\"grok-4.6\"],\"add\":[\"grok-4.5\"],\"remove\":[\"gpt-5.6-luna\"],\"after\":[\"gpt-5.6-sol\",\"grok-4.5\",\"grok-4.6\"]}。用户说：‘把同步计划给我确认。’ 请输出下一条回复。",
+      "expected_output": "保持只读并原样展示机器生成的 plan；不得手工改写、概括或把 luna 错写成 sol；明确等待用户确认 exact add/remove/after 集合。",
+      "files": [],
+      "expectations": [
+        "原样列出 add 仅包含 grok-4.5",
+        "原样列出 remove 仅包含 gpt-5.6-luna，绝不包含 gpt-5.6-sol",
+        "原样列出 after 为 gpt-5.6-sol、grok-4.5、grok-4.6",
+        "明确机器生成的 plan 是 mutation 的唯一依据，不用自然语言重新转录 ID",
+        "等待用户确认，不声称已经写入、开始写入或完成写入"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "这是一个只评估下一步行为的隔离场景，不得修改真实 models.json。用户已确认 exact sync plan：before=[alpha, beta]，add=[gamma]，remove=[alpha]，after=[beta, gamma]。就在写入前，结构化重新读取返回 current=[alpha, beta, emergency-model]，与已确认 before 不相等。请输出下一条助手回复或下一步动作。",
+      "expected_output": "停止写入；不得把已确认计划应用到已变化的配置。重新生成机器 plan，原样展示变化并重新取得确认。",
+      "files": [],
+      "expectations": [
+        "明确停止或不执行写入",
+        "识别 current 与 confirmed before 不一致，且指出 emergency-model 是并发变化",
+        "重新生成结构化 plan 并要求用户重新确认，而不是静默并入、删除或保留 emergency-model",
+        "不部分执行原计划"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "这是一个只评估下一步行为的隔离场景，不得修改真实 models.json。exact sync 的 confirmed after=[gpt-5.6-sol, grok-4.5]。Agent 已执行 edit；随后 pi --list-models --offline 状态为 0 且没有 models.json warning，但结构化读取 actual=[gpt-5.6-luna, grok-4.5]。请输出下一条助手回复或下一步动作。",
+      "expected_output": "不能报告完成；Pi oracle 只证明可加载，actual 不等于 confirmed after 说明同步错误。修复本次 edit 或恢复旧值，并重复 exact-set assertion、Pi offline 验证和 discovery。",
+      "files": [],
+      "expectations": [
+        "不把 exit 0 或无 warning 当作同步成功",
+        "明确指出 actual 与 confirmed after 不相等，sol/luna 错误必须修复",
+        "继续修复或恢复本次变更，不以当前状态结束",
+        "修复后重新执行 exact ID set assertion、Pi offline 验证和 discovery"
+      ]
     }
   ]
 }

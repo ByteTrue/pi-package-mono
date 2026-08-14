@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 
 const [, , command, ...args] = process.argv;
 const modelsPath = join(process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"), "models.json");
+const SUPPORTED_APIS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
 
 function fail(message, code = 1) {
 	console.error(message);
@@ -27,35 +28,6 @@ function output(value) {
 	console.log(JSON.stringify(value, null, 2));
 }
 
-function lint() {
-	const models = readModels();
-	const errors = [];
-	if (!models || typeof models !== "object" || Array.isArray(models)) errors.push("root must be an object");
-	if (!models?.providers || typeof models.providers !== "object" || Array.isArray(models.providers)) errors.push("providers must be an object");
-	for (const [providerIndex, [, provider]] of Object.entries(models?.providers ?? {}).entries()) {
-		const path = `providers entry ${providerIndex}`;
-		if (!provider || typeof provider !== "object" || Array.isArray(provider)) {
-			errors.push(`${path} must be an object`);
-			continue;
-		}
-		const models = provider.models;
-		if (models !== undefined && !Array.isArray(models)) {
-			errors.push(`${path}.models must be an array`);
-			continue;
-		}
-		const seen = new Set();
-		for (const [index, model] of (models ?? []).entries()) {
-			if (!model || typeof model !== "object" || Array.isArray(model) || typeof model.id !== "string" || !model.id.trim()) {
-				errors.push(`${path}.models[${index}].id must be a non-empty string`);
-				continue;
-			}
-			if (seen.has(model.id)) errors.push(`${path}.models contains a duplicate id`);
-			seen.add(model.id);
-		}
-	}
-	output({ valid: errors.length === 0, path: modelsPath, errors });
-	if (errors.length) process.exitCode = 1;
-}
 
 function packageRoot(entry) {
 	if (!entry || !existsSync(entry)) return null;
@@ -101,7 +73,7 @@ function cleanTemplate(model) {
 }
 
 async function catalog(query, limitText) {
-	if (!query?.trim()) fail("Usage: vendor.mjs catalog <query> [limit]", 2);
+	if (!query?.trim()) fail("Usage: vendor.mjs catalog <keyword> [limit]", 2);
 	if (Buffer.byteLength(query) > 512) fail("Query exceeds 512 bytes", 2);
 	const limit = limitText === undefined ? 50 : Number(limitText);
 	if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail("Limit must be an integer from 1 to 100", 2);
@@ -113,21 +85,24 @@ async function catalog(query, limitText) {
 	} catch {
 		fail("Official catalog is unavailable");
 	}
-	const needle = query.toLowerCase();
+	const needle = query.trim().toLowerCase();
+	const normalizedNeedle = needle.replace(/[\s_-]+/g, "");
+	const tokens = needle.split(/[^\p{L}\p{N}._-]+/u).filter(Boolean);
 	const results = [];
 	for (const [provider, entries] of Object.entries(models ?? {})) {
 		for (const model of Object.values(entries ?? {})) {
 			const id = typeof model?.id === "string" ? model.id : "";
 			const name = typeof model?.name === "string" ? model.name : "";
 			const haystack = `${id}\n${name}`.toLowerCase();
-			if (!haystack.includes(needle)) continue;
-			const lowerId = id.toLowerCase();
-			const score = lowerId === needle ? 0 : lowerId.startsWith(needle) ? 1 : lowerId.includes(needle) ? 2 : 3;
-			results.push({ score, provider, model: cleanTemplate(model) });
+			const normalizedHaystack = haystack.replace(/[\s_-]+/g, "");
+			if (!tokens.every((token) => haystack.includes(token) || normalizedHaystack.includes(token.replace(/[\s_-]+/g, "")))) continue;
+			const normalizedId = id.toLowerCase().replace(/[\s_-]+/g, "");
+			const score = normalizedId === normalizedNeedle ? 0 : normalizedId.startsWith(normalizedNeedle) ? 1 : normalizedId.includes(normalizedNeedle) ? 2 : 3;
+			results.push({ score, officialProvider: provider, model: cleanTemplate(model) });
 		}
 	}
-	results.sort((a, b) => a.score - b.score || a.model.id.localeCompare(b.model.id) || a.provider.localeCompare(b.provider));
-	output({ query, count: Math.min(results.length, limit), total: results.length, results: results.slice(0, limit).map(({ provider, model }) => ({ provider, model })) });
+	results.sort((a, b) => a.score - b.score || a.model.id.localeCompare(b.model.id) || a.officialProvider.localeCompare(b.officialProvider));
+	output({ source: "official-catalog", query, count: Math.min(results.length, limit), total: results.length, results: results.slice(0, limit).map(({ officialProvider, model }) => ({ officialProvider, model })) });
 }
 
 function resolveTemplate(value) {
@@ -165,7 +140,7 @@ function resolveValue(value) {
 			const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", value.slice(1)] : ["-c", value.slice(1)];
 			return execFileSync(shell, shellArgs, { encoding: "utf8", timeout: 10_000, maxBuffer: 64 * 1024 }).trim();
 		} catch {
-			fail("Unable to resolve provider credentials");
+			throw new Error("Unable to resolve provider credentials");
 		}
 	}
 	return resolveTemplate(value);
@@ -205,33 +180,29 @@ function addCredentialCandidate(values, name, value) {
 	}
 }
 
-async function discover(providerKey, modelId) {
-	if (!providerKey) fail("Usage: vendor.mjs discover <provider-key> [configured-model-id]", 2);
-	const provider = readModels()?.providers?.[providerKey];
-	if (!provider || typeof provider !== "object" || Array.isArray(provider)) fail("Provider was not found");
-	const route = discoveryRoute(provider, modelId);
+async function discoverRoute(provider, route) {
 	let url;
-	try { url = discoveryUrl(route.baseUrl, route.api); } catch { fail("Provider has an invalid baseUrl"); }
+	try { url = discoveryUrl(route.baseUrl, route.api); } catch { throw new Error("Provider has an invalid baseUrl"); }
 
 	const headers = {};
 	const credentialValues = [];
 	for (const [name, value] of Object.entries(route.headers)) {
 		const resolved = resolveValue(value);
-		if (resolved === undefined) fail("Unable to resolve provider credentials");
+		if (resolved === undefined) throw new Error("Unable to resolve provider credentials");
 		headers[name] = resolved;
 		addCredentialCandidate(credentialValues, name, resolved);
 	}
 	const configuredKey = typeof provider.apiKey === "string" ? provider.apiKey : undefined;
 	if (configuredKey) credentialValues.push(configuredKey);
 	const nativeHeader = route.api === "anthropic-messages" ? "x-api-key" : route.api === "google-generative-ai" ? "x-goog-api-key" : "authorization";
-	if (route.authHeader && !configuredKey) fail("Unable to resolve provider credentials");
+	if (route.authHeader && !configuredKey) throw new Error("Unable to resolve provider credentials");
 	const needsKey = !hasHeader(headers, nativeHeader) || route.authHeader;
 	let resolvedKey;
 	if (configuredKey && (!configuredKey.startsWith("!") || needsKey)) {
 		resolvedKey = resolveValue(configuredKey);
 		if (resolvedKey) credentialValues.push(resolvedKey);
 	}
-	if (needsKey && configuredKey && !resolvedKey) fail("Unable to resolve provider credentials");
+	if (needsKey && configuredKey && !resolvedKey) throw new Error("Unable to resolve provider credentials");
 	if (resolvedKey) {
 		if (!hasHeader(headers, nativeHeader)) {
 			if (nativeHeader === "authorization") headers.Authorization = `Bearer ${resolvedKey}`;
@@ -245,9 +216,10 @@ async function discover(providerKey, modelId) {
 	try {
 		response = await fetch(url, { headers, redirect: "error", signal: AbortSignal.timeout(15_000) });
 	} catch {
-		fail("Upstream model discovery failed");
+		throw new Error("Upstream model discovery failed");
 	}
-	if (!response.ok || !response.body) fail("Upstream model discovery failed");
+	if (!response.ok || !response.body) throw new Error("Upstream model discovery failed");
+
 	let body;
 	try {
 		const reader = response.body.getReader();
@@ -259,21 +231,68 @@ async function discover(providerKey, modelId) {
 			size += value.byteLength;
 			if (size > 2 * 1024 * 1024) {
 				await reader.cancel();
-				fail("Upstream model response is too large");
+				throw new Error("Upstream model response is too large");
 			}
 			chunks.push(value);
 		}
 		body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
 	} catch {
-		fail("Upstream returned invalid model data");
+		throw new Error("Upstream returned invalid model data");
 	}
 	const entries = route.api === "google-generative-ai" ? body?.models : body?.data;
-	if (!Array.isArray(entries)) fail("Upstream returned invalid model data");
+	if (!Array.isArray(entries)) throw new Error("Upstream returned invalid model data");
 	const field = route.api === "google-generative-ai" ? "name" : "id";
 	const modelIds = [...new Set(entries.map((item) => item?.[field]).filter((id) => typeof id === "string" && id).map((id) => route.api === "google-generative-ai" ? id.replace(/^models\//, "") : id))].sort();
-	if (modelIds.some((id) => credentialValues.some((value) => id.includes(value)))) fail("Upstream model discovery failed");
-	output({ providerKey, route: { api: route.api }, positiveEvidenceOnly: true, count: modelIds.length, modelIds });
+	if (modelIds.some((id) => credentialValues.some((value) => id.includes(value)))) throw new Error("credential_echo");
+	return modelIds;
 }
+
+async function discover(providerKey) {
+	if (!providerKey) fail("Usage: vendor.mjs discover <provider-key>", 2);
+	const provider = readModels()?.providers?.[providerKey];
+	if (!provider || typeof provider !== "object" || Array.isArray(provider)) fail("Provider was not found");
+	const results = await Promise.all(collectRoutes(provider).map(async (route, index) => {
+		try {
+			const modelIds = await discoverRoute(provider, route);
+			return { routeId: index + 1, api: route.api, status: "ok", count: modelIds.length, modelIds };
+		} catch (error) {
+			return { routeId: index + 1, api: route.api, status: "error", errorCode: "discovery_failed", credentialEcho: error instanceof Error && error.message === "credential_echo" };
+		}
+	}));
+	if (results.some((result) => result.credentialEcho)) fail("Upstream model discovery failed");
+	output({
+		source: "upstream-discovery",
+		providerKey,
+		routes: results.map(({ credentialEcho: _credentialEcho, ...result }) => result),
+	});
+}
+
+function routeKey(route) {
+	const headers = Object.entries(route.headers)
+		.map(([name, value]) => [name.toLowerCase(), value])
+		.sort(([left], [right]) => left.localeCompare(right));
+	return JSON.stringify([route.api, route.baseUrl, headers, route.authHeader === true]);
+}
+
+function collectRoutes(provider) {
+	if (provider.models !== undefined && !Array.isArray(provider.models)) fail("Provider models must be an array");
+	const routes = [];
+	const seen = new Set();
+	const add = (route) => {
+		const key = routeKey(route);
+		if (seen.has(key)) return;
+		seen.add(key);
+		routes.push(route);
+	};
+	const providerRoute = discoveryRoute(provider);
+	for (const api of SUPPORTED_APIS) add({ ...providerRoute, api });
+	for (const model of provider.models ?? []) {
+		if (typeof model?.id !== "string" || !model.id) continue;
+		add(discoveryRoute(provider, model.id));
+	}
+	return routes;
+}
+
 
 async function readSecret() {
 	if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== "function") {
@@ -332,8 +351,7 @@ async function setKey(providerKey) {
 
 switch (command) {
 	case "catalog": await catalog(args[0], args[1]); break;
-	case "discover": await discover(args[0], args[1]); break;
-	case "lint": lint(); break;
+	case "discover": await discover(args[0]); break;
 	case "set-key": await setKey(args[0]); break;
-	default: fail("Usage: vendor.mjs <catalog|discover|lint|set-key> [arguments]", 2);
+	default: fail("Usage: vendor.mjs <catalog|discover> [argument]", 2);
 }

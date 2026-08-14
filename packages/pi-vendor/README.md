@@ -24,13 +24,15 @@ Restart or reload Pi. Configuration lives at `$PI_CODING_AGENT_DIR/models.json`,
 
 The bundled `pi-vendor` Skill is discovered automatically. Ask naturally:
 
-- “Add `claude-opus-4-5` to provider `my-gateway` using Anthropic's official template.”
+- “Add Qwen 3.7 to provider `my-gateway`.”
 - “Discover the models exposed by `my-gateway`.”
+- “Synchronize `my-gateway` exactly with its upstream model list.”
 - “Update this provider's base URL without changing its API key.”
 - “Audit my Pi model configuration.”
 - “Remove model `old-model` from provider `local`.”
 
-The Skill uses Pi's normal read/edit flow, so changes stay narrow and inspectable. It never invents model cost, context, capabilities, or compatibility metadata when no authoritative source provides them.
+
+The Skill uses Pi's normal read/edit flow, so changes stay narrow and inspectable. It treats a user phrase such as “Qwen 3.7” as a fuzzy catalog request rather than blindly writing it as an ID. Provider capability questions use one aggregate `vendor.mjs discover <provider>` query without printing the full configuration. Exact synchronization runs Skill-owned fixed Node templates to generate and retain a machine-confirmed `{before, add, remove, after}` plan, assert it is not stale before editing, assert the final ID set after editing, and assert the final discovery union. Model IDs are never manually transcribed into the mutation plan. Every mutation must pass `pi --list-models --offline` before the Skill reports completion.
 
 > [!CAUTION]
 > When a working Agent is available, never paste an API key into chat. Let the Skill give you the bundled `vendor.mjs set-key` command, then run it yourself; terminal input is hidden and the key never enters argv or the assistant response. The cold-start `/vendor` key field is visible while typing, so do not use it while sharing or recording your terminal.
@@ -48,22 +50,22 @@ Successful saves are atomic, use file mode `0600`, refresh Pi's model registry, 
 
 ## On-demand helper
 
-The Skill calls one bundled script only when needed:
+The Skill has exactly two AI-facing bundled queries:
 
 | Command | Purpose |
-| --- | --- |
-| `vendor.mjs catalog <query>` | Search credential-free templates from the active Pi installation |
-| `vendor.mjs discover <provider> [configured-model]` | Probe the effective OpenAI, Anthropic, or Google model-list route and return ids |
-| `vendor.mjs lint` | Check local JSON shape and duplicate model ids |
-| `vendor.mjs set-key <provider>` | Privately update one provider key from the user's terminal |
+|---|---|
+| `vendor.mjs catalog <keyword>` | Fuzzy-search credential-free official templates from the active Pi installation |
+| `vendor.mjs discover <provider>` | Probe every deduplicated effective route for the provider and group upstream model IDs by API type |
 
-Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, and applies fixed time/body limits. A returned id is positive evidence; an unlisted configured id is only a warning to verify, never proof that the upstream does not support it.
+`vendor.mjs set-key <provider>` remains a separate user-terminal-only helper for private key entry. It is not an AI-facing query.
+
+Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, and applies fixed time/body limits. Route failures remain explicit instead of being interpreted as unsupported models; any intended route failure blocks destructive exact synchronization. A returned ID is positive upstream evidence; official catalog matches are metadata sources, not upstream capability evidence.
 
 ## Safety boundaries
 
 `/vendor` and `set-key` use strict JSON handling and atomic `0600` writes. Their core operations reject stale revisions and identity conflicts instead of silently upserting or overwriting them.
 
-The Skill uses Pi's normal read/edit tools rather than that transaction core; review its diff, then let it run the bundled local `lint` check.
+The Skill uses Pi's normal read/edit tools rather than that transaction core. After every mutation it must run the active Pi executable's `--list-models --offline` path, inspect both streams for `errors loading models.json` (Pi can warn and still exit zero), and verify the intended model-list change. Exact synchronization uses the fixed templates in `SKILL.md`: an immutable plan file, a stale-before assertion, an after-set assertion, and a successful-discovery-union assertion. Routing or authentication changes require successful discovery for every intended route.
 
 Across both paths:
 

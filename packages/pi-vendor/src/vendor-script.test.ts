@@ -39,19 +39,8 @@ function runAsync(args: string[], env: NodeJS.ProcessEnv = {}) {
 }
 
 describe("vendor skill script", () => {
-	it("lints the local models.json without starting Pi", () => {
-		expect(JSON.parse(run(["lint"]))).toMatchObject({ valid: true, errors: [] });
-		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: { models: [{ id: "x" }, { id: "x" }] } } }));
-		expect(() => run(["lint"])).toThrow();
-		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: { apiKey: "sk-review-secret", models: [{ id: "sk-review-secret" }, { id: "sk-review-secret" }] } } }));
-		try {
-			run(["lint"]);
-			throw new Error("lint unexpectedly passed");
-		} catch (error) {
-			const captured = error as { stdout?: Buffer | string; stderr?: Buffer | string };
-			expect(`${String(captured.stdout ?? "")}${String(captured.stderr ?? "")}${String(error)}`).not.toContain("sk-review-secret");
-		}
-		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: { models: { x: { id: "x" } } } } }));
+	it("rejects the removed compare and lint commands", () => {
+		expect(() => run(["compare", "relay"])).toThrow();
 		expect(() => run(["lint"])).toThrow();
 	});
 
@@ -60,10 +49,10 @@ describe("vendor skill script", () => {
 		mkdirSync(catalogDir, { recursive: true });
 		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
 		writeFileSync(join(dir, "node_modules/@earendil-works/pi-ai/package.json"), JSON.stringify({ type: "module" }));
-		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { anthropic: { opus: { id: "claude-opus", name: "Claude Opus", api: "anthropic-messages", baseUrl: "https://secret.invalid", apiKey: "secret", contextWindow: 200000 } } };`);
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { alibaba: { qwen: { id: "qwen3.7", name: "Qwen 3.7", api: "openai-completions", baseUrl: "https://secret.invalid", apiKey: "secret", contextWindow: 200000 } } };`);
 
-		const result = JSON.parse(run(["catalog", "opus"], { env: { PI_VENDOR_PI_ROOT: dir, PATH: "" } }));
-		expect(result).toEqual({ query: "opus", count: 1, total: 1, results: [{ provider: "anthropic", model: { id: "claude-opus", name: "Claude Opus", api: "anthropic-messages", contextWindow: 200000 } }] });
+		const result = JSON.parse(run(["catalog", "qwen 3.7"], { env: { PI_VENDOR_PI_ROOT: dir, PATH: "" } }));
+		expect(result).toEqual({ source: "official-catalog", query: "qwen 3.7", count: 1, total: 1, results: [{ officialProvider: "alibaba", model: { id: "qwen3.7", name: "Qwen 3.7", api: "openai-completions", contextWindow: 200000 } }] });
 	});
 
 	it("finds a catalog beside an npm-style Windows shim", () => {
@@ -75,13 +64,13 @@ describe("vendor skill script", () => {
 		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { test: { model: { id: "shim-model" } } };`);
 
 		const result = JSON.parse(run(["catalog", "shim"], { env: { PI_VENDOR_PI_ROOT: undefined, PATH: shimDir } }));
-		expect(result.results[0]).toEqual({ provider: "test", model: { id: "shim-model" } });
+		expect(result.results[0]).toEqual({ officialProvider: "test", model: { id: "shim-model" } });
 	});
 
 	it("discovers model ids without returning credentials", async () => {
 		let authorization = "";
 		const server = createServer((request, response) => {
-			authorization = String(request.headers.authorization ?? "");
+			if (request.headers.authorization) authorization = String(request.headers.authorization);
 			response.setHeader("content-type", "application/json");
 			response.end(JSON.stringify({ data: [{ id: "b" }, { id: "a" }, { id: "a" }] }));
 		});
@@ -92,7 +81,12 @@ describe("vendor skill script", () => {
 		try {
 			const result = await runAsync(["discover", "relay"], { PI_VENDOR_TEST_KEY: "!literal$HOME" });
 			expect(result.code).toBe(0);
-			expect(JSON.parse(result.stdout)).toEqual({ providerKey: "relay", route: { api: "openai-completions" }, positiveEvidenceOnly: true, count: 2, modelIds: ["a", "b"] });
+			expect(JSON.parse(result.stdout).routes).toEqual([
+				{ routeId: 1, api: "openai-completions", status: "ok", count: 2, modelIds: ["a", "b"] },
+				{ routeId: 2, api: "openai-responses", status: "ok", count: 2, modelIds: ["a", "b"] },
+				{ routeId: 3, api: "anthropic-messages", status: "ok", count: 2, modelIds: ["a", "b"] },
+				{ routeId: 4, api: "google-generative-ai", status: "error", errorCode: "discovery_failed" },
+			]);
 			expect(result.stdout).not.toContain("literal");
 			expect(authorization).toBe("Bearer prefix-!literal$HOME");
 		} finally {
@@ -100,31 +94,104 @@ describe("vendor skill script", () => {
 		}
 	});
 
-	it("uses configured model routes for Anthropic and Google discovery", async () => {
+	it("discovers and deduplicates all four provider API types in one command", async () => {
 		const seen: Array<{ url: string; headers: IncomingHttpHeaders }> = [];
 		const server = createServer((request, response) => {
 			seen.push({ url: request.url ?? "", headers: request.headers });
-			response.end(request.url === "/v1beta/models"
-				? JSON.stringify({ models: [{ name: "models/gemini-x" }] })
-				: JSON.stringify({ data: [{ id: "claude-x" }] }));
+			if (request.url === "/v1beta/models") {
+				response.end(JSON.stringify({ models: [{ name: "models/gemini-x" }] }));
+			} else if (request.url === "/v1/models") {
+				response.end(JSON.stringify({ data: [{ id: "claude-x" }] }));
+			} else {
+				response.end(JSON.stringify({ data: [{ id: "openai-x" }] }));
+			}
 		});
 		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 		const address = server.address();
 		if (!address || typeof address === "string") throw new Error("missing test address");
+		const origin = `http://127.0.0.1:${address.port}`;
 		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: {
-			baseUrl: `http://127.0.0.1:${address.port}/v1`, api: "openai-completions", apiKey: "secret", authHeader: true,
+			baseUrl: origin, api: "openai-completions", apiKey: "secret", authHeader: true,
 			models: [
-				{ id: "claude-route", api: "anthropic-messages", baseUrl: `http://127.0.0.1:${address.port}` },
-				{ id: "gemini-route", api: "google-generative-ai", baseUrl: `http://127.0.0.1:${address.port}` },
+				{ id: "claude-route", api: "anthropic-messages" },
+				{ id: "claude-route-duplicate", api: "anthropic-messages" },
 			],
 		} } }));
 		try {
-			const anthropic = await runAsync(["discover", "relay", "claude-route"]);
-			const google = await runAsync(["discover", "relay", "gemini-route"]);
-			expect(JSON.parse(anthropic.stdout).modelIds).toEqual(["claude-x"]);
-			expect(JSON.parse(google.stdout).modelIds).toEqual(["gemini-x"]);
-			expect(seen[0]).toMatchObject({ url: "/v1/models", headers: { "x-api-key": "secret", authorization: "Bearer secret", "anthropic-version": "2023-06-01" } });
-			expect(seen[1]).toMatchObject({ url: "/v1beta/models", headers: { "x-goog-api-key": "secret", authorization: "Bearer secret" } });
+			const result = await runAsync(["discover", "relay"]);
+			expect(result.code).toBe(0);
+			expect(JSON.parse(result.stdout).routes).toEqual([
+				{ routeId: 1, api: "openai-completions", status: "ok", count: 1, modelIds: ["openai-x"] },
+				{ routeId: 2, api: "openai-responses", status: "ok", count: 1, modelIds: ["openai-x"] },
+				{ routeId: 3, api: "anthropic-messages", status: "ok", count: 1, modelIds: ["claude-x"] },
+				{ routeId: 4, api: "google-generative-ai", status: "ok", count: 1, modelIds: ["gemini-x"] },
+			]);
+			expect(seen).toHaveLength(4);
+			expect(seen.find((entry) => entry.url === "/v1/models")).toMatchObject({ headers: { "x-api-key": "secret", authorization: "Bearer secret", "anthropic-version": "2023-06-01" } });
+			expect(seen.find((entry) => entry.url === "/v1beta/models")).toMatchObject({ headers: { "x-goog-api-key": "secret", authorization: "Bearer secret" } });
+		} finally {
+			server.close();
+		}
+	});
+
+	it("adds a distinct model-level override route", async () => {
+		const seen: string[] = [];
+		const server = createServer((request, response) => {
+			seen.push(request.url ?? "");
+			if (request.url === "/alternate/models") {
+				response.end(JSON.stringify({ data: [{ id: "override-x" }] }));
+			} else if (request.url?.endsWith("/v1beta/models")) {
+				response.end(JSON.stringify({ models: [{ name: "models/default-x" }] }));
+			} else {
+				response.end(JSON.stringify({ data: [{ id: "default-x" }] }));
+			}
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("missing test address");
+		const origin = `http://127.0.0.1:${address.port}`;
+		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: {
+			baseUrl: `${origin}/default`,
+			models: [{ id: "override-route", api: "openai-responses", baseUrl: `${origin}/alternate` }],
+		} } }));
+		try {
+			const result = await runAsync(["discover", "relay"]);
+			expect(result.code).toBe(0);
+			expect(JSON.parse(result.stdout).routes[4]).toEqual({ routeId: 5, api: "openai-responses", status: "ok", count: 1, modelIds: ["override-x"] });
+			expect(seen.filter((url) => url === "/alternate/models")).toHaveLength(1);
+		} finally {
+			server.close();
+		}
+	});
+
+
+	it("reports a failed route without hiding successful routes", async () => {
+		const server = createServer((request, response) => {
+			if (request.url === "/v1beta/models") {
+				response.writeHead(503);
+				response.end("temporary upstream failure");
+				return;
+			}
+			response.end(JSON.stringify({ data: [{ id: "open-new" }] }));
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("missing test address");
+		const baseUrl = `http://127.0.0.1:${address.port}`;
+		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: {
+			baseUrl, api: "openai-completions", models: [
+				{ id: "gemini-configured", api: "google-generative-ai", baseUrl },
+			],
+		} } }));
+		try {
+			const result = await runAsync(["discover", "relay"]);
+			expect(result.code).toBe(0);
+			expect(JSON.parse(result.stdout).routes).toEqual([
+				{ routeId: 1, api: "openai-completions", status: "ok", count: 1, modelIds: ["open-new"] },
+				{ routeId: 2, api: "openai-responses", status: "ok", count: 1, modelIds: ["open-new"] },
+				{ routeId: 3, api: "anthropic-messages", status: "ok", count: 1, modelIds: ["open-new"] },
+				{ routeId: 4, api: "google-generative-ai", status: "error", errorCode: "discovery_failed" },
+			]);
 		} finally {
 			server.close();
 		}
@@ -188,9 +255,14 @@ describe("vendor skill script", () => {
 		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: { baseUrl: `http://127.0.0.1:${address.port}` } } }));
 		try {
 			const result = await runAsync(["discover", "relay"]);
-			expect(result.code).toBe(1);
-			expect(["Upstream model discovery failed", "Upstream returned invalid model data"]).toContain(result.stderr.trim());
-			expect(result.stderr).not.toContain("127.0.0.1");
+			expect(result.code).toBe(0);
+			expect(JSON.parse(result.stdout).routes).toEqual([
+				{ routeId: 1, api: "openai-completions", status: "error", errorCode: "discovery_failed" },
+				{ routeId: 2, api: "openai-responses", status: "error", errorCode: "discovery_failed" },
+				{ routeId: 3, api: "anthropic-messages", status: "error", errorCode: "discovery_failed" },
+				{ routeId: 4, api: "google-generative-ai", status: "error", errorCode: "discovery_failed" },
+			]);
+			expect(`${result.stdout}${result.stderr}`).not.toContain("127.0.0.1");
 		} finally {
 			server.close();
 		}
