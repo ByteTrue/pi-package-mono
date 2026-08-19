@@ -126,6 +126,24 @@ describe("resolveVisionModel", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("resolves URL-style provider ids", async () => {
+    const { cwd } = makeSettingsSandbox({ model: "llama-server=http://127.0.0.1:8080/qwen2-vl" });
+    const model = makeModel("llama-server=http://127.0.0.1:8080", "qwen2-vl");
+
+    const result = await resolveVisionModel(makeCtx({ cwd, models: [model] }));
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("resolves URL-style provider ids that include a path", async () => {
+    const { cwd } = makeSettingsSandbox({ model: "srv=http://127.0.0.1:8080/v1/qwen2-vl" });
+    const model = makeModel("srv=http://127.0.0.1:8080/v1", "qwen2-vl");
+
+    const result = await resolveVisionModel(makeCtx({ cwd, models: [model] }));
+
+    expect(result.ok).toBe(true);
+  });
+
   it("never auto-picks a model, and lists the candidates instead", async () => {
     const { cwd } = makeSettingsSandbox();
     const expensive = makeModel("vendor", "opus-5");

@@ -178,15 +178,21 @@ export async function resolveVisionModel(ctx: ExtensionContext): Promise<VisionM
     };
   }
 
-  const parts = splitModelRef(ref);
-  if (!parts) {
-    return {
-      ok: false,
-      error: `${SETTINGS_KEY}.model must be "provider/model-id", got "${ref}".\n${listCandidates(ctx)}`,
-    };
+  // Match the whole ref against `${provider}/${id}` first, like pi's own /model
+  // resolver: provider ids may contain "/" (URL-style providers such as
+  // "llama-server=http://127.0.0.1:8080"), where splitting at the first slash
+  // would cut inside the URL.
+  let model = ctx.modelRegistry.getAvailable().find((m) => `${m.provider}/${m.id}` === ref);
+  if (!model) {
+    const parts = splitModelRef(ref);
+    if (!parts) {
+      return {
+        ok: false,
+        error: `${SETTINGS_KEY}.model must be "provider/model-id", got "${ref}".\n${listCandidates(ctx)}`,
+      };
+    }
+    model = ctx.modelRegistry.find(parts.provider, parts.modelId);
   }
-
-  const model = ctx.modelRegistry.find(parts.provider, parts.modelId);
   if (!model) {
     return {
       ok: false,
@@ -205,7 +211,7 @@ export async function resolveVisionModel(ctx: ExtensionContext): Promise<VisionM
     // Deliberately not echoing auth.error: it can quote configuration details.
     return {
       ok: false,
-      error: `Credentials for provider "${parts.provider}" could not be resolved. Check that provider's apiKey in models.json.`,
+      error: `Credentials for provider "${model.provider}" could not be resolved. Check that provider's apiKey in models.json.`,
     };
   }
 
