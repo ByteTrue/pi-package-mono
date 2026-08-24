@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getActiveProviderName, resolveApiKey, resolveBaseUrl } from "./config.js";
+import { getActiveProviderName, getProviderChain, resolveApiKey, resolveBaseUrl } from "./config.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -46,3 +46,13 @@ describe("resolveApiKey", () => {
 			expect(resolveBaseUrl("bing", {})).toBeUndefined();
 		});
 	});
+
+describe("getProviderChain", () => {
+	it("uses the configured order and removes empty or duplicate names", () => {
+		expect(getProviderChain({ providers: ["bing", "", "bing", "tavily"] })).toEqual(["bing", "tavily"]);
+	});
+
+	it("falls back to the legacy provider field", () => {
+		expect(getProviderChain({ provider: "tavily" })).toEqual(["tavily"]);
+	});
+});

@@ -1,4 +1,4 @@
-import { getActiveProviderName, resolveApiKey, resolveBaseUrl, type WebConfig } from "./config.js";
+import { getProviderChain, resolveApiKey, resolveBaseUrl, type WebConfig } from "./config.js";
 import { createProvider } from "./providers/factory.js";
 import { PROVIDERS } from "./providers/registry.js";
 import type { SearchResult } from "./providers/types.js";
@@ -105,6 +105,7 @@ export function listAvailableSearchProviders(config: WebConfig): string[] {
 export interface SearchOutcome {
 	backend: string;
 	results: SearchResult[];
+	attemptedProviders: string[];
 }
 
 export interface SearchProgress {
@@ -112,7 +113,7 @@ export interface SearchProgress {
 	label: string;
 }
 
-/** One call contacts exactly one provider; retries are explicit new tool calls. */
+/** Try the configured provider chain in order; explicit provider calls remain single-provider. */
 export async function searchWithProvider(
 	config: WebConfig,
 	providerName: string | undefined,
@@ -122,26 +123,37 @@ export async function searchWithProvider(
 	onProgress?: (progress: SearchProgress) => void,
 	attemptTimeoutMs: number = SEARCH_PROVIDER_TIMEOUT_MS,
 ): Promise<SearchOutcome> {
-	const name = providerName?.trim() || getActiveProviderName(config);
-	let provider: ReturnType<typeof createProvider>;
-	try {
-		provider = createProvider(name, {
-			apiKey: resolveApiKey(name, config),
-			baseUrl: resolveBaseUrl(name, config),
-		});
-	} catch (error) {
-		const available = listAvailableSearchProviders(config);
-		throw new Error(`${error instanceof Error ? error.message : String(error)} Available providers: ${available.join(", ") || "none"}.`);
+	const names = providerName?.trim() ? [providerName.trim()] : getProviderChain(config);
+	const attemptedProviders: string[] = [];
+	const failures: string[] = [];
+
+	for (const name of names) {
+		if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
+		attemptedProviders.push(name);
+
+		let provider: ReturnType<typeof createProvider>;
+		try {
+			provider = createProvider(name, {
+				apiKey: resolveApiKey(name, config),
+				baseUrl: resolveBaseUrl(name, config),
+			});
+		} catch (error) {
+			const message = truncateUtf8(error instanceof Error ? error.message : String(error), MAX_SEARCH_ERROR_BYTES).text;
+			failures.push(`${name}: ${message}`);
+			continue;
+		}
+
+		onProgress?.({ provider: name, label: provider.label });
+		try {
+			const results = await searchProviderWithTimeout(provider, query, maxResults, signal, attemptTimeoutMs);
+			return { backend: name, results: normalizeSearchResults(results, maxResults), attemptedProviders };
+		} catch (error) {
+			if (signal?.aborted) throw error;
+			const message = truncateUtf8(error instanceof Error ? error.message : String(error), MAX_SEARCH_ERROR_BYTES).text;
+			failures.push(`${name}: ${message}`);
+		}
 	}
-	onProgress?.({ provider: name, label: provider.label });
-	try {
-		const results = await searchProviderWithTimeout(provider, query, maxResults, signal, attemptTimeoutMs);
-		return { backend: name, results: normalizeSearchResults(results, maxResults) };
-	} catch (error) {
-		if (signal?.aborted) throw error;
-		const message = truncateUtf8(error instanceof Error ? error.message : String(error), MAX_SEARCH_ERROR_BYTES).text;
-		const available = listAvailableSearchProviders(config).filter((candidate) => candidate !== name);
-		const alternatives = available.length ? ` Other available providers: ${available.join(", ")}.` : "";
-		throw new Error(`${name} search failed: ${message}.${alternatives}`);
-	}
+
+	const details = failures.join("; ");
+	throw new Error(truncateUtf8(`All configured search providers failed: ${details || "none configured"}`, MAX_SEARCH_ERROR_BYTES).text);
 }

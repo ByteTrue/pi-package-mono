@@ -13,6 +13,7 @@ import { Type } from "typebox";
 import {
 	getActiveProviderName,
 	getConfigPath,
+	getProviderChain,
 	readConfig,
 	readConfigResult,
 	resolveApiKey,
@@ -80,11 +81,6 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 					maximum: MAX_SEARCH_RESULTS,
 				}),
 			),
-			provider: Type.Optional(
-				Type.String({
-					description: `Provider override; omit to use /web's active provider: ${PROVIDERS.map((provider) => provider.name).join(", ")}.`,
-				}),
-			),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate) {
@@ -92,7 +88,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			const config = readConfig();
 			const outcome = await searchWithProvider(
 				config,
-				params.provider,
+				undefined,
 				params.query,
 				maxResults,
 				signal,
@@ -107,7 +103,12 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			if (outcome.results.length === 0) {
 				return {
 					content: [{ type: "text", text: `No results found for "${params.query}". Provider: ${outcome.backend}.` }],
-					details: { query: params.query, backend: outcome.backend, resultCount: 0 },
+					details: {
+						query: params.query,
+						backend: outcome.backend,
+						attemptedProviders: outcome.attemptedProviders,
+						resultCount: 0,
+					},
 				};
 			}
 			return {
@@ -115,6 +116,7 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 				details: {
 					query: params.query,
 					backend: outcome.backend,
+					attemptedProviders: outcome.attemptedProviders,
 					resultCount: outcome.results.length,
 					results: outcome.results,
 				},
@@ -200,9 +202,11 @@ function formatShowConfig(config: WebConfig): string {
 		: envProxy
 			? `${maskProxyUrl(envProxy)} (from env)`
 			: UNSET_LABEL;
+	const chain = getProviderChain(config);
 	const lines = [
 		"Web tools config:",
 		`  config file: ${getConfigPath()}`,
+		`  provider chain: ${chain.join(" -> ")}`,
 		`  active provider: ${active}`,
 		`  proxy: ${proxy}`,
 		"",
@@ -262,14 +266,58 @@ async function configureBaseUrl(
 	}
 	const next: WebConfig = {
 		...config,
-		provider: meta.name,
+		providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)],
 		baseUrls: { ...config.baseUrls, [meta.name]: input.trim() },
 	};
+	delete next.provider;
 	if (!writeConfig(next)) {
 		ctx.ui.notify(`Failed to save ${meta.label} URL to ${getConfigPath()}`, "error");
 		return;
 	}
 	ctx.ui.notify(`Saved ${meta.label} URL and set as active provider`, "info");
+}
+
+async function configureProviderChain(
+	ctx: { ui: { select(title: string, options: string[], settings?: unknown): Promise<string | undefined>; notify(message: string, type?: string): void } },
+	config: WebConfig,
+ ): Promise<void> {
+	const isConfigured = (provider: ProviderMeta) =>
+		(resolveApiKey(provider.name, config) !== undefined) ||
+		(provider.keyless && !provider.baseUrlEnvVar) ||
+		(provider.baseUrlEnvVar ? !needsBaseUrlPrompt(provider, config) : false);
+	const labelOf = (provider: ProviderMeta, position?: number) => {
+		const markers: string[] = [];
+		if (position !== undefined) markers.push(`${position}.`);
+		if (provider.keyless) markers.push("(free)");
+		if (isConfigured(provider)) markers.push("(configured)");
+		return markers.length ? `${provider.label} ${markers.join(" ")}` : provider.label;
+	};
+	const current = getProviderChain(config);
+	const selected: string[] = [];
+	const selectable = PROVIDERS.filter((provider) => isConfigured(provider));
+
+	while (true) {
+		const options = selectable
+			.filter((provider) => !selected.includes(provider.name))
+			.map((provider) => labelOf(provider));
+		if (selected.length > 0) options.push("✓ Done");
+		options.push("Cancel");
+		const currentLabel = selected.length ? selected.join(" -> ") : current.join(" -> ");
+		const picked = await ctx.ui.select(`Web provider chain (current: ${currentLabel})`, options, {});
+		if (!picked || picked === "Cancel") {
+			ctx.ui.notify("Web config unchanged", "info");
+			return;
+		}
+		if (picked === "✓ Done") {
+			const next: WebConfig = { ...config, providers: [...selected] };
+			delete next.provider;
+			if (writeConfig(next)) ctx.ui.notify(`Provider chain saved: ${selected.join(" -> ")}`, "info");
+			else ctx.ui.notify(`Failed to save provider chain to ${getConfigPath()}`, "error");
+			return;
+		}
+		const provider = selectable.find((candidate) => picked === labelOf(candidate));
+		if (provider) selected.push(provider.name);
+	}
 }
 
 export function registerWebCommand(pi: ExtensionAPI): void {
@@ -293,21 +341,23 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 
 			const active = getActiveProviderName(config);
 			const ordered = [...PROVIDERS.filter((provider) => provider.name === active), ...PROVIDERS.filter((provider) => provider.name !== active)];
-			const isConfigured = (provider: ProviderMeta) =>
-				resolveApiKey(provider.name, config) !== undefined ||
-				(provider.baseUrlEnvVar ? !needsBaseUrlPrompt(provider, config) : false);
 			const labelOf = (provider: ProviderMeta) => {
 				const markers: string[] = [];
 				if (provider.name === active) markers.push("✓");
 				if (provider.keyless) markers.push("(free)");
-				if (isConfigured(provider)) markers.push("(configured)");
+				if (resolveApiKey(provider.name, config) !== undefined || (provider.baseUrlEnvVar ? !needsBaseUrlPrompt(provider, config) : false)) markers.push("(configured)");
 				return markers.length ? `${provider.label} ${markers.join(" ")}` : provider.label;
 			};
 			const providerOptions = ordered.map((provider) => ({ provider, label: labelOf(provider) }));
+			const chainEntry = `Configure provider fallback chain… (current: ${getProviderChain(config).join(" -> ")})`;
 			const proxyEntry = `⚙ Set HTTP proxy… (current: ${maskProxyUrl(config.proxy)})`;
-			const selected = await ctx.ui.select("Web search provider", [...providerOptions.map((option) => option.label), proxyEntry], {});
+			const selected = await ctx.ui.select("Web search provider", [...providerOptions.map((option) => option.label), chainEntry, proxyEntry], {});
 			if (selected == null) {
 				ctx.ui.notify("Web config unchanged", "info");
+				return;
+			}
+			if (selected === chainEntry) {
+				await configureProviderChain(ctx, config);
 				return;
 			}
 			if (selected === proxyEntry) {
@@ -324,11 +374,12 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 				return;
 			}
 			if (meta.keyless || resolveApiKey(meta.name, config) !== undefined) {
-				if (writeConfig({ ...config, provider: meta.name })) ctx.ui.notify(`Active provider set to ${meta.label}`, "info");
+				const next: WebConfig = { ...config, providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)] };
+				delete next.provider;
+				if (writeConfig(next)) ctx.ui.notify(`Active provider set to ${meta.label}`, "info");
 				else ctx.ui.notify(`Failed to save config to ${getConfigPath()}`, "error");
 				return;
 			}
-
 			const hint = meta.signupUrl ? ` (get one at ${meta.signupUrl})` : "";
 			const input = await ctx.ui.input(`${meta.label} API key${hint}`, "paste your API key");
 			if (input == null || !input.trim()) {
@@ -337,9 +388,10 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 			}
 			const toSave: WebConfig = {
 				...config,
-				provider: meta.name,
+				providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)],
 				apiKeys: { ...config.apiKeys, [meta.name]: input.trim() },
 			};
+			delete toSave.provider;
 			if (!writeConfig(toSave)) ctx.ui.notify(`Failed to save ${meta.label} key to ${getConfigPath()}`, "error");
 			else ctx.ui.notify(`Saved ${meta.label} key and set as active provider`, "info");
 		},

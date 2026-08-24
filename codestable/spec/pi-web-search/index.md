@@ -7,7 +7,7 @@
 ## 它负责什么
 
 - **`web_search`**：查询 → 规范化标题 / URL / 摘要；默认 **exa-free**，无需 key。
-- **可选 provider**：省略 `provider` 时使用 `/web` 当前配置；提供时用于本次调用。一次调用只联系一个 provider。
+- **provider chain**：`web_search` 不暴露 provider 参数；按 `/web` 配置的 `providers` 顺序尝试，第一项为 active provider，后续项为 fallback。
 - **`web_fetch`**：无论 search provider 是谁，raw 与 extracted 都只走 package 的 SSRF-safe generic transport。
 - **完整 TUI 配置**：安装后无需读 GitHub 或手写 JSON，即可在 `/web` 配 provider、key、base URL、proxy；`/web --show` 查看脱敏状态。
 - **代理凭据显示**：proxy URL 可含 userinfo 供 transport 使用，但 `/web --show`、provider menu、placeholder 与 notification 只显示脱敏 scheme/host/port。
@@ -19,7 +19,7 @@
 ## 它不负责什么
 
 - 不管理 `models.json` / 模型 provider（那是 pi-vendor）。
-- 不做隐式跨 provider fallback。
+- 不让模型选择 provider；provider fallback 只由用户在 `/web` 中配置。
 - 不把 search provider 选择耦合到 URL fetch transport。
 - 不把 DuckDuckGo 当默认；当前默认是 exa-free。
 - 不新增第三个 Agent tool。
@@ -27,7 +27,7 @@
 ## 统一语言
 
 - **exa-free**：默认、免 key 的 Exa MCP free search。
-- **optional provider**：`web_search(provider=...)` 为单次可选覆盖；省略即使用 `/web` 当前配置。
+- **provider chain**：`providers` 第一项是 active provider，后续项按顺序作为 fallback；旧 `provider` 字段只用于兼容读取。
 - **readConfigResult 三态**：`missing` | `valid` | `invalid`；`/web` 写路径 fail-closed，运行时 `readConfig` 可 soft-fail 为 `{}`。
 - **package-scoped proxy**：仅本包 provider 路由使用的 proxy dispatcher。
 - **generic SSRF fetcher**：`web_fetch` 唯一传输；任意目标不会因 `NO_PROXY` 退回不安全直连。
@@ -39,7 +39,7 @@
 | 零配置搜索 | 安装后直接 `web_search`（默认 exa-free） |
 | 换 provider / 设 key / base URL / proxy | `/web` |
 | 看当前配置 | `/web --show` |
-| 搜索 | `query` 必填；`provider`、`max_results` 可选 |
+| 搜索 | `query` 必填；`max_results` 可选，默认 5 |
 | 抓可读正文 | `web_fetch`（`raw` 省略或 false） |
 | 要原始 HTML | `web_fetch(raw=true)` |
 | 大陆无代理 | 在 `/web` 显式选择 Bing（keyless）或 Bocha |
@@ -64,7 +64,7 @@
 
 **不做**
 
-- 隐式 fallback / `autoFallback`
+- 模型控制 provider 选择
 - native provider fetch
 - 第三个工具或 Web 管理面
 - 在损坏配置上自动修复写回

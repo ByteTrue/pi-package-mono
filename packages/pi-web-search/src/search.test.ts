@@ -7,27 +7,29 @@ const BING = readFileSync(fileURLToPath(new URL("./providers/__fixtures__/bing.h
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("explicit search provider", () => {
+describe("configured search provider chain", () => {
 	it("uses the active provider when none is specified", async () => {
 		const fetch = vi.fn(async () => new Response(BING, { status: 200 }));
 		vi.stubGlobal("fetch", fetch);
 		const outcome = await searchWithProvider({ provider: "bing" }, undefined, "x", 3, undefined);
 		expect(outcome.backend).toBe("bing");
+		expect(outcome.attemptedProviders).toEqual(["bing"]);
 		expect(outcome.results.length).toBeGreaterThan(0);
 	});
 
-	it("uses only the explicitly requested provider", async () => {
+	it("keeps explicit provider calls to one provider", async () => {
 		const fetch = vi.fn(async () => new Response(BING, { status: 200 }));
 		vi.stubGlobal("fetch", fetch);
 		const outcome = await searchWithProvider({ provider: "brave" }, "bing", "x", 3, undefined);
 		expect(outcome.backend).toBe("bing");
+		expect(outcome.attemptedProviders).toEqual(["bing"]);
 		expect(fetch).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not fall back and lists other available providers", async () => {
+	it("does not hide the configured chain on failure", async () => {
 		vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
 		await expect(searchWithProvider({ provider: "bing" }, undefined, "x", 3, undefined)).rejects.toThrow(
-			/bing search failed.*Other available providers: exa-free/s,
+			/All configured search providers failed: bing: Bing search failed: network down/s,
 		);
 	});
 

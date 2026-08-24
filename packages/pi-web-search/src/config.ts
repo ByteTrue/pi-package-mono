@@ -25,6 +25,7 @@ import { DEFAULT_PROVIDER_NAME, findProviderMeta } from "./providers/registry.js
 export const WebConfigSchema = Type.Object(
 	{
 		provider: Type.Optional(Type.String()),
+		providers: Type.Optional(Type.Array(Type.String())),
 		apiKeys: Type.Optional(Type.Record(Type.String(), Type.String())),
 		baseUrls: Type.Optional(Type.Record(Type.String(), Type.String())),
 		// Explicit HTTP(S) proxy for all web fetches, e.g. "http://127.0.0.1:7890".
@@ -87,6 +88,8 @@ export function writeConfig(config: WebConfig): boolean {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
 		const { autoFallback: _legacy, ...clean } = config as WebConfig & { autoFallback?: unknown };
+		if (!clean.providers?.length && clean.provider?.trim()) clean.providers = [clean.provider.trim()];
+		delete clean.provider;
 		const body = `${JSON.stringify(clean, null, 2)}\n`;
 		const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
 		// mode 0o600: may contain API keys. Atomic rename avoids half-written JSON.
@@ -98,8 +101,17 @@ export function writeConfig(config: WebConfig): boolean {
 	}
 }
 
+export function getProviderChain(config: WebConfig): string[] {
+	const configured = (config.providers ?? [])
+		.map((provider) => provider.trim())
+		.filter((provider) => provider.length > 0);
+	if (configured.length > 0) return [...new Set(configured)];
+	const active = config.provider?.trim() || DEFAULT_PROVIDER_NAME;
+	return [active];
+}
+
 export function getActiveProviderName(config: WebConfig): string {
-	return config.provider?.trim() || DEFAULT_PROVIDER_NAME;
+	return getProviderChain(config)[0] ?? DEFAULT_PROVIDER_NAME;
 }
 
 // Resolve a provider's API key: env var first, then config. Keyless providers

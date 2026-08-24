@@ -39,7 +39,7 @@ describe("minimal tool definitions", () => {
 			expect(tool.renderResult).toBeUndefined();
 		}
 		const search = tools.find((tool) => tool.name === "web_search");
-		expect(Object.keys(search.parameters.properties)).toEqual(["query", "max_results", "provider"]);
+		expect(Object.keys(search.parameters.properties)).toEqual(["query", "max_results"]);
 		expect(search.parameters.required).toEqual(["query"]);
 		expect(search.parameters.properties.max_results.default).toBe(5);
 	});
@@ -62,20 +62,20 @@ describe("web_search routing contract", () => {
 		);
 	});
 
-	it("passes optional provider and result count", async () => {
+	it("passes the optional result count while using the active provider", async () => {
 		const tools: any[] = [];
 		registerWebSearchTool({ registerTool: (definition: any) => tools.push(definition) } as never);
 		const signal = new AbortController().signal;
 		await tools[0].execute(
 			"call",
-			{ query: "q", provider: "bing", max_results: 7 },
+			{ query: "q", max_results: 7 },
 			signal,
 			undefined,
 			{},
 		);
 		expect(mocks.searchWithProvider).toHaveBeenCalledWith(
 			{ provider: "tavily" },
-			"bing",
+			undefined,
 			"q",
 			7,
 			signal,

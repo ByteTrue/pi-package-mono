@@ -31,9 +31,8 @@ Restart or reload Pi, then ask it to search the web. Run `/web` only when you wa
 | --- | --- | --- |
 | `query` | Yes | Search text |
 | `max_results` | No | 1–10 results; default 5 |
-| `provider` | No | One-call override; omitted uses the `/web` selection |
 
-One call contacts exactly one provider. There is no implicit fallback, hidden retry through another service, or fan-out that multiplies privacy, cost, and latency.
+Search follows the provider chain configured in `/web`: the first provider is tried first, then configured fallbacks after provider creation, request, or timeout failures. User cancellation stops the whole chain; an empty successful result does not trigger fallback.
 
 ### `web_fetch`
 
@@ -46,7 +45,7 @@ Search-provider choice never changes fetch routing. Every URL uses the same gene
 
 ## Configure with `/web`
 
-The TUI can select a provider, enter its key, set a SearXNG base URL, and configure an HTTP proxy. `/web --show` reports the active route with credentials masked. The API-key field is visible while typing; prefer the provider's environment variable when sharing or recording your terminal.
+The TUI can select an active provider, configure an ordered fallback chain, enter provider keys, set a SearXNG base URL, and configure an HTTP proxy. `/web --show` reports the provider chain with credentials masked. The API-key field is visible while typing; prefer the provider's environment variable when sharing or recording your terminal.
 
 | Provider | Environment variable | Notes |
 | --- | --- | --- |
@@ -75,14 +74,14 @@ Direct fetches block private, loopback, link-local, metadata, and other non-publ
 
 ```json
 {
-  "provider": "exa-free",
+  "providers": ["exa-free", "bing"],
   "proxy": "http://127.0.0.1:7890",
   "apiKeys": { "tavily": "tvly-..." },
   "baseUrls": { "searxng": "http://127.0.0.1:8080" }
 }
 ```
 
-The `/web` flow is preferred. Legacy `autoFallback` is ignored and removed on the next save.
+The `/web` flow is preferred. Legacy `provider` is read for compatibility and normalized to `providers` on the next save. Legacy `autoFallback` is ignored and removed on the next save.
 
 </details>
 

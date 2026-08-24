@@ -4,13 +4,15 @@ const mocks = vi.hoisted(() => ({
 	primarySearch: vi.fn(),
 	otherSearch: vi.fn(),
 }));
-
 vi.mock("./providers/factory.js", () => ({
-	createProvider: (name: string) => ({
-		name,
-		label: name,
-		search: name === "exa-free" ? mocks.primarySearch : mocks.otherSearch,
-	}),
+	createProvider: (name: string) => {
+		if (name === "broken") throw new Error("unknown provider");
+		return {
+			name,
+			label: name,
+			search: name === "exa-free" ? mocks.primarySearch : mocks.otherSearch,
+		};
+	},
 }));
 
 import {
@@ -42,7 +44,7 @@ describe("provider attempt timeout", () => {
 	it("external abort stops the search", async () => {
 		mocks.primarySearch.mockImplementation(() => new Promise(() => {}));
 		const controller = new AbortController();
-		const search = searchWithProvider({}, undefined, "q", 5, controller.signal, undefined, 1_000);
+		const search = searchWithProvider({ providers: ["exa-free", "bing"] }, undefined, "q", 5, controller.signal, undefined, 1_000);
 		controller.abort(new Error("stop"));
 		await expect(search).rejects.toThrow("stop");
 		expect(mocks.otherSearch).not.toHaveBeenCalled();
@@ -59,6 +61,49 @@ describe("provider attempt timeout", () => {
 	});
 });
 
+describe("provider fallback chain", () => {
+	it("tries the next provider after a failure", async () => {
+		mocks.primarySearch.mockRejectedValue(new Error("primary down"));
+		mocks.otherSearch.mockResolvedValue([{ title: "fallback", url: "https://example.com", snippet: "ok" }]);
+
+		const outcome = await searchWithProvider({ providers: ["exa-free", "bing"] }, undefined, "q", 5, undefined);
+
+		expect(outcome.backend).toBe("bing");
+		expect(outcome.attemptedProviders).toEqual(["exa-free", "bing"]);
+		expect(mocks.primarySearch).toHaveBeenCalledOnce();
+		expect(mocks.otherSearch).toHaveBeenCalledOnce();
+	});
+
+	it("tries the next provider after a timeout", async () => {
+		mocks.primarySearch.mockImplementation(() => new Promise(() => {}));
+		mocks.otherSearch.mockResolvedValue([]);
+
+		const outcome = await searchWithProvider({ providers: ["exa-free", "bing"] }, undefined, "q", 5, undefined, undefined, 5);
+
+		expect(outcome.backend).toBe("bing");
+		expect(outcome.attemptedProviders).toEqual(["exa-free", "bing"]);
+	});
+
+	it("skips a provider that cannot be constructed", async () => {
+		mocks.otherSearch.mockResolvedValue([{ title: "fallback", url: "https://example.com", snippet: "ok" }]);
+
+		const outcome = await searchWithProvider({ providers: ["broken", "bing"] }, undefined, "q", 5, undefined);
+
+		expect(outcome.backend).toBe("bing");
+		expect(outcome.attemptedProviders).toEqual(["broken", "bing"]);
+		expect(mocks.otherSearch).toHaveBeenCalledOnce();
+	});
+
+	it("returns empty results without trying the next provider", async () => {
+		mocks.primarySearch.mockResolvedValue([]);
+		mocks.otherSearch.mockResolvedValue([{ title: "fallback", url: "https://example.com", snippet: "ok" }]);
+
+		const outcome = await searchWithProvider({ providers: ["exa-free", "bing"] }, undefined, "q", 5, undefined);
+		expect(outcome.backend).toBe("exa-free");
+		expect(outcome.results).toEqual([]);
+		expect(mocks.otherSearch).not.toHaveBeenCalled();
+	});
+});
 describe("search result budget", () => {
 	it("caps UTF-8 fields and the aggregate result bytes", () => {
 		const input = Array.from({ length: 10 }, () => ({

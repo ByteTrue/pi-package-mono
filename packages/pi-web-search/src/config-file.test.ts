@@ -67,7 +67,7 @@ describe("writeConfig migration", () => {
 		expect(writeConfig(loaded.config)).toBe(true);
 		const saved = JSON.parse(readFileSync(configPath(), "utf8"));
 		expect(saved).toEqual({
-			provider: "exa",
+			providers: ["exa"],
 			apiKeys: { exa: "secret", bocha: "bocha-secret" },
 			baseUrls: { searxng: "https://search.example" },
 			proxy: "http://127.0.0.1:7890",
@@ -90,9 +90,31 @@ describe("/web provider selection", () => {
 		const notify = vi.fn();
 		await command!.handler("", { hasUI: true, ui: { select, notify, input: vi.fn() } });
 		const saved = JSON.parse(readFileSync(configPath(), "utf8"));
-		expect(saved).toEqual({ provider: "exa-free", apiKeys: { exa: "secret" }, futureField: true });
+		expect(saved).toEqual({ providers: ["exa-free", "exa"], apiKeys: { exa: "secret" }, futureField: true });
 		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Exa (free"), "info");
 	});
+	it("configures a provider fallback chain in menu order", async () => {
+		writeRawConfig(JSON.stringify({ providers: ["exa-free"], apiKeys: { tavily: "secret" } }));
+		const { registerWebCommand } = await import("./tools.js");
+		let command: { handler(args: string, ctx: unknown): Promise<void> } | undefined;
+		registerWebCommand({
+			registerCommand: (_name: string, definition: typeof command) => { command = definition; },
+		} as never);
+		const chainOptions: string[][] = [];
+		const select = vi.fn(async (title: string, options: string[]) => {
+			if (title.startsWith("Web provider chain")) chainOptions.push(options);
+			if (title === "Web search provider") return options.find((option) => option.startsWith("Configure provider fallback chain"));
+			if (options.some((option) => option.startsWith("Exa (free,"))) return options.find((option) => option.startsWith("Exa (free,"));
+			if (options.some((option) => option.startsWith("Tavily"))) return options.find((option) => option.startsWith("Tavily"));
+			return "✓ Done";
+		});
+		const notify = vi.fn();
+		await command!.handler("", { hasUI: true, ui: { select, notify, input: vi.fn() } });
+		expect(chainOptions.flat().some((option) => option.startsWith("SearXNG"))).toBe(false);
+		expect(JSON.parse(readFileSync(configPath(), "utf8"))).toEqual({ providers: ["exa-free", "tavily"], apiKeys: { tavily: "secret" } });
+		expect(notify).toHaveBeenCalledWith("Provider chain saved: exa-free -> tavily", "info");
+	});
+
 	it("masks proxy credentials in /web --show", async () => {
 		writeRawConfig(JSON.stringify({ proxy: "http://proxy-user:proxy-secret@proxy.example:8080" }));
 		const { registerWebCommand } = await import("./tools.js");
