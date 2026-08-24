@@ -11,9 +11,15 @@ const [, , command, ...args] = process.argv;
 const modelsPath = join(process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"), "models.json");
 const SUPPORTED_APIS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
 
+class CliError extends Error {
+	constructor(message, code = 1) {
+		super(message);
+		this.code = code;
+	}
+}
+
 function fail(message, code = 1) {
-	console.error(message);
-	process.exit(code);
+	throw new CliError(message, code);
 }
 
 function readModels() {
@@ -349,9 +355,18 @@ async function setKey(providerKey) {
 	console.log(`Updated apiKey for provider ${JSON.stringify(providerKey)} in ${modelsPath}`);
 }
 
-switch (command) {
-	case "catalog": await catalog(args[0], args[1]); break;
-	case "discover": await discover(args[0]); break;
-	case "set-key": await setKey(args[0]); break;
-	default: fail("Usage: vendor.mjs <catalog|discover> [argument]", 2);
+try {
+	switch (command) {
+		case "catalog": await catalog(args[0], args[1]); break;
+		case "discover": await discover(args[0]); break;
+		case "set-key": await setKey(args[0]); break;
+		default: fail("Usage: vendor.mjs <catalog|discover> [argument]", 2);
+	}
+} catch (error) {
+	if (error instanceof CliError) {
+		console.error(error.message);
+		process.exitCode = error.code;
+	} else {
+		throw error;
+	}
 }

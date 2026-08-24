@@ -1,7 +1,7 @@
 // Bounded discover: API-aware model listing with deadlines, budgets, and command trust.
 // Implements the full discoverModelIds pipeline per the design contract.
 
-import { allCommandsTrusted, collectCommandPaths, resolveConfigValue } from "./config-resolver.js";
+import { allCommandsTrusted, collectCommandPaths, CommandResolutionError, createProductionCommandRunner, resolveConfigValue } from "./config-resolver.js";
 import { ModelSourceError } from "./model-source-error.js";
 
 export type BoundedFetchResponse = {
@@ -161,20 +161,30 @@ export async function discoverModelIds(
 	const overallTimer = setTimeout(() => overallController.abort(), OVERALL_DEADLINE_MS);
 
 	let combinedSignal = overallController.signal;
+	let cleanupCombinedSignal = (): void => {};
 	const callerSignal = options.signal;
 	if (callerSignal) {
 		// Combine: abort when either fires
 		const combo = new AbortController();
 		const onAbort = () => combo.abort();
+		if (overallController.signal.aborted || callerSignal.aborted) combo.abort();
 		overallController.signal.addEventListener("abort", onAbort);
 		callerSignal.addEventListener("abort", onAbort);
 		combinedSignal = combo.signal;
+		cleanupCombinedSignal = () => {
+			overallController.signal.removeEventListener("abort", onAbort);
+			callerSignal.removeEventListener("abort", onAbort);
+		};
 	}
 
-	const runCommand = options.runCommand ?? (() => Promise.reject(new Error("No command runner available")));
+	const runCommand = options.runCommand ?? createProductionCommandRunner();
 	const fetchImpl = options.fetchImpl ?? ((input: string, init: any) => fetch(input, init) as any);
 
 	try {
+		if (combinedSignal.aborted) {
+			if (callerSignal?.aborted) throw new ModelSourceError("aborted", "Request aborted");
+			throw new ModelSourceError("upstream_timeout", "Upstream request timed out");
+		}
 		// --- Preflight: check command trust ---
 		if (initialProvider) {
 			if (!allCommandsTrusted(provider, initialProvider)) {
@@ -292,6 +302,12 @@ export async function discoverModelIds(
 		return parseAndSortModelIds(parsed, provider.api);
 	} catch (err: unknown) {
 		if (err instanceof ModelSourceError) throw err;
+		if (err instanceof CommandResolutionError) {
+			if (err.kind === "aborted" && callerSignal?.aborted) {
+				throw new ModelSourceError("aborted", "Request aborted");
+			}
+			throw new ModelSourceError("upstream_timeout", "Upstream request timed out");
+		}
 		if (combinedSignal.aborted) {
 			if (callerSignal?.aborted) {
 				throw new ModelSourceError("aborted", "Request aborted");
@@ -301,5 +317,6 @@ export async function discoverModelIds(
 		throw new ModelSourceError("upstream_failed", "Unexpected error during discovery");
 	} finally {
 		clearTimeout(overallTimer);
+		cleanupCombinedSignal();
 	}
 }

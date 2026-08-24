@@ -6,7 +6,7 @@
 // - providerEnv truthy first, then process.env truthy, empty/missing → unresolved
 // - Command uncached; preflight all paths before any execution
 
-import { spawn } from "node:child_process";
+import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
 
 export type CredentialPath =
 	| { kind: "apiKey" }
@@ -32,6 +32,18 @@ export type ConfigValueResolver = (
 export type ResolveResult =
 	| { kind: "resolved"; value: string; source: "literal" | "env" | "command" }
 	| { kind: "unresolved"; reason: string };
+
+export type CommandResolutionKind = "timeout" | "aborted";
+
+export class CommandResolutionError extends Error {
+	readonly kind: CommandResolutionKind;
+
+	constructor(kind: CommandResolutionKind) {
+		super(kind === "timeout" ? "Command timed out" : "Command aborted");
+		this.name = "CommandResolutionError";
+		this.kind = kind;
+	}
+}
 
 // --- Template parser ---
 
@@ -161,60 +173,52 @@ function commandBody(value: string): string {
 
 // --- Production command runner ---
 
-export function createProductionCommandRunner(): CommandRunner {
-	return (commandBody, options) => new Promise<string>((resolve, reject) => {
-		const shell = process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
-		const args = process.platform === "win32"
-			? ["/d", "/s", "/c", commandBody]
-			: ["-c", commandBody];
-		let settled = false;
-		let stdoutBytes = 0;
-		const chunks: Buffer[] = [];
-		let child: ReturnType<typeof spawn>;
+const localBash = createLocalBashOperations();
 
-		const finish = (error?: Error, value?: string): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			if (error) reject(error);
-			else resolve(value ?? "");
-		};
+export function createProductionCommandRunner(): CommandRunner {
+	return async (commandBody, options): Promise<string> => {
+		let stdoutBytes = 0;
+		let outputTooLarge = false;
+		const chunks: Buffer[] = [];
+		const controller = new AbortController();
+		const onAbort = (): void => controller.abort();
+		if (options.signal.aborted) controller.abort();
+		else options.signal.addEventListener("abort", onAbort, { once: true });
 
 		try {
-			child = spawn(shell, args, {
-				stdio: ["ignore", "pipe", "ignore"],
-				windowsHide: true,
-				signal: options.signal,
+			const result = await localBash.exec(commandBody, process.cwd(), {
+				signal: controller.signal,
+				timeout: options.timeoutMs / 1000,
+				onData: (chunk) => {
+					if (outputTooLarge) return;
+					const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+					stdoutBytes += buffer.length;
+					if (stdoutBytes > options.maxStdoutBytes) {
+						outputTooLarge = true;
+						controller.abort();
+						return;
+					}
+					chunks.push(buffer);
+				},
 			});
-		} catch {
-			reject(new Error("Command execution failed"));
-			return;
-		}
-
-		const timer = setTimeout(() => {
-			child.kill();
-			finish(new Error("Command timed out"));
-		}, options.timeoutMs);
-		timer.unref?.();
-
-		child.stdout!.on("data", (chunk: Buffer | string) => {
-			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-			stdoutBytes += buffer.length;
-			if (stdoutBytes > options.maxStdoutBytes) {
-				child.kill();
-				finish(new Error("Command output exceeded maximum size"));
-				return;
+			if (outputTooLarge) throw new Error("Command output exceeded maximum size");
+			if (options.signal.aborted) throw new CommandResolutionError("aborted");
+			if (result.exitCode !== 0) throw new Error("Command execution failed");
+			return Buffer.concat(chunks).toString("utf8").trim();
+		} catch (error) {
+			if (outputTooLarge) throw new Error("Command output exceeded maximum size");
+			if (error instanceof CommandResolutionError) throw error;
+			if (options.signal.aborted || (error instanceof Error && error.message === "aborted")) {
+				throw new CommandResolutionError("aborted");
 			}
-			chunks.push(buffer);
-		});
-		child.on("error", () => finish(new Error(options.signal.aborted ? "Command aborted" : "Command execution failed")));
-		child.on("close", (code) => {
-			if (settled) return;
-			if (options.signal.aborted) return finish(new Error("Command aborted"));
-			if (code !== 0) return finish(new Error("Command execution failed"));
-			finish(undefined, Buffer.concat(chunks).toString("utf8").trim());
-		});
-	});
+			if (error instanceof Error && error.message.startsWith("timeout:")) {
+				throw new CommandResolutionError("timeout");
+			}
+			throw new Error("Command execution failed");
+		} finally {
+			options.signal.removeEventListener("abort", onAbort);
+		}
+	};
 }
 
 // --- Main resolver ---
@@ -242,6 +246,8 @@ export async function resolveConfigValue(
 				? { kind: "unresolved", reason: "Command execution failed" }
 				: { kind: "resolved", value: output, source: "command" };
 		} catch (err) {
+			if (err instanceof CommandResolutionError) throw err;
+			if (context.signal.aborted) throw new CommandResolutionError("aborted");
 			return { kind: "unresolved", reason: "Command execution failed" };
 		}
 	}

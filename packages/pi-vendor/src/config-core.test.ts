@@ -44,7 +44,7 @@ describe("models snapshots and local validation", () => {
 		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(models);
 		expect(next.revision).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(readFileSync(path, "utf8")).toBe(`${JSON.stringify(models, null, 2)}\n`);
-		expect(statSync(path).mode & 0o777).toBe(0o600);
+		if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
 	});
 
 	it("rejects malformed strict JSON and duplicate string ids locally", () => {

@@ -105,7 +105,7 @@ describe("BackgroundManager", () => {
     expect(manager.get(b.id, SESSION_B)?.status).toBe("running");
     await vi.waitFor(() => expect(existsSync(a.outputPath)).toBe(false), { timeout: 8000 });
   });
-  it("waits for a command's process tree to die before clearing its session", async () => {
+  it.skipIf(process.platform === "win32")("waits for a command's process tree to die before clearing its session", async () => {
     const manager = createManager();
     const pidDir = mkdtempSync(join(tmpdir(), "pi-background-pid-"));
     const pidPath = join(pidDir, "pid");

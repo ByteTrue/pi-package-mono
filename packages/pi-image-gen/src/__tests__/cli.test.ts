@@ -8,9 +8,12 @@ import type { ImageGenResult } from '../types.js';
 
 const originalHome = process.env.HOME;
 const originalDir = process.env.PI_CODING_AGENT_DIR;
+const originalUserProfile = process.env.USERPROFILE;
 const originalOpenAiKey = process.env.OPENAI_API_KEY;
 const originalTestImageKey = process.env.TEST_IMAGE_KEY;
 afterEach(() => {
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   if (originalDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -23,6 +26,7 @@ afterEach(() => {
 
 function isolated(): string {
   const root = mkdtempSync(join(tmpdir(), 'pi-image-gen-cli-'));
+  process.env.USERPROFILE = join(root, 'home');
   process.env.HOME = join(root, 'home');
   process.env.PI_CODING_AGENT_DIR = join(root, 'agent');
   return join(root, 'project');

@@ -141,7 +141,7 @@ describe("createProductionCommandRunner", () => {
 
 	it("executes shell commands and trims stdout", async () => {
 		const run = createProductionCommandRunner();
-		await expect(run(nodeCommand("process.stdout.write('  shell-ok\\n')"), options()))
+		await expect(run(nodeCommand("process.stdout.write('  shell-ok  ')"), options()))
 			.resolves.toBe("shell-ok");
 	});
 

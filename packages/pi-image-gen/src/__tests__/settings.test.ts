@@ -15,9 +15,12 @@ import {
 const originalHome = process.env.HOME;
 const originalDir = process.env.PI_CODING_AGENT_DIR;
 const originalTrusted = process.env.PI_IMAGE_GEN_TRUSTED_CWD;
+const originalUserProfile = process.env.USERPROFILE;
 const originalOpenAiKey = process.env.OPENAI_API_KEY;
 
 afterEach(() => {
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   if (originalDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -31,6 +34,7 @@ afterEach(() => {
 function isolated(): { root: string; cwd: string } {
   const root = mkdtempSync(join(tmpdir(), 'pi-image-gen-settings-'));
   const cwd = join(root, 'project');
+  process.env.USERPROFILE = join(root, 'home');
   process.env.HOME = join(root, 'home');
   process.env.PI_CODING_AGENT_DIR = join(root, 'agent');
   return { root, cwd };
@@ -77,7 +81,7 @@ describe('image generation settings', () => {
     const saved = JSON.parse(readFileSync(path, 'utf8')) as Record<string, any>;
     expect(saved.theme).toBe('dark');
     expect(saved['pi-image-gen']).toEqual({ defaultModel: 'nano-banana', outputDir: '.pi/art' });
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 
   it('uses project tombstones to suppress inherited credentials, headers, and env fallback', () => {

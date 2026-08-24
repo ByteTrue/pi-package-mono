@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { discoverModelIds, type BoundedFetchResponse } from "./bounded-discover.js";
+import { CommandResolutionError } from "./config-resolver.js";
 import { ModelSourceError } from "./model-source-error.js";
 
 function fakeResponse(
@@ -209,6 +210,19 @@ describe("discoverModelIds", () => {
 		expect(runCommand).toHaveBeenCalledTimes(1);
 	});
 
+	it("uses the production command runner by default", async () => {
+		const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify("process.stdout.write('secret-from-default')")}`;
+		const fetchImpl = vi.fn(async (_input: string, init: any) => {
+			expect(init.headers["Authorization"]).toBe("Bearer secret-from-default");
+			return fakeResponse({ jsonBody: { data: [] } });
+		});
+
+		await discoverModelIds(
+			{ baseUrl: "https://example.com/v1", apiKey: `!${command}` },
+			{ initialProvider: { apiKey: `!${command}` }, fetchImpl },
+		);
+	});
+
 	it("rejects changed command when initialProvider differs", async () => {
 		await expect(discoverModelIds(
 			{ baseUrl: "https://example.com/v1", apiKey: "!new-cmd" },
@@ -217,6 +231,44 @@ describe("discoverModelIds", () => {
 				fetchImpl: vi.fn(),
 			},
 		)).rejects.toThrow(ModelSourceError);
+	});
+
+	it("maps command timeout to upstream_timeout", async () => {
+		const runCommand = vi.fn(async () => {
+			throw new CommandResolutionError("timeout");
+		});
+
+		await expect(discoverModelIds(
+			{ baseUrl: "https://example.com/v1", apiKey: "!my-cmd" },
+			{ initialProvider: { apiKey: "!my-cmd" }, runCommand, fetchImpl: vi.fn() },
+		)).rejects.toMatchObject({ code: "upstream_timeout" });
+	});
+
+	it("maps caller command cancellation to aborted", async () => {
+		const controller = new AbortController();
+		const runCommand = vi.fn(async () => {
+			controller.abort();
+			throw new CommandResolutionError("aborted");
+		});
+
+		await expect(discoverModelIds(
+			{ baseUrl: "https://example.com/v1", apiKey: "!my-cmd" },
+			{ initialProvider: { apiKey: "!my-cmd" }, runCommand, signal: controller.signal, fetchImpl: vi.fn() },
+		)).rejects.toMatchObject({ code: "aborted" });
+	});
+
+	it("does not execute work for an already-aborted caller", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const runCommand = vi.fn();
+		const fetchImpl = vi.fn();
+
+		await expect(discoverModelIds(
+			{ baseUrl: "https://example.com/v1", apiKey: "!my-cmd" },
+			{ initialProvider: { apiKey: "!my-cmd" }, runCommand, signal: controller.signal, fetchImpl },
+		)).rejects.toMatchObject({ code: "aborted" });
+		expect(runCommand).not.toHaveBeenCalled();
+		expect(fetchImpl).not.toHaveBeenCalled();
 	});
 
 	it("respects the 10k id limit", async () => {

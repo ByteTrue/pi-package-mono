@@ -67,7 +67,7 @@ describe("runVisionCommand", () => {
     expect(after.defaultModel).toBe("claude-opus-5");
     expect(after.packages).toEqual(["npm:pi-subagents"]);
     expect(after["pi-vision"]).toEqual({ model: "vendor/qwen-plus" });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it("keeps unrelated keys inside its own section", async () => {
