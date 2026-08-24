@@ -2,8 +2,9 @@
 kind: issue
 title: "可配置 web search provider fallback 链"
 type: feature
-status: open
+status: closed
 created: 2026-08-24
+closed: 2026-08-24
 ---
 
 # 可配置 web search provider fallback 链
@@ -38,13 +39,14 @@ created: 2026-08-24
 
 ## 验证
 
-- `npm run typecheck --workspace @bytetrue/pi-web-search` 通过。
-- `npm test --workspace @bytetrue/pi-web-search -- --run` 通过：12 个测试文件通过，110 个测试通过；9 个 live E2E 按预期跳过。
 - `git diff --check` 通过。
+- `npm pack --workspace @bytetrue/pi-web-search --dry-run --json` 通过，包内容不含测试文件。
 
-## 关闭回写
-
-待用户验收后补充。
+- 用户确认后完成 review、提交和发布。
+- commit：`f20b4d46c3a7715810fa49650fcf5934a38d15cc`。
+- tag：`pi-web-search-v0.3.0`。
+- GitHub Release workflow：`32737634917`，全 workspace typecheck/test 与 OIDC npm publish 成功。
+- npm registry：`@bytetrue/pi-web-search@0.3.0` 已发布，`latest` 指向 `0.3.0`。
 
 ## 风险与穿刺
 
