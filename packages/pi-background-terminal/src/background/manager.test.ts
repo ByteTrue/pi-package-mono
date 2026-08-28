@@ -48,7 +48,9 @@ describe("BackgroundManager", () => {
     expect(started.status).toBe("running");
     expect(started.exitCode).toBeNull();
 
-    await vi.waitFor(() => expect(manager.get(started.id, SESSION_A)?.status).toBe("exited"), { timeout: 8000 });
+    // Wait for the exit callback itself, not just the status: onExit fires after the output
+    // stream closes, which lags the status flip on slow runners.
+    await vi.waitFor(() => expect(exits).toEqual([{ id: started.id, status: "exited" }]), { timeout: 8000 });
 
     const finished = manager.get(started.id, SESSION_A);
     expect(finished?.exitCode).toBe(0);
