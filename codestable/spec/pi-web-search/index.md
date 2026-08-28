@@ -14,7 +14,7 @@
 - **配置**：`~/.pi/byte-pi-web/config.json`（`PI_CONFIG_DIR` 可覆盖）；env key/base URL 优先于文件。
 - **代理**：package-scoped transport，不调用 `setGlobalDispatcher`。
 - **安全与预算**：URL 禁止 embedded credentials；direct route 在 DNS、redirect、connect-time 守 SSRF 边界；显式 proxy 模式仍拒绝 private hostname/IP literal，但 proxy 是目标 DNS 的受信边界；search provider body 2 MiB，generic fetch decoded body 10 MiB；每次 provider attempt 15 秒；结果字段与总量有 UTF-8 预算；超限取消 stream。
-- **写入安全**：配置原子写 `0600`；损坏配置不被 `/web` 覆盖；旧 `autoFallback` 在下次保存时删除且不影响其它字段。
+- **写入安全**：配置原子写 `0600`；损坏配置不被 `/web` 覆盖；旧 `autoFallback` / 单数 `provider` 字段自 0.4.0 起不再读取或迁移。
 
 ## 它不负责什么
 
@@ -27,7 +27,7 @@
 ## 统一语言
 
 - **exa-free**：默认、免 key 的 Exa MCP free search。
-- **provider chain**：`providers` 第一项是 active provider，后续项按顺序作为 fallback；旧 `provider` 字段只用于兼容读取。
+- **provider chain**：`providers` 第一项是 active provider，后续项按顺序作为 fallback；旧单数 `provider` 字段自 0.4.0 起被忽略（回退默认 exa-free）。
 - **readConfigResult 三态**：`missing` | `valid` | `invalid`；`/web` 写路径 fail-closed，运行时 `readConfig` 可 soft-fail 为 `{}`。
 - **package-scoped proxy**：仅本包 provider 路由使用的 proxy dispatcher。
 - **generic SSRF fetcher**：`web_fetch` 唯一传输；任意目标不会因 `NO_PROXY` 退回不安全直连。
