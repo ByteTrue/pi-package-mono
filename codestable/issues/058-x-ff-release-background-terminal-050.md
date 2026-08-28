@@ -31,6 +31,7 @@ closed: 2026-08-28
 - 首次 release run `33184134958` 被 manager 测试竞态拦下（未发布）；修复后移动 tag 到 `d50a02a` 重新触发。
 - Release run `33184339686`：success；main CI run `33184333179`：success。
 - npm registry：`0.5.0` 存在，`dist-tags.latest` = `0.5.0`，peerDependencies 为 `>=0.80.4`。
+- 真实 Pi 回归（本机 0.5.0）：同一 turn 内 `background_run` 三个短任务（`sleep 1/2/3`），全部在 Agent 忙碌期结束后，收到**一条** `3 background tasks finished:` 合并通知并只触发一个 turn，非旧行为的逐条三次唤醒。
 
 ## 对 `codestable/` 的影响
 
