@@ -4,7 +4,7 @@
 
 `@bytetrue/pi-background-terminal` 提供三个独立 Agent 工具和一个 `/background` 用户菜单：后台启动命令、查看单个任务、停止单个任务。它不覆盖或注册任何 Pi 内建工具名，不改变 `bash`。
 
-Peer：`@earendil-works/pi-coding-agent >=0.80.4`（`agent_settled` 事件的最低版本）。npm `latest`：`0.4.0`。
+Peer：`@earendil-works/pi-coding-agent >=0.80.4`（`agent_settled` 事件的最低版本）。npm `latest`：`0.5.0`。
 
 ## 当前表面
 
