@@ -22,7 +22,7 @@ Restart or reload Pi, then ask naturally:
 
 > Start the development server in the background.
 
-The Agent starts the command, returns immediately, and receives a follow-up when the process exits on its own.
+The Agent starts the command, returns immediately, and receives a follow-up when the process exits on its own. Completions that pile up while the Agent is busy arrive as one batched follow-up, not one turn per task.
 
 ## Tools
 

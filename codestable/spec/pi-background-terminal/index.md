@@ -4,7 +4,7 @@
 
 `@bytetrue/pi-background-terminal` 提供三个独立 Agent 工具和一个 `/background` 用户菜单：后台启动命令、查看单个任务、停止单个任务。它不覆盖或注册任何 Pi 内建工具名，不改变 `bash`。
 
-Peer：`@earendil-works/pi-coding-agent >=0.79.10`。npm `latest`：`0.4.0`。
+Peer：`@earendil-works/pi-coding-agent >=0.80.4`（`agent_settled` 事件的最低版本）。npm `latest`：`0.4.0`。
 
 ## 当前表面
 
@@ -22,7 +22,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.79.10`。npm `latest`：`0.4.0`。
 - 输出文件不设应用层大小上限；读取预算与 offset/limit 交给 Pi 内建 `read`，不重复实现。
 - 状态为 `running | exited | killed | failed`。非零退出仍是 `exited` 并保留 exit code；执行 backend 拒绝时才是 `failed`。
 - 任务按 `parentSessionId` 隔离；`get`、`list`、`kill`、`clearSession` 都检查所属 session。
-- 命令自然退出或执行失败后发送 `followUp + triggerTurn:true`，唤醒空闲 Agent；主动 kill 与 session 清理静默。
+- 命令自然退出或执行失败后发送 `followUp + triggerTurn:true`，唤醒空闲 Agent；主动 kill 与 session 清理静默。Agent 忙碌期间的退出进入缓冲，`agent_settled` 时合并为一条消息发出（单任务保持原消息格式，多任务为逐行汇总）；Pi 的 followUp 队列默认逐条消费，逐任务发消息会每个任务唤醒一个 turn。
 - 真正 session 结束时等待进程树和输出流结束，再删除对应文件。
 
 ## `/reload`

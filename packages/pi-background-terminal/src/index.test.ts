@@ -51,7 +51,7 @@ describe("pi-background-terminal extension", () => {
     const { toolNames, commandNames, events, rendererTypes } = harness();
     expect(toolNames.sort()).toEqual(["background_kill", "background_run", "background_status"]);
     expect(commandNames).toEqual(["background"]);
-    expect(events.sort()).toEqual(["session_shutdown", "session_start"]);
+    expect(events.sort()).toEqual(["agent_settled", "agent_start", "session_shutdown", "session_start"]);
     // No renderer: Pi's default custom-message rendering already labels and boxes the content.
     expect(rendererTypes).toEqual([]);
     expect(toolNames).not.toContain("bash");
@@ -123,5 +123,77 @@ describe("pi-background-terminal extension", () => {
 
     expect(manager.get(task.id, sessionId)).toBeNull();
     await vi.waitFor(() => expect(existsSync(task.outputPath)).toBe(false), { timeout: 8000 });
+  });
+
+  // Wait long enough for the exit callback chain (stream close -> onExit) to run after the
+  // task status flips to "exited", so "nothing was sent" means buffered, not merely late.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+  it("coalesces completions while the agent is busy into a single wake-up message", async () => {
+    const { sent, handlers } = harness();
+    const sessionId = "batch-session";
+    const ctx = ctxFor(sessionId);
+    await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctx);
+    await handlers.agent_start?.({ type: "agent_start" }, ctx);
+
+    const first = manager.start('node -e "console.log(\'batch-one\')"', process.cwd(), sessionId);
+    const second = manager.start('node -e "console.log(\'batch-two\')"', process.cwd(), sessionId);
+    await vi.waitFor(() => {
+      expect(manager.get(first.id, sessionId)?.status).toBe("exited");
+      expect(manager.get(second.id, sessionId)?.status).toBe("exited");
+    }, { timeout: 8000 });
+    await settle();
+    expect(sent).toEqual([]);
+
+    await handlers.agent_settled?.({ type: "agent_settled" }, ctx);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.options).toEqual({ deliverAs: "followUp", triggerTurn: true });
+    expect(sent[0]?.message.customType).toBe("background-exit");
+    expect(sent[0]?.message.content).toContain("2 background tasks finished");
+    expect(sent[0]?.message.content).toContain("batch-one");
+    expect(sent[0]?.message.content).toContain("batch-two");
+    expect(Array.isArray(sent[0]?.message.details)).toBe(true);
+
+    await manager.clearSession(sessionId);
+  });
+
+  it("keeps the single-task message shape when only one task completes while busy", async () => {
+    const { sent, handlers } = harness();
+    const sessionId = "solo-batch-session";
+    const ctx = ctxFor(sessionId);
+    await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctx);
+    await handlers.agent_start?.({ type: "agent_start" }, ctx);
+
+    const task = manager.start('node -e "console.log(\'solo\')"', process.cwd(), sessionId);
+    await vi.waitFor(() => expect(manager.get(task.id, sessionId)?.status).toBe("exited"), { timeout: 8000 });
+    await settle();
+    expect(sent).toEqual([]);
+
+    await handlers.agent_settled?.({ type: "agent_settled" }, ctx);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.message.content).toContain("exited with code 0");
+    expect(sent[0]?.message.content).not.toContain("background tasks finished");
+    expect(Array.isArray(sent[0]?.message.details)).toBe(false);
+
+    await manager.clearSession(sessionId);
+  });
+
+  it("drops buffered notifications when the session really ends", async () => {
+    const { sent, handlers } = harness();
+    const sessionId = "drop-session";
+    const ctx = ctxFor(sessionId);
+    await handlers.session_start?.({ type: "session_start", reason: "startup" }, ctx);
+    await handlers.agent_start?.({ type: "agent_start" }, ctx);
+
+    const task = manager.start('node -e "console.log(\'drop\')"', process.cwd(), sessionId);
+    await vi.waitFor(() => expect(manager.get(task.id, sessionId)?.status).toBe("exited"), { timeout: 8000 });
+    await settle();
+
+    await handlers.session_shutdown?.({ type: "session_shutdown", reason: "quit" }, ctx);
+    await handlers.agent_settled?.({ type: "agent_settled" }, ctx);
+
+    expect(sent).toEqual([]);
   });
 });
