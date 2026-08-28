@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -19,7 +19,7 @@ export function projectSettingsPath(cwd: string): string {
 
 export interface VisionAuth {
   apiKey?: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
   env?: Record<string, string>;
 }
 

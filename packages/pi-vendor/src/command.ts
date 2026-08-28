@@ -13,7 +13,7 @@ const COMMAND_NAME = "vendor";
 type SaveContext = {
 	ui: { notify: (message: string, type?: "info" | "warning" | "error") => void };
 	// Pi 0.82 made refresh() async; getError() only reflects the new config after it settles.
-	modelRegistry: { refresh(): void | Promise<void>; getError(): string | undefined };
+	modelRegistry: { refresh(): unknown; getError(): string | undefined };
 };
 
 function describe(error: unknown): string {

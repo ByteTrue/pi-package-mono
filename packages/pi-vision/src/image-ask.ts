@@ -33,7 +33,10 @@ const parameters = Type.Object({
 function credentialEcho(raw: string, auth: VisionAuth): "the API key" | "a configured credential" | undefined {
   if (auth.apiKey && raw.includes(auth.apiKey)) return "the API key";
 
-  const headerEntries = Object.entries(auth.headers ?? {});
+  // A null header value suppresses a provider default and never carries a credential.
+  const headerEntries = Object.entries(auth.headers ?? {}).filter(
+    (entry): entry is [string, string] => entry[1] !== null,
+  );
   const authorizationTokens = headerEntries
     .filter(([name]) => name.toLowerCase() === "authorization")
     .map(([, value]) => value.replace(/^\S+\s+/, ""));
