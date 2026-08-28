@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { altFromPath, formatToolResultText } from '../index.js';
+import { altFromPath, formatImageResult } from '../index.js';
 import type { ImageGenResult } from '../types.js';
 
 describe('altFromPath', () => {
@@ -28,7 +28,7 @@ describe('altFromPath', () => {
   });
 });
 
-describe('formatToolResultText', () => {
+describe('formatImageResult', () => {
   function makeResult(overrides: Partial<ImageGenResult> = {}): ImageGenResult {
     return {
       model: 'qwen-image-2.0',
@@ -39,7 +39,7 @@ describe('formatToolResultText', () => {
   }
 
   it('emits inline markdown using the file stem as alt', () => {
-    const text = formatToolResultText(
+    const text = formatImageResult(
       makeResult({
         images: [{ path: '/Users/me/.pi/images/white.png', mimeType: 'image/png' }],
       }),
@@ -51,7 +51,7 @@ describe('formatToolResultText', () => {
   });
 
   it('emits one markdown line per image, in order', () => {
-    const text = formatToolResultText(
+    const text = formatImageResult(
       makeResult({
         images: [
           { path: '/tmp/first.png', mimeType: 'image/png' },
@@ -67,7 +67,7 @@ describe('formatToolResultText', () => {
   });
 
   it('shows revised_prompt as a quoted note under the image', () => {
-    const text = formatToolResultText(
+    const text = formatImageResult(
       makeResult({
         images: [
           {
@@ -83,7 +83,7 @@ describe('formatToolResultText', () => {
   });
 
   it('header reports image count, provider, and model', () => {
-    const text = formatToolResultText(
+    const text = formatImageResult(
       makeResult({
         images: [
           { path: '/a.png', mimeType: 'image/png' },

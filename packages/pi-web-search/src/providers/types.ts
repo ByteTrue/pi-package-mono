@@ -4,11 +4,6 @@ export interface SearchResult {
 	snippet: string;
 }
 
-export interface SearchResponse {
-	query: string;
-	results: SearchResult[];
-}
-
 /** Content returned by the package's single SSRF-safe generic fetch transport. */
 export interface FetchedContent {
 	text: string;
@@ -22,9 +17,6 @@ export interface SearchProvider {
 	readonly label: string;
 	search(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]>;
 }
-
-export type AnyProvider = SearchProvider;
-
 export interface ProviderCredentials {
 	apiKey?: string;
 	baseUrl?: string;

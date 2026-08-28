@@ -20,6 +20,3 @@ export function formatImageResult(result: ImageGenResult): string {
     ...lines,
   ].join('\n');
 }
-
-/** Backward-compatible name for downstream imports during the tool-to-CLI migration. */
-export const formatToolResultText = formatImageResult;

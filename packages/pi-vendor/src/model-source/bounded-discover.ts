@@ -156,26 +156,10 @@ export async function discoverModelIds(
 		processEnv[k] = v;
 	}
 
-	// Create combined signal: overall deadline + caller signal
-	const overallController = new AbortController();
-	const overallTimer = setTimeout(() => overallController.abort(), OVERALL_DEADLINE_MS);
-
-	let combinedSignal = overallController.signal;
-	let cleanupCombinedSignal = (): void => {};
+	// Overall deadline + optional caller signal, combined.
 	const callerSignal = options.signal;
-	if (callerSignal) {
-		// Combine: abort when either fires
-		const combo = new AbortController();
-		const onAbort = () => combo.abort();
-		if (overallController.signal.aborted || callerSignal.aborted) combo.abort();
-		overallController.signal.addEventListener("abort", onAbort);
-		callerSignal.addEventListener("abort", onAbort);
-		combinedSignal = combo.signal;
-		cleanupCombinedSignal = () => {
-			overallController.signal.removeEventListener("abort", onAbort);
-			callerSignal.removeEventListener("abort", onAbort);
-		};
-	}
+	const deadline = AbortSignal.timeout(OVERALL_DEADLINE_MS);
+	const combinedSignal = callerSignal ? AbortSignal.any([deadline, callerSignal]) : deadline;
 
 	const runCommand = options.runCommand ?? createProductionCommandRunner();
 	const fetchImpl = options.fetchImpl ?? ((input: string, init: any) => fetch(input, init) as any);
@@ -315,8 +299,5 @@ export async function discoverModelIds(
 			throw new ModelSourceError("upstream_timeout", "Upstream request timed out");
 		}
 		throw new ModelSourceError("upstream_failed", "Unexpected error during discovery");
-	} finally {
-		clearTimeout(overallTimer);
-		cleanupCombinedSignal();
 	}
 }

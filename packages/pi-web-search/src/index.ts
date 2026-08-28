@@ -13,10 +13,8 @@ import { registerWebCommand, registerWebFetchTool, registerWebSearchTool } from 
 export { createProvider } from "./providers/factory.js";
 export { DEFAULT_PROVIDER_NAME, PROVIDERS } from "./providers/registry.js";
 export type {
-  AnyProvider,
   FetchedContent,
   SearchProvider,
-  SearchResponse,
   SearchResult,
 } from "./providers/types.js";
 export { installProxyDispatcher } from "./proxy.js";

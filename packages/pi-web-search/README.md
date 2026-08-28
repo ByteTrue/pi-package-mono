@@ -81,7 +81,7 @@ Direct fetches block private, loopback, link-local, metadata, and other non-publ
 }
 ```
 
-The `/web` flow is preferred. Legacy `provider` is read for compatibility and normalized to `providers` on the next save. Legacy `autoFallback` is ignored and removed on the next save.
+The `/web` flow is preferred. Only `providers` is read; a legacy singular `provider` field is ignored.
 
 </details>
 

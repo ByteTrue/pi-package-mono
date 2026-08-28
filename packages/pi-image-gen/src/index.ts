@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { runImageGenCommand } from './config-command.js';
 import { exposeProjectTrustToCli } from './settings.js';
 
-export { altFromPath, formatImageResult, formatToolResultText } from './format.js';
+export { altFromPath, formatImageResult } from './format.js';
 
 export default function imageGenExtension(pi: ExtensionAPI): void {
   pi.registerCommand('image-gen', {

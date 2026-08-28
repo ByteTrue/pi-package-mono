@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-readConfig: vi.fn(() => ({ provider: "tavily" })),
+readConfig: vi.fn(() => ({ providers: ["tavily"] })),
 searchWithProvider: vi.fn(),
 }));
 
@@ -53,7 +53,7 @@ describe("web_search routing contract", () => {
 		const signal = new AbortController().signal;
 		await tool.execute("call", { query: "q" }, signal, undefined, {});
 		expect(mocks.searchWithProvider).toHaveBeenCalledWith(
-			{ provider: "tavily" },
+			{ providers: ["tavily"] },
 			undefined,
 			"q",
 			5,
@@ -74,7 +74,7 @@ describe("web_search routing contract", () => {
 			{},
 		);
 		expect(mocks.searchWithProvider).toHaveBeenCalledWith(
-			{ provider: "tavily" },
+			{ providers: ["tavily"] },
 			undefined,
 			"q",
 			7,

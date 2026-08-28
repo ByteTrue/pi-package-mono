@@ -8,7 +8,7 @@ describe("getActiveProviderName", () => {
 		expect(getActiveProviderName({})).toBe("exa-free");
 	});
 	it("uses the configured provider", () => {
-		expect(getActiveProviderName({ provider: "tavily" })).toBe("tavily");
+		expect(getActiveProviderName({ providers: ["tavily"] })).toBe("tavily");
 	});
 });
 
@@ -50,9 +50,5 @@ describe("resolveApiKey", () => {
 describe("getProviderChain", () => {
 	it("uses the configured order and removes empty or duplicate names", () => {
 		expect(getProviderChain({ providers: ["bing", "", "bing", "tavily"] })).toEqual(["bing", "tavily"]);
-	});
-
-	it("falls back to the legacy provider field", () => {
-		expect(getProviderChain({ provider: "tavily" })).toEqual(["tavily"]);
 	});
 });

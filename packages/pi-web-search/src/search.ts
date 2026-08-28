@@ -58,33 +58,23 @@ async function searchProviderWithTimeout(
 ): Promise<SearchResult[]> {
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) throw new RangeError("timeoutMs must be a non-negative safe integer");
 	if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
-	const controller = new AbortController();
-	const timeoutError = new SearchAttemptTimeoutError(timeoutMs);
-	let timedOut = false;
-	const onExternalAbort = () => controller.abort(signal?.reason ?? new Error("Search aborted"));
-	signal?.addEventListener("abort", onExternalAbort, { once: true });
-	const timer = setTimeout(() => {
-		timedOut = true;
-		controller.abort(timeoutError);
-	}, timeoutMs);
-	timer.unref();
+	const timeoutSignal = AbortSignal.timeout(timeoutMs);
+	const attemptSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 	let onAttemptAbort = () => {};
 	const aborted = new Promise<never>((_, reject) => {
-		onAttemptAbort = () => reject(controller.signal.reason ?? new Error("Search aborted"));
-		controller.signal.addEventListener("abort", onAttemptAbort, { once: true });
+		onAttemptAbort = () => reject(attemptSignal.reason ?? new Error("Search aborted"));
+		attemptSignal.addEventListener("abort", onAttemptAbort, { once: true });
 	});
 	try {
-		const results = await Promise.race([provider.search(query, maxResults, controller.signal), aborted]);
+		const results = await Promise.race([provider.search(query, maxResults, attemptSignal), aborted]);
 		if (signal?.aborted) throw signal.reason ?? new Error("Search aborted");
 		return results;
 	} catch (error) {
 		if (signal?.aborted) throw signal.reason ?? error;
-		if (timedOut) throw timeoutError;
+		if (timeoutSignal.aborted) throw new SearchAttemptTimeoutError(timeoutMs);
 		throw error;
 	} finally {
-		clearTimeout(timer);
-		signal?.removeEventListener("abort", onExternalAbort);
-		controller.signal.removeEventListener("abort", onAttemptAbort);
+		attemptSignal.removeEventListener("abort", onAttemptAbort);
 	}
 }
 

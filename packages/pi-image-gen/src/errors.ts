@@ -1,4 +1,5 @@
-import type { ResolvedProvider } from './types.js';
+import { ENV_VARS } from './models.js';
+import type { BuiltInProviderId, ResolvedProvider } from './types.js';
 
 /**
  * Build an error message that an LLM can act on without a human in the loop.
@@ -55,7 +56,7 @@ export function describeNetworkError(error: unknown, provider: ResolvedProvider)
  */
 function providerLocator(provider: ResolvedProvider): string {
   if (provider.builtIn) {
-    const envVar = BUILT_IN_ENV_VAR[provider.id] ?? `${provider.id.toUpperCase()}_API_KEY`;
+    const envVar = ENV_VARS[provider.id as BuiltInProviderId] ?? `${provider.id.toUpperCase()}_API_KEY`;
     return `the ${envVar} env var (or pi-image-gen.providers.${provider.id}.apiKey in settings.json)`;
   }
   return `pi-image-gen.customProviders.${provider.id}.apiKey in settings.json`;
@@ -67,14 +68,6 @@ function providerBaseUrlLocator(provider: ResolvedProvider): string {
   }
   return `pi-image-gen.customProviders.${provider.id}.baseUrl`;
 }
-
-const BUILT_IN_ENV_VAR: Record<string, string> = {
-  openai: 'OPENAI_API_KEY',
-  gemini: 'GEMINI_API_KEY',
-  dashscope: 'DASHSCOPE_API_KEY',
-  openrouter: 'OPENROUTER_API_KEY',
-};
-
 export async function safeText(response: Response): Promise<string> {
   try {
     return await response.text();

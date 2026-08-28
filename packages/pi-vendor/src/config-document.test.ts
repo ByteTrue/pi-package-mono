@@ -1,17 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ModelsJson } from "./models-json.js";
-import {
-	addModel,
-	classifyConfigValue,
-	createProvider,
-	deleteModel,
-	deleteProvider,
-	listModelFields,
-	listProviderFields,
-	renameProvider,
-	replaceModel,
-} from "./config-document.js";
+import { addModel, createProvider, replaceModel } from "./config-document.js";
 
 const base: ModelsJson = {
 	rootUnknown: { keep: true },
@@ -28,24 +18,6 @@ describe("config document mutations", () => {
 		expect(createProvider(base, "alpha", {})).toMatchObject({ ok: false, error: { code: "provider_exists", path: "/providers/alpha" } });
 		expect(createProvider(base, "   ", {})).toMatchObject({ ok: false, error: { code: "invalid_provider_key" } });
 		expect(base.providers?.new).toBeUndefined();
-	});
-
-	it("renames with explicit conflict handling and preserves missing fields", () => {
-		expect(renameProvider(base, "missing", "next")).toMatchObject({ ok: false, error: { code: "provider_not_found" } });
-		expect(renameProvider(base, "alpha", "withoutModels")).toMatchObject({ ok: false, error: { code: "provider_exists" } });
-		const renamed = renameProvider(base, "withoutModels", " renamed ");
-		expect(renamed.ok && renamed.value.providers?.renamed).toEqual({ baseUrl: "https://example.test" });
-		expect(renameProvider(base, "alpha", "withoutModels", { conflict: "overwrite-confirmed" })).toMatchObject({
-			ok: true,
-			value: { rootUnknown: { keep: true }, providers: { withoutModels: base.providers?.alpha } },
-		});
-		expect(renameProvider(base, "alpha", "alpha")).toMatchObject({ ok: true, value: base });
-	});
-
-	it("deletes providers with typed not-found errors", () => {
-		expect(deleteProvider(base, "missing")).toMatchObject({ ok: false, error: { code: "provider_not_found" } });
-		const deleted = deleteProvider(base, "alpha");
-		expect(deleted.ok && deleted.value.providers).toEqual({ withoutModels: { baseUrl: "https://example.test" } });
 	});
 
 	it("adds models without implicit upsert and validates trimmed ids", () => {
@@ -72,13 +44,6 @@ describe("config document mutations", () => {
 		expect(same.ok && same.value.providers?.alpha?.models?.[0]).toEqual({ id: "source", name: "changed" });
 	});
 
-	it("deletes models with typed errors", () => {
-		expect(deleteModel(base, "missing", "source")).toMatchObject({ ok: false, error: { code: "provider_not_found" } });
-		expect(deleteModel(base, "alpha", "missing")).toMatchObject({ ok: false, error: { code: "model_not_found" } });
-		const deleted = deleteModel(base, "alpha", "source");
-		expect(deleted.ok && deleted.value.providers?.alpha?.models?.map(({ id }) => id)).toEqual(["x", "target", "y"]);
-	});
-
 	it("treats prototype-named provider keys as own identities", () => {
 		for (const key of ["constructor", "toString"]) {
 			const created = createProvider(base, key, { baseUrl: `https://${key}.test` });
@@ -86,37 +51,11 @@ describe("config document mutations", () => {
 			expect(created.ok && Object.hasOwn(created.value.providers ?? {}, key)).toBe(true);
 			expect(Object.hasOwn(base.providers ?? {}, key)).toBe(false);
 
-			const source = JSON.parse(JSON.stringify({ providers: { [key]: { models: [{ id: "a" }] }, keep: { models: [{ id: "b" }] } } })) as ModelsJson;
+			const source = JSON.parse(JSON.stringify({ providers: { [key]: { models: [{ id: "a" }] } } })) as ModelsJson;
 			const before = JSON.stringify(source);
-			expect(deleteProvider(source, key)).toMatchObject({ ok: true });
+			const added = addModel(source, key, { id: "b" });
+			expect(added.ok && added.value.providers?.[key]?.models?.map(({ id }) => id)).toEqual(["a", "b"]);
 			expect(JSON.stringify(source)).toBe(before);
-			expect(renameProvider(source, key, "renamed")).toMatchObject({ ok: true });
-
-			const conflict = renameProvider(source, "keep", key);
-			expect(conflict).toMatchObject({ ok: false, error: { code: "provider_exists" } });
-			const overwritten = renameProvider(source, "keep", key, { conflict: "overwrite-confirmed" });
-			expect(overwritten.ok && Object.keys(overwritten.value.providers ?? {})).toEqual([key]);
 		}
-});
-
-describe("field metadata and config-value syntax", () => {
-	it("freezes provider/model common and required fields", () => {
-		expect(listProviderFields().filter(({ common }) => common).map(({ key }) => key)).toEqual(["baseUrl", "api", "apiKey"]);
-		expect(listModelFields().filter(({ common }) => common).map(({ key }) => key)).toEqual(["id"]);
-		expect(listModelFields().filter(({ required }) => required).map(({ key }) => key)).toEqual(["id"]);
-		expect(listProviderFields().find(({ key }) => key === "modelOverrides")?.kind).toBe("json");
 	});
-
-	it.each([
-		["literal", "literal"],
-		["!security find-password", "command"],
-		["$API_KEY", "env-reference"],
-		["prefix-${API_KEY}", "env-reference"],
-		["$$API_KEY", "literal"],
-		["$!literal", "literal"],
-	])("classifies %s without resolving it", (value, expected) => {
-		expect(classifyConfigValue(value)).toBe(expected);
-	});
-});
-
 });

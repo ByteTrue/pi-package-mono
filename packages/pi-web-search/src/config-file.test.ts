@@ -31,12 +31,12 @@ describe("readConfigResult", () => {
 		const { readConfigResult } = await import("./config.js");
 		expect(readConfigResult()).toEqual({ status: "missing", config: {} });
 
-		writeRawConfig('{"provider":"bing"}');
-		expect(readConfigResult()).toEqual({ status: "valid", config: { provider: "bing" } });
+		writeRawConfig('{"providers":["bing"]}');
+		expect(readConfigResult()).toEqual({ status: "valid", config: { providers: ["bing"] } });
 	});
 
 	it("reports malformed JSON while readConfig remains fail-soft", async () => {
-		writeRawConfig('{"provider":"exa-free"');
+		writeRawConfig('{"providers":["exa-free"');
 		const { readConfig, readConfigResult } = await import("./config.js");
 
 		expect(readConfigResult()).toMatchObject({ status: "invalid" });
@@ -44,41 +44,16 @@ describe("readConfigResult", () => {
 	});
 
 	it("reports schema-invalid JSON", async () => {
-		writeRawConfig('{"provider":42}');
+		writeRawConfig('{"providers":42}');
 		const { readConfigResult } = await import("./config.js");
 
 		expect(readConfigResult()).toMatchObject({ status: "invalid" });
 	});
 });
 
-describe("writeConfig migration", () => {
-	it("removes legacy autoFallback while preserving the complete configuration", async () => {
-		writeRawConfig(JSON.stringify({
-			provider: "exa",
-			autoFallback: true,
-			apiKeys: { exa: "secret", bocha: "bocha-secret" },
-			baseUrls: { searxng: "https://search.example" },
-			proxy: "http://127.0.0.1:7890",
-			futureField: { keep: true },
-		}));
-		const { readConfigResult, writeConfig } = await import("./config.js");
-		const loaded = readConfigResult();
-		if (loaded.status === "invalid") throw new Error(loaded.error);
-		expect(writeConfig(loaded.config)).toBe(true);
-		const saved = JSON.parse(readFileSync(configPath(), "utf8"));
-		expect(saved).toEqual({
-			providers: ["exa"],
-			apiKeys: { exa: "secret", bocha: "bocha-secret" },
-			baseUrls: { searxng: "https://search.example" },
-			proxy: "http://127.0.0.1:7890",
-			futureField: { keep: true },
-		});
-	});
-});
-
 describe("/web provider selection", () => {
 	it("switches from paid Exa to Exa free without a label-prefix collision", async () => {
-		writeRawConfig(JSON.stringify({ provider: "exa", apiKeys: { exa: "secret" }, futureField: true }));
+		writeRawConfig(JSON.stringify({ providers: ["exa"], apiKeys: { exa: "secret" }, futureField: true }));
 		const { registerWebCommand } = await import("./tools.js");
 		let command: { handler(args: string, ctx: unknown): Promise<void> } | undefined;
 		registerWebCommand({

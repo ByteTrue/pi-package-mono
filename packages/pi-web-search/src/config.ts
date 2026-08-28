@@ -24,7 +24,6 @@ import { DEFAULT_PROVIDER_NAME, findProviderMeta } from "./providers/registry.js
 
 export const WebConfigSchema = Type.Object(
 	{
-		provider: Type.Optional(Type.String()),
 		providers: Type.Optional(Type.Array(Type.String())),
 		apiKeys: Type.Optional(Type.Record(Type.String(), Type.String())),
 		baseUrls: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -87,10 +86,8 @@ export function readConfig(): WebConfig {
 export function writeConfig(config: WebConfig): boolean {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-		const { autoFallback: _legacy, ...clean } = config as WebConfig & { autoFallback?: unknown };
-		if (!clean.providers?.length && clean.provider?.trim()) clean.providers = [clean.provider.trim()];
-		delete clean.provider;
-		const body = `${JSON.stringify(clean, null, 2)}\n`;
+		const body = `${JSON.stringify(config, null, 2)}
+`;
 		const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
 		// mode 0o600: may contain API keys. Atomic rename avoids half-written JSON.
 		writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
@@ -106,8 +103,7 @@ export function getProviderChain(config: WebConfig): string[] {
 		.map((provider) => provider.trim())
 		.filter((provider) => provider.length > 0);
 	if (configured.length > 0) return [...new Set(configured)];
-	const active = config.provider?.trim() || DEFAULT_PROVIDER_NAME;
-	return [active];
+	return [DEFAULT_PROVIDER_NAME];
 }
 
 export function getActiveProviderName(config: WebConfig): string {

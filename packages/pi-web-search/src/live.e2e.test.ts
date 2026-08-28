@@ -51,7 +51,7 @@ function providerConfig(name: string, keyConfig: WebConfig, realConfig: WebConfi
 		apiKeys: keyConfig.apiKeys,
 		baseUrls: keyConfig.baseUrls,
 		proxy: process.env.BYTE_PI_WEB_E2E_PROXY || keyConfig.proxy || realConfig.proxy,
-		provider: name,
+		providers: [name],
 	};
 }
 

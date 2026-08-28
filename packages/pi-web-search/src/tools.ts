@@ -269,7 +269,6 @@ async function configureBaseUrl(
 		providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)],
 		baseUrls: { ...config.baseUrls, [meta.name]: input.trim() },
 	};
-	delete next.provider;
 	if (!writeConfig(next)) {
 		ctx.ui.notify(`Failed to save ${meta.label} URL to ${getConfigPath()}`, "error");
 		return;
@@ -310,7 +309,6 @@ async function configureProviderChain(
 		}
 		if (picked === "✓ Done") {
 			const next: WebConfig = { ...config, providers: [...selected] };
-			delete next.provider;
 			if (writeConfig(next)) ctx.ui.notify(`Provider chain saved: ${selected.join(" -> ")}`, "info");
 			else ctx.ui.notify(`Failed to save provider chain to ${getConfigPath()}`, "error");
 			return;
@@ -375,7 +373,6 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 			}
 			if (meta.keyless || resolveApiKey(meta.name, config) !== undefined) {
 				const next: WebConfig = { ...config, providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)] };
-				delete next.provider;
 				if (writeConfig(next)) ctx.ui.notify(`Active provider set to ${meta.label}`, "info");
 				else ctx.ui.notify(`Failed to save config to ${getConfigPath()}`, "error");
 				return;
@@ -391,7 +388,6 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 				providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)],
 				apiKeys: { ...config.apiKeys, [meta.name]: input.trim() },
 			};
-			delete toSave.provider;
 			if (!writeConfig(toSave)) ctx.ui.notify(`Failed to save ${meta.label} key to ${getConfigPath()}`, "error");
 			else ctx.ui.notify(`Saved ${meta.label} key and set as active provider`, "info");
 		},
