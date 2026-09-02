@@ -3,7 +3,7 @@ name: Release
 # Publish packages to npm when a version tag is pushed.
 #
 # Package-scoped tags publish one workspace (e.g. pi-web-search-v0.1.1).
-# Supported package tags: pi-vendor-v*, pi-web-search-v*, pi-image-gen-v*, pi-background-terminal-v*, pi-vision-v*.
+# Supported package tags: pi-vendor-v*, pi-web-search-v*, pi-image-gen-v*, pi-background-terminal-v*, pi-vision-v*, pi-subagent-v*.
 #
 # Uses npm Trusted Publishing (OIDC) — no NPM_TOKEN needed. Each package must
 # have a Trusted Publisher configured on npmjs.com pointing at this repo and
@@ -11,7 +11,7 @@ name: Release
 # are generated automatically.
 on:
   push:
-    tags: ["pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*", "pi-background-terminal-v*", "pi-vision-v*"]
+    tags: ["pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*", "pi-background-terminal-v*", "pi-vision-v*", "pi-subagent-v*"]
 
 jobs:
   publish:
@@ -39,6 +39,7 @@ jobs:
             pi-image-gen-v*) packages=(packages/pi-image-gen/) ;;
             pi-background-terminal-v*) packages=(packages/pi-background-terminal/) ;;
             pi-vision-v*) packages=(packages/pi-vision/) ;;
+            pi-subagent-v*) packages=(packages/pi-subagent/) ;;
             *) echo "Unsupported release tag: $tag"; exit 1 ;;
           esac
 

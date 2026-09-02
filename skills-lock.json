@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "cs": {
+      "source": "codestable/CodeStable-Lite",
+      "sourceType": "github",
+      "skillPath": "skills/cs/SKILL.md",
+      "computedHash": "c8b1374918eff6cc3a6e7dde0adaac7a703eb810c0f072b2bbbbad27d92efd1a"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "@bytetrue/pi-subagent",
+  "version": "0.3.0",
+  "description": "Pi extension: lightweight subagent runner with streaming execution, live TUI progress card, parallel/chain execution, and zero framework lock-in.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "subagent",
+    "ai",
+    "agent",
+    "delegation"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "byte",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteTrue/pi-package-mono.git",
+    "directory": "packages/pi-subagent"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/**",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
+  }
+}

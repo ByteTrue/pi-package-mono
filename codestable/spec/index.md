@@ -2,13 +2,14 @@
 
 ## 这个项目是什么
 
-`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。多数包以 TypeScript 源码通过 jiti 加载；`pi-image-gen` 因 bundled Skill CLI 与 extension 共用同一 core，发布时构建 `dist`。当前有五个能力包：
+`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。多数包以 TypeScript 源码通过 jiti 加载；`pi-image-gen` 因 bundled Skill CLI 与 extension 共用同一 core，发布时构建 `dist`。当前有六个能力包：
 
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
 3. **图像生成**（`@bytetrue/pi-image-gen`）：`/image-gen` 在 TUI 内完整配置，Agent 仅在需要时加载 Skill 并调用 bundled CLI；不注册常驻生成 tool。
 4. **背景终端**（`@bytetrue/pi-background-terminal`）：三个独立工具——后台跑命令、查看、停止。不覆盖 `bash`。
 5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
+6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：单工具 `subagent`，支持单任务/并行/串联链式运行子任务，带实时 TUI 差分卡片与 Token/费用统计。
 
 仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
 
@@ -51,8 +52,9 @@
 | `@bytetrue/pi-image-gen` | `/image-gen`、按需 Skill `pi-image-gen`、bundled CLI；零常驻 Agent tool | `~/.pi/agent/settings.json`、active agent dir 或可信 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
 | `@bytetrue/pi-background-terminal` | 工具 `background_run`/`background_status`/`background_kill` + 用户菜单 `/background`（不覆盖 `bash`） | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
 | `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `settings.json` 的 `pi-vision.model` 与 `pi-vision.autoAnalyzeAttachments`（`/vision` 写全局层；可信 project 可覆盖） |
+| `@bytetrue/pi-subagent` | 工具 `subagent`（单任务、并行、链式执行 + TUI 差分卡片） | 无独立持久配置；按需读取 `.pi/agents/*.md` 或单次参数覆盖 |
 
-五包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
+六包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
 
 ## 统一语言
 
