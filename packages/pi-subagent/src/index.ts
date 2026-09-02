@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -30,16 +30,29 @@ export interface PiExtensionContext {
   };
   ui?: {
     notify?: (msg: string, type?: "info" | "warning" | "error") => void;
+    setStatus?: (id: string, text?: string) => void;
   };
 }
 
-export interface SubagentInput {
-  task?: string;
-  prompt?: string;
+export interface SubagentTaskItem {
+  task: string;
   agent?: string;
-  mode?: "single" | "parallel" | "chain";
-  tasks?: string[];
+  model?: string;
+  thinking?: string;
+  tools?: string[];
+  cwd?: string;
+}
+
+export interface SubagentInput {
+  tasks?: (string | SubagentTaskItem)[];
+  task?: string;
+  chain?: boolean;
+  async?: boolean;
+  background?: boolean;
+  // Legacy / fallback fields
+  mode?: string;
   prompts?: string[];
+  agent?: string;
   model?: string;
   thinking?: string;
   tools?: string[];
@@ -96,7 +109,7 @@ const MAX_TAIL = 256 * 1024;
 const MAX_LINE_BUFFER = 1024 * 1024;
 const MAX_TOOL_ARG_CHARS = 2048;
 const MAX_TOOLS = 256;
-const MAX_PARALLEL_TASKS = 8;
+const MAX_PARALLEL_TASKS = 16;
 const ABORT_KILL_GRACE_MS = 1500;
 const THROTTLE_MS = 300;
 const MAX_FALLBACK_OUTPUT_CHARS = 8192;
@@ -147,7 +160,7 @@ export interface RunState {
 export interface ProgressDetails {
   kind: "pi-subagent-progress";
   agent: string;
-  mode: "single" | "parallel" | "chain";
+  mode: "concurrent" | "chain";
   startedAt: number;
   updatedAt: number;
   final: boolean;
@@ -219,7 +232,13 @@ function bashCommand(t: ToolTrace): string {
 }
 
 function isSearchTool(t: ToolTrace): boolean {
-  return t.name === "read" || t.name === "grep" || t.name === "find" || t.name === "web_search" || t.name === "web_fetch";
+  return (
+    t.name === "read" ||
+    t.name === "grep" ||
+    t.name === "find" ||
+    t.name === "web_search" ||
+    t.name === "web_fetch"
+  );
 }
 
 function isMutationTool(t: ToolTrace): boolean {
@@ -228,7 +247,9 @@ function isMutationTool(t: ToolTrace): boolean {
 
 function isValidationCommand(t: ToolTrace): boolean {
   const c = bashCommand(t);
-  return /\b(test|typecheck|lint|build|gofmt|go test|npm test|pnpm test|vitest|jest|tsc|cargo test|cargo check)\b/.test(c);
+  return /\b(test|typecheck|lint|build|gofmt|go test|npm test|pnpm test|vitest|jest|tsc|cargo test|cargo check)\b/.test(
+    c,
+  );
 }
 
 function isInspectionCommand(t: ToolTrace): boolean {
@@ -370,8 +391,9 @@ function renderProgressCard(
       : "✓"
     : spinner;
   const totalElapsed = fmtDur((d.final ? d.updatedAt : Date.now()) - d.startedAt);
+  const modeLabel = d.mode === "chain" ? "pipeline" : d.runs.length > 1 ? "parallel" : "single";
   const lines: string[] = [
-    `${icon} subagent ${d.mode} · total ${totalElapsed}`,
+    `${icon} subagent ${modeLabel} · total ${totalElapsed}`,
   ];
 
   if (!expanded) {
@@ -663,7 +685,6 @@ export function parseAgentFile(filePath: string): AgentConfig {
 
 export function findAgentDefinition(cwd: string, agentName?: string): { config: AgentConfig; found: boolean } {
   if (!agentName) return { config: {}, found: false };
-  // Sanitize agent name to prevent path traversal
   const sanitized = agentName.replace(/[\\/]/g, "").replace(/\.\./g, "").trim();
   if (!sanitized) return { config: {}, found: false };
   const baseName = sanitized.endsWith(".md") ? sanitized : `${sanitized}.md`;
@@ -682,7 +703,7 @@ export function findAgentDefinition(cwd: string, agentName?: string): { config: 
 }
 
 export function resolveRunCfg(
-  input: SubagentInput,
+  item: Partial<SubagentTaskItem>,
   agentCfg: AgentConfig,
   inheritedThinking?: string,
   inheritedModel?: string,
@@ -695,9 +716,9 @@ export function resolveRunCfg(
   };
   const suffixRe = /:(off|minimal|low|medium|high|xhigh|max)$/i;
 
-  const roleSettings = input.agent ? subagentSettings?.agents?.[input.agent] : undefined;
+  const roleSettings = item.agent ? subagentSettings?.agents?.[item.agent] : undefined;
 
-  const inputModel = str(input.model);
+  const inputModel = str(item.model);
   const roleModel = str(roleSettings?.model);
   const agentModel = str(agentCfg.model);
   const defaultModel = str(subagentSettings?.defaultModel);
@@ -710,7 +731,7 @@ export function resolveRunCfg(
 
   const baseModel = rawModel?.replace(suffixRe, "");
   const thinking =
-    normalize(input.thinking) ??
+    normalize(item.thinking) ??
     inputSuffixThinking ??
     normalize(roleSettings?.thinking) ??
     roleSuffixThinking ??
@@ -721,12 +742,12 @@ export function resolveRunCfg(
     normalize(inheritedThinking);
 
   const tools =
-    input.tools?.length
-      ? input.tools
+    item.tools?.length
+      ? item.tools
       : roleSettings?.tools?.length
         ? roleSettings.tools
         : agentCfg.tools;
-  const cwd = input.cwd ? resolve(input.cwd) : undefined;
+  const cwd = item.cwd ? resolve(item.cwd) : undefined;
 
   if (baseModel && thinking && thinking !== "off") {
     return { model: `${baseModel}:${thinking}`, thinking, tools, cwd };
@@ -1064,6 +1085,138 @@ function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
   return task;
 }
 
+// ── Normalization Helper ──────────────────────────────────────────────
+export function normalizeTasks(input: SubagentInput): {
+  tasks: SubagentTaskItem[];
+  isChain: boolean;
+  isAsync: boolean;
+} {
+  const isChain = Boolean(input.chain || input.mode === "chain");
+  const isAsync = Boolean(input.async || input.background);
+
+  const rawList = input.tasks ?? input.prompts;
+  const items: SubagentTaskItem[] = [];
+
+  if (Array.isArray(rawList) && rawList.length > 0) {
+    for (const item of rawList) {
+      if (typeof item === "string") {
+        const trimmed = item.trim();
+        if (trimmed) {
+          items.push({
+            task: trimmed,
+            agent: input.agent,
+            model: input.model,
+            thinking: input.thinking,
+            tools: input.tools,
+            cwd: input.cwd,
+          });
+        }
+      } else if (item && typeof item === "object") {
+        const t = String(item.task || "").trim();
+        if (t) {
+          items.push({
+            task: t,
+            agent: item.agent ?? input.agent,
+            model: item.model ?? input.model,
+            thinking: item.thinking ?? input.thinking,
+            tools: item.tools ?? input.tools,
+            cwd: item.cwd ?? input.cwd,
+          });
+        }
+      }
+    }
+  }
+
+  // Fallback to single task if tasks array was empty or omitted
+  if (items.length === 0) {
+    const single = String(input.task || "").trim();
+    if (single) {
+      items.push({
+        task: single,
+        agent: input.agent,
+        model: input.model,
+        thinking: input.thinking,
+        tools: input.tools,
+        cwd: input.cwd,
+      });
+    }
+  }
+
+  return { tasks: items, isChain, isAsync };
+}
+
+// ── Background Manager ────────────────────────────────────────────────
+export interface BackgroundSubagentTask {
+  id: string;
+  parentSessionId: string;
+  description: string;
+  status: "running" | "succeeded" | "failed" | "cancelled";
+  output: string;
+  startedAt: number;
+  finishedAt?: number;
+  controller: AbortController;
+  notifyOnExit: boolean;
+  done: Promise<void>;
+}
+
+export class SubagentBackgroundManager {
+  private readonly tasks = new Map<string, BackgroundSubagentTask>();
+  private onExit?: (task: BackgroundSubagentTask) => void;
+  private onChange?: () => void;
+
+  init(onExit: (task: BackgroundSubagentTask) => void, onChange?: () => void): void {
+    this.onExit = onExit;
+    this.onChange = onChange;
+  }
+
+  register(task: BackgroundSubagentTask): void {
+    this.tasks.set(task.id, task);
+    this.emitChange();
+  }
+
+  complete(id: string, output: string, failed: boolean, cancelled = false): void {
+    const t = this.tasks.get(id);
+    if (!t) return;
+    t.status = cancelled ? "cancelled" : failed ? "failed" : "succeeded";
+    t.output = output;
+    t.finishedAt = Date.now();
+    this.emitChange();
+    if (t.notifyOnExit) {
+      try {
+        this.onExit?.(t);
+      } catch {}
+    }
+  }
+
+  list(parentSessionId: string): BackgroundSubagentTask[] {
+    return Array.from(this.tasks.values()).filter((t) => t.parentSessionId === parentSessionId);
+  }
+
+  async clearSession(parentSessionId: string): Promise<void> {
+    const sessionTasks = Array.from(this.tasks.values()).filter(
+      (t) => t.parentSessionId === parentSessionId,
+    );
+    for (const t of sessionTasks) {
+      t.notifyOnExit = false;
+      if (t.status === "running") t.controller.abort();
+      this.tasks.delete(t.id);
+    }
+    await Promise.all(sessionTasks.map((t) => t.done.catch(() => {})));
+    this.emitChange();
+  }
+
+  private emitChange(): void {
+    try {
+      this.onChange?.();
+    } catch {}
+  }
+}
+
+const SUBAGENT_MGR_KEY = Symbol.for("@bytetrue/pi-subagent.manager");
+const globalStore = globalThis as unknown as Record<symbol, SubagentBackgroundManager | undefined>;
+export const subagentManager: SubagentBackgroundManager =
+  (globalStore[SUBAGENT_MGR_KEY] ??= new SubagentBackgroundManager());
+
 // ── Orchestrator ──────────────────────────────────────────────────────
 export async function runSubagent(
   cwd: string,
@@ -1073,22 +1226,21 @@ export async function runSubagent(
   inheritedThinking?: string,
   inheritedModel?: string,
 ): Promise<{ output: string; details: ProgressDetails; failed: boolean }> {
-  const agentName = input.agent || "subagent";
-  const { config: agentCfg } = findAgentDefinition(cwd, input.agent);
+  const { tasks: taskItems, isChain } = normalizeTasks(input);
+  if (taskItems.length === 0) {
+    throw new Error("No task specified. Provide 'tasks' or 'task'.");
+  }
+  if (taskItems.length > MAX_PARALLEL_TASKS) {
+    throw new Error(`Subagent supports at most ${MAX_PARALLEL_TASKS} tasks.`);
+  }
+
   const subagentSettings = loadSubagentSettings(cwd, true);
-  const runCfg = resolveRunCfg(
-    input,
-    agentCfg,
-    inheritedThinking,
-    inheritedModel,
-    subagentSettings,
-  );
-  const mode = input.mode ?? "single";
   const startedAt = Date.now();
+  const primaryAgent = taskItems[0]?.agent || "subagent";
   const details: ProgressDetails = {
     kind: "pi-subagent-progress",
-    agent: agentName,
-    mode,
+    agent: primaryAgent,
+    mode: isChain ? "chain" : "concurrent",
     startedAt,
     updatedAt: startedAt,
     final: false,
@@ -1126,51 +1278,28 @@ export async function runSubagent(
   };
 
   try {
-    const rawPromptList = input.tasks ?? input.prompts;
-    const fallbackPrompt = input.task ?? input.prompt ?? "";
-
-    if (mode === "parallel") {
-      const prompts = rawPromptList ?? (fallbackPrompt ? [fallbackPrompt] : []);
-      if (!prompts.length) throw new Error("task or tasks are required for parallel mode");
-      if (prompts.length > MAX_PARALLEL_TASKS) {
-        throw new Error(`parallel mode supports at most ${MAX_PARALLEL_TASKS} tasks`);
-      }
-      details.runs = prompts.map((p, i) => {
-        const r = newRun(`${agentName}-${i + 1}`, agentName, p);
-        applyRunConfig(r, runCfg);
-        return r;
-      });
-      emit(true);
-      const results = await Promise.all(
-        prompts.map((p, i) =>
-          runPi(
-            cwd,
-            buildSubagentPrompt(p, agentCfg),
-            runCfg,
-            details.runs[i]!,
-            emit,
-            signal,
-          ),
-        ),
-      );
-      return finish(
-        results.map((r, i) => `### Result ${i + 1}\n\n${r.output}`).join("\n\n---\n\n"),
-        results.some((r) => r.failed),
-      );
-    }
-
-    if (mode === "chain") {
-      const prompts = rawPromptList ?? (fallbackPrompt ? [fallbackPrompt] : []);
-      if (!prompts.length) throw new Error("task or tasks are required for chain mode");
+    if (isChain) {
       let prev = "";
       let failed = false;
-      for (let i = 0; i < prompts.length; i++) {
-        const p = prompts[i]!;
-        const rs = newRun(`${agentName}-${i + 1}`, agentName, p, i + 1);
+      for (let i = 0; i < taskItems.length; i++) {
+        const item = taskItems[i]!;
+        const role = item.agent || "subagent";
+        const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
+        const runCfg = resolveRunCfg(
+          item,
+          agentCfg,
+          inheritedThinking,
+          inheritedModel,
+          subagentSettings,
+        );
+        const rs = newRun(`${role}-${i + 1}`, role, item.task, i + 1);
         applyRunConfig(rs, runCfg);
         details.runs.push(rs);
         emit(true);
-        const chainedPrompt = prev ? `${p}\n\n### Previous Step Output:\n${prev}` : p;
+
+        const chainedPrompt = prev
+          ? `${item.task}\n\n### Previous Step Output:\n${prev}`
+          : item.task;
         const result = await runPi(
           cwd,
           buildSubagentPrompt(chainedPrompt, agentCfg),
@@ -1186,22 +1315,52 @@ export async function runSubagent(
       return finish(prev, failed);
     }
 
-    // Default: single mode
-    const task = fallbackPrompt;
-    if (!task) throw new Error("task is required for single mode");
-    const rs = newRun(`${agentName}-1`, agentName, task);
-    applyRunConfig(rs, runCfg);
-    details.runs = [rs];
+    // Concurrent mode (single or parallel)
+    details.runs = taskItems.map((item, i) => {
+      const role = item.agent || "subagent";
+      const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
+      const runCfg = resolveRunCfg(
+        item,
+        agentCfg,
+        inheritedThinking,
+        inheritedModel,
+        subagentSettings,
+      );
+      const r = newRun(`${role}-${i + 1}`, role, item.task);
+      applyRunConfig(r, runCfg);
+      return r;
+    });
     emit(true);
-    const result = await runPi(
-      cwd,
-      buildSubagentPrompt(task, agentCfg),
-      runCfg,
-      rs,
-      emit,
-      signal,
+
+    const results = await Promise.all(
+      taskItems.map((item, i) => {
+        const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
+        const runCfg = resolveRunCfg(
+          item,
+          agentCfg,
+          inheritedThinking,
+          inheritedModel,
+          subagentSettings,
+        );
+        return runPi(
+          cwd,
+          buildSubagentPrompt(item.task, agentCfg),
+          runCfg,
+          details.runs[i]!,
+          emit,
+          signal,
+        );
+      }),
     );
-    return finish(result.output, result.failed);
+
+    if (results.length === 1) {
+      return finish(results[0]!.output, results[0]!.failed);
+    }
+
+    const aggregated = results
+      .map((r, i) => `### Task ${i + 1} (${taskItems[i]?.agent || "subagent"}):\n${r.output}`)
+      .join("\n\n---\n\n");
+    return finish(aggregated, results.some((r) => r.failed));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const r = activeRun(details);
@@ -1231,6 +1390,10 @@ export default function subagentExtension(pi: {
       handler: (ctx: PiExtensionContext) => unknown;
     },
   ) => void;
+  sendMessage?: (
+    message: { customType?: string; content: string; display?: boolean; details?: unknown },
+    opts?: { deliverAs?: "followUp" | "steer"; triggerTurn?: boolean },
+  ) => void;
   on?: (
     event: string,
     handler: (event: unknown, ctx?: PiExtensionContext) => unknown,
@@ -1238,6 +1401,40 @@ export default function subagentExtension(pi: {
   getThinkingLevel?: () => string;
 }): void {
   if (process.env.PI_SUBAGENT_CHILD === "1") return;
+
+  let currentSessionId: string | null = null;
+  let updateStatus: (() => void) | undefined;
+  let agentBusy = false;
+  let pendingExits: BackgroundSubagentTask[] = [];
+
+  const flushPendingExits = () => {
+    const batch = pendingExits;
+    pendingExits = [];
+    const first = batch[0];
+    if (!first) return;
+    const content =
+      batch.length === 1
+        ? formatSubagentExitMessage(first)
+        : `${batch.length} background subagent tasks completed:\n\n${batch.map(formatSubagentExitMessage).join("\n\n---\n\n")}`;
+    pi.sendMessage?.(
+      {
+        customType: "subagent-exit",
+        content,
+        display: true,
+        details: batch.length === 1 ? first : batch,
+      },
+      { deliverAs: "followUp", triggerTurn: true },
+    );
+  };
+
+  subagentManager.init(
+    (task) => {
+      if (!currentSessionId || task.parentSessionId !== currentSessionId) return;
+      pendingExits.push(task);
+      if (!agentBusy) flushPendingExits();
+    },
+    () => updateStatus?.(),
+  );
 
   pi.registerCommand?.("subagent", {
     description: "Configure subagent default/role models and thinking levels",
@@ -1266,52 +1463,58 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Execute tasks in an isolated child agent session. Supports single task execution, parallel fanout across multiple prompts, or sequential chained steps with real-time progress tracking.",
+      "Execute tasks in isolated child agent sessions. Runs concurrently by default, or sequentially when chain is true. Supports background execution.",
     parameters: {
       type: "object",
       properties: {
-        task: {
-          type: "string",
-          description: "The task or prompt for the subagent to execute.",
-        },
-        agent: {
-          type: "string",
-          description:
-            "Optional agent role name (loads system prompt and defaults from .pi/agents/<name>.md).",
-        },
-        mode: {
-          type: "string",
-          enum: ["single", "parallel", "chain"],
-          description:
-            "Execution mode: 'single' (default), 'parallel' (run multiple tasks concurrently), or 'chain' (step-by-step pipeline).",
-        },
         tasks: {
           type: "array",
-          items: { type: "string" },
-          description: "List of task prompts for 'parallel' or 'chain' execution.",
+          description: "List of subagent tasks to execute.",
+          items: {
+            type: "object",
+            properties: {
+              task: {
+                type: "string",
+                description: "The task prompt to execute (REQUIRED).",
+              },
+              agent: {
+                type: "string",
+                description: "Optional agent role name (e.g. 'reviewer', 'researcher').",
+              },
+              model: {
+                type: "string",
+                description: "Optional model override (e.g. 'gemini-3.7-flash', 'gpt-5:low').",
+              },
+              thinking: {
+                type: "string",
+                enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+                description: "Optional thinking level.",
+              },
+              tools: {
+                type: "array",
+                items: { type: "string" },
+                description: "Optional tool allowlist (e.g. ['read', 'grep', 'find']).",
+              },
+              cwd: {
+                type: "string",
+                description: "Optional working directory.",
+              },
+            },
+            required: ["task"],
+          },
         },
-        model: {
-          type: "string",
+        chain: {
+          type: "boolean",
           description:
-            "Optional model override (e.g., 'gemini-3.7-flash', 'openai/gpt-4o:low').",
+            "Optional. If true, runs tasks sequentially as a pipeline (output of step N is piped into step N+1). Default: false.",
         },
-        thinking: {
-          type: "string",
-          enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-          description: "Optional thinking level override.",
-        },
-        tools: {
-          type: "array",
-          items: { type: "string" },
+        async: {
+          type: "boolean",
           description:
-            "Optional tool allowlist for the child agent (e.g. ['read', 'grep', 'find'] or ['read', 'edit', 'write', 'bash']).",
-        },
-        cwd: {
-          type: "string",
-          description: "Optional working directory for the subagent process.",
+            "Optional. If true, runs in the background and notifies the main session when finished. Default: false.",
         },
       },
-      required: [],
+      required: ["tasks"],
     },
     execute: async (
       id: string,
@@ -1321,13 +1524,73 @@ export default function subagentExtension(pi: {
       ctx?: PiExtensionContext,
     ) => {
       activeSubagentToolCallId = id;
-      const cwd = input.cwd ? resolve(input.cwd) : process.cwd();
+      const cwd = process.cwd();
       const inheritedThinking = pi.getThinkingLevel?.();
       const inheritedModel =
         ctx?.model?.provider && ctx?.model?.id
           ? `${ctx.model.provider}/${ctx.model.id}`
           : undefined;
 
+      const { tasks, isChain, isAsync } = normalizeTasks(input);
+      if (tasks.length === 0) {
+        throw new Error("No task specified. Provide 'tasks' with at least one task item.");
+      }
+
+      // Background asynchronous execution
+      if (isAsync) {
+        const taskId = `sub_${randomBytes(6).toString("hex")}`;
+        const sessionId =
+          ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
+        const taskController = new AbortController();
+
+        const desc =
+          tasks.length === 1
+            ? trunc(tasks[0]!.task, 60)
+            : `${tasks.length} tasks (${isChain ? "chain" : "parallel"})`;
+
+        const bgTask: BackgroundSubagentTask = {
+          id: taskId,
+          parentSessionId: sessionId,
+          description: desc,
+          status: "running",
+          output: "",
+          startedAt: Date.now(),
+          controller: taskController,
+          notifyOnExit: true,
+          done: Promise.resolve(),
+        };
+
+        const execution = runSubagent(
+          cwd,
+          input,
+          taskController.signal,
+          undefined,
+          inheritedThinking,
+          inheritedModel,
+        )
+          .then((res) => {
+            subagentManager.complete(taskId, res.output, res.failed, taskController.signal.aborted);
+          })
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            subagentManager.complete(taskId, msg, true, taskController.signal.aborted);
+          });
+
+        bgTask.done = execution;
+        subagentManager.register(bgTask);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Subagent task started in background (ID: ${taskId}, ${tasks.length} task(s)). You will be notified automatically upon completion.`,
+            },
+          ],
+          details: { id: taskId, status: "running", count: tasks.length, chain: isChain },
+        };
+      }
+
+      // Foreground synchronous execution
       const result = await runSubagent(
         cwd,
         input,
@@ -1387,7 +1650,38 @@ export default function subagentExtension(pi: {
     },
   });
 
-  pi.on?.("session_shutdown", () => {
+  pi.on?.("agent_start", () => {
+    agentBusy = true;
+  });
+
+  pi.on?.("agent_settled", () => {
+    agentBusy = false;
+    flushPendingExits();
+  });
+
+  pi.on?.("session_start", (_event, ctx) => {
+    const sessionId = ctx?.sessionManager?.getSessionId?.() ?? "default";
+    currentSessionId = sessionId;
+    updateStatus = () => {
+      const running = subagentManager
+        .list(sessionId)
+        .filter((t) => t.status === "running").length;
+      ctx?.ui?.setStatus?.("subagent", running === 0 ? undefined : `sub:${running}`);
+    };
+    updateStatus();
+  });
+
+  pi.on?.("session_shutdown", async (event, ctx) => {
+    const reason = isObj(event) ? str(event.reason) : null;
+    if (reason === "reload") return;
+
+    const sessionId =
+      ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
+    ctx?.ui?.setStatus?.("subagent", undefined);
+    updateStatus = undefined;
+    pendingExits = [];
+    if (currentSessionId === sessionId) currentSessionId = null;
+    await subagentManager.clearSession(sessionId);
     nativeCards.clear();
     activeSubagentToolCallId = null;
   });
@@ -1407,4 +1701,14 @@ export default function subagentExtension(pi: {
     }
     return undefined;
   });
+}
+
+function formatSubagentExitMessage(task: BackgroundSubagentTask): string {
+  const outcome =
+    task.status === "cancelled"
+      ? "was cancelled"
+      : task.status === "failed"
+        ? "failed"
+        : "completed successfully";
+  return `[Subagent Task ${task.id}] (${task.description}) ${outcome}.\n\n${task.output}`;
 }

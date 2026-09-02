@@ -43,20 +43,59 @@ Run `/subagent` in the Pi TUI to interactively:
 
 ### `subagent`
 
-Run a sub-agent in a dedicated, isolated child session.
+Execute tasks in isolated child agent sessions. Multiple tasks run concurrently by default, or sequentially as a pipeline when `chain: true`. Supports non-blocking background execution with `async: true`.
 
 #### Parameters
 
-| Parameter | Type | Description |
-|---|---|---|
-| `task` | `string` | Task or research prompt for the subagent. |
-| `agent` | `string` (optional) | Agent template name (loads prompt and default model/tools from `.pi/agents/<name>.md`). |
-| `mode` | `single` \| `parallel` \| `chain` (optional) | Execution mode (default: `single`). |
-| `tasks` | `string[]` (optional) | List of tasks for `parallel` or `chain` mode. |
-| `tools` | `string[]` (optional) | Allowlist of tools for the child agent (e.g. `["read", "grep", "find"]`). |
-| `model` | `string` (optional) | Model override (e.g. `gemini-3.7-flash` or `openai/gpt-4o:low`). |
-| `thinking` | `string` (optional) | Thinking level override (`off`, `low`, `medium`, `high`, `max`). |
-| `cwd` | `string` (optional) | Working directory for the subagent. |
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tasks` | `Array<TaskItem>` | **Yes** | List of tasks to execute. |
+| `tasks[i].task` | `string` | **Yes** | The task instruction / prompt. |
+| `tasks[i].agent` | `string` | No | Optional agent role (loads prompt/defaults from `.pi/agents/<name>.md`). |
+| `tasks[i].model` | `string` | No | Optional model override (e.g. `gemini-3.7-flash`, `gpt-5:low`). |
+| `tasks[i].thinking` | `string` | No | Optional thinking level (`off`, `low`, `medium`, `high`, `max`). |
+| `tasks[i].tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
+| `tasks[i].cwd` | `string` | No | Optional working directory for the task. |
+| `chain` | `boolean` | No | Set to `true` to pipe output from step N to step N+1. Default: `false` (concurrent). |
+| `async` | `boolean` | No | Set to `true` to run in the background and notify upon completion. Default: `false`. |
+
+#### Usage Examples
+
+**1. Single task:**
+```json
+{
+  "tasks": [{ "task": "Review packages/pi-subagent/src/index.ts for potential edge cases" }]
+}
+```
+
+**2. Parallel fanout (multiple heterogeneous roles/models):**
+```json
+{
+  "tasks": [
+    { "agent": "frontend-dev", "task": "Check UI components" },
+    { "agent": "backend-dev", "task": "Verify API contracts", "model": "gpt-5:high" }
+  ]
+}
+```
+
+**3. Sequential pipeline (`chain: true`):**
+```json
+{
+  "chain": true,
+  "tasks": [
+    { "agent": "scout", "task": "Locate relevant test and config files" },
+    { "agent": "reviewer", "task": "Perform adversarial review on the located files" }
+  ]
+}
+```
+
+**4. Background task (`async: true`):**
+```json
+{
+  "async": true,
+  "tasks": [{ "task": "Run end-to-end stress tests and summarize metrics" }]
+}
+```
 
 ## License
 

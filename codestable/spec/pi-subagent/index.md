@@ -8,28 +8,25 @@
 
 ## 当前表面
 
-- `subagent(task, ...)`：
-  - `task` / `prompt`：传递给子智能体的具体任务。
-  - `agent`（可选）：指定智能体模板名称，自动从 `.pi/agents/<name>.md` 或 `~/.pi/agent/agents/<name>.md` 加载 frontmatter 配置（如专属 model、thinking、tools 和 prompt）。
-  - `mode`（可选）：`single`（默认）、`parallel`（并行运行多个 task 并合并输出）、`chain`（顺序链式执行，前序输出作为后序输入）。
-  - `tasks` / `prompts`（可选）：并行或链式模式下的多任务列表。
-  - `model`（可选）：单次调用的模型覆盖（如 `openai/gpt-4o:low`、`gemini-3.7-flash`）。
-  - `thinking`（可选）：单次调用的思考强度覆盖（`off` ~ `max`）。
-  - `tools`（可选）：子智能体的可用工具白名单（例如指定 `["read", "grep", "find", "web_search"]` 仅开启只读调研）。
-  - `cwd`（可选）：子进程执行的工作目录。
+- `subagent(params)`：
+  - `tasks`（必填）：任务对象数组 `Array<{ task, agent?, model?, thinking?, tools?, cwd? }>`。
+  - `chain`（可选，默认 `false`）：设置为 `true` 时按顺序流水线执行（前序输出自动作为后序输入）；默认 `false` 为并发执行。
+  - `async`（可选，默认 `false`）：设置为 `true` 时在后台脱机执行，不阻塞当前会话；完成后通过 `followUp + triggerTurn` 自动唤醒主模型。
+- `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度，以及为特定角色绑定模型。
 
 ## 核心机制
 
-1. **子进程流式通信**：
-   - 自动解析 `pi` 可执行文件位置（支持当前 node_modules、全局 npm/mise 安装路径及 PATH）。
-   - 以 `--mode json -p --no-session` 启动子进程，并将任务输入通过 `stdin` 写入。
-   - 注入 `PI_SUBAGENT_CHILD=1` 环境变量，防止子进程递归嵌套调用自身。
-2. **实时 TUI 差分渲染**：
-   - 流式解析子进程 stdout 输出的 JSON 事件（`agent_start`, `turn_start`, `message_update`, `tool_execution_start`, `tool_execution_end`, `message_end`, `agent_end`）。
-   - 渲染包含运行时间、Spinner、当前思考意图、活跃工具调用与参数预览、Token 上行/下行和费用的 TUI 卡片。
-   - 注册快捷键 `Alt+O`，可随时展开/收起最新卡片的详细工具调用链路。
-3. **安全与进程生命周期**：
-   - 支持通过 `AbortSignal` 进行平滑终止：收到取消信号先发 `SIGINT`，并在 1.5s 宽限期后执行 `SIGKILL` 清理进程树。
+1. **子进程流式通信与并发/流水线调度**：
+   - 自动解析 `pi` CLI 路径，以 `--mode json -p --no-session` 启动子进程并通过 stdin 传输指令。
+   - 注入 `PI_SUBAGENT_CHILD=1` 环境变量防止嵌套递归。
+   - 默认并发执行（`Promise.all`），在 `chain: true` 时顺序串行执行并传递输出；任何一步失败自动熔断。
+2. **后台异步脱机（Hands-off Background Execution）**：
+   - 声明 `async: true` 后立即返回 Task ID，主会话零阻塞。
+   - 后台任务完成时，通过 Pi 的 `followUp` 事件唤醒主会话并递交结果；若主模型正在响应，暂存至 `agent_settled` 时合并唤醒。
+   - 状态栏显示后台活跃任务数（`sub:N`），会话退出时（`session_shutdown`）自动清理。
+3. **实时 TUI 差分渲染**：
+   - 流式解析子进程 stdout 输出的 JSON 事件，实时更新 Spinner、耗时、思考意图、活跃工具调用与 Token/费用统计。
+   - 快捷键 `Alt+O` 随时展开/收起卡片详情。
 
 ## 使用路径
 

@@ -7,6 +7,8 @@ import {
   parseAgentFile,
   findAgentDefinition,
   resolvePiCli,
+  normalizeTasks,
+  SubagentBackgroundManager,
   type RunState,
   type JsonObject,
 } from "./index.js";
@@ -226,6 +228,72 @@ You are an expert researcher. Read references carefully.
   it("sanitizes agent name against path traversal in findAgentDefinition", () => {
     const res = findAgentDefinition(process.cwd(), "../../etc/passwd");
     expect(res.found).toBe(false);
+  });
+
+  it("normalizes tasks cleanly from various input shapes", () => {
+    // 1. Single task string
+    const single = normalizeTasks({ task: "test task" });
+    expect(single.tasks).toEqual([{ task: "test task" }]);
+    expect(single.isChain).toBe(false);
+    expect(single.isAsync).toBe(false);
+
+    // 2. Structured tasks object array with chain
+    const chain = normalizeTasks({
+      chain: true,
+      async: true,
+      tasks: [
+        { task: "step 1", agent: "scout" },
+        { task: "step 2", agent: "reviewer", model: "gpt-5" },
+      ],
+    });
+    expect(chain.isChain).toBe(true);
+    expect(chain.isAsync).toBe(true);
+    expect(chain.tasks.length).toBe(2);
+    expect(chain.tasks[0]?.agent).toBe("scout");
+    expect(chain.tasks[1]?.model).toBe("gpt-5");
+
+    // 3. String array fallback
+    const stringArray = normalizeTasks({
+      tasks: ["task a", "task b"],
+      agent: "default-agent",
+    });
+    expect(stringArray.tasks.length).toBe(2);
+    expect(stringArray.tasks[0]?.task).toBe("task a");
+    expect(stringArray.tasks[0]?.agent).toBe("default-agent");
+    expect(stringArray.tasks[1]?.task).toBe("task b");
+  });
+
+  it("manages background subagent tasks lifecycle", async () => {
+    const mgr = new SubagentBackgroundManager();
+    let exitNotified = false;
+    mgr.init((t) => {
+      if (t.id === "sub_1") exitNotified = true;
+    });
+
+    const controller = new AbortController();
+    mgr.register({
+      id: "sub_1",
+      parentSessionId: "session_123",
+      description: "testing bg",
+      status: "running",
+      output: "",
+      startedAt: Date.now(),
+      controller,
+      notifyOnExit: true,
+      done: Promise.resolve(),
+    });
+
+    const list = mgr.list("session_123");
+    expect(list.length).toBe(1);
+    expect(list[0]?.status).toBe("running");
+
+    mgr.complete("sub_1", "all good", false);
+    expect(exitNotified).toBe(true);
+    expect(list[0]?.status).toBe("succeeded");
+    expect(list[0]?.output).toBe("all good");
+
+    await mgr.clearSession("session_123");
+    expect(mgr.list("session_123").length).toBe(0);
   });
 
   it("resolves pi cli executable cleanly", () => {
