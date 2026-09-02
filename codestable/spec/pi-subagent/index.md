@@ -2,7 +2,7 @@
 
 ## 定位
 
-`@bytetrue/pi-subagent` 提供单一轻量 Agent 工具 `subagent` 以及用户配置命令 `/subagent`：在隔离的子进程会话中执行特定的子任务、独立调研或代码审查，并带有实时的 TUI 差分进度卡片和 Token/费用统计。
+`@bytetrue/pi-subagent` 提供单一轻量 Agent 工具 `subagent` 以及用户配置命令 `/subagent`：在隔离的子进程会话中执行特定子任务、代码审查或探索性工作，并带有实时的 TUI 差分进度卡片和 Token/费用统计。
 
 它不依赖任何外部框架或 Python 脚本，采用纯 TypeScript 实现，通过 Pi 原生 CLI 启动子进程并流式解析 JSON 事件。
 
@@ -35,7 +35,7 @@
 
 | 目的 | 入口 |
 |---|---|
-| 执行独立调研 / 代码审查 | `subagent({ task: "...", tools: ["read", "grep", "find"] })` |
+| 执行独立子任务 / 审查 / 探索 | `subagent({ task: "..." })` |
 | 并行对比或批量处理 | `subagent({ mode: "parallel", tasks: ["task 1", "task 2"] })` |
 | 链式多步骤流转 | `subagent({ mode: "chain", tasks: ["step 1", "step 2"] })` |
 | 配置默认模型与角色映射 | `/subagent` 用户菜单 |

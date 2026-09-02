@@ -2,7 +2,7 @@
 
 Lightweight, high-performance Subagent runner for [Pi coding agent](https://pi.dev).
 
-Spawns focused child agents in isolated sessions for research, code review, or sub-task delegation, complete with real-time TUI progress streaming, token & cost tracking, and parallel/chain orchestration.
+Spawns focused child agents in isolated sessions for delegating tasks, background work, code reviews, or investigations, complete with real-time TUI progress streaming, token & cost tracking, and parallel/chain orchestration.
 
 ## Features
 

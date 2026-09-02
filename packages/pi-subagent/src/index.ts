@@ -1266,29 +1266,29 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Execute a task or research investigation in an isolated subagent session. Supports single task, parallel fanout, or sequential chain execution with real-time progress card.",
+      "Execute tasks in an isolated child agent session. Supports single task execution, parallel fanout across multiple prompts, or sequential chained steps with real-time progress tracking.",
     parameters: {
       type: "object",
       properties: {
         task: {
           type: "string",
-          description: "Task or research objective for the subagent.",
+          description: "The task or prompt for the subagent to execute.",
         },
         agent: {
           type: "string",
           description:
-            "Optional agent definition name (loads prompt/tools from .pi/agents/<name>.md if present).",
+            "Optional agent role name (loads system prompt and defaults from .pi/agents/<name>.md).",
         },
         mode: {
           type: "string",
           enum: ["single", "parallel", "chain"],
           description:
-            "Execution mode: 'single' (default), 'parallel' (run multiple tasks simultaneously), or 'chain' (step-by-step pipeline).",
+            "Execution mode: 'single' (default), 'parallel' (run multiple tasks concurrently), or 'chain' (step-by-step pipeline).",
         },
         tasks: {
           type: "array",
           items: { type: "string" },
-          description: "List of tasks for 'parallel' or 'chain' execution.",
+          description: "List of task prompts for 'parallel' or 'chain' execution.",
         },
         model: {
           type: "string",
@@ -1304,7 +1304,7 @@ export default function subagentExtension(pi: {
           type: "array",
           items: { type: "string" },
           description:
-            "Optional tool allowlist for the child agent (e.g. ['read', 'grep', 'find', 'web_search'] for read-only research).",
+            "Optional tool allowlist for the child agent (e.g. ['read', 'grep', 'find'] or ['read', 'edit', 'write', 'bash']).",
         },
         cwd: {
           type: "string",
