@@ -6,19 +6,15 @@ Spawns focused child agents in isolated sessions for delegating tasks, backgroun
 
 ## Features
 
-- **⚙️ `/subagent` Slash Command**: Interactive TUI menu to configure global/project default models, thinking levels, and per-role overrides (e.g. `researcher`, `reviewer`).
 - **⚡️ Zero Bloat & Minimal Context**: Single lightweight tool schema (~150 tokens) replaces heavy multi-thousand-token multi-agent frameworks.
-- **📊 Real-time TUI Card**: Differential progress card showing live execution duration, current thinking intent, active tool call traces with arguments, token usage, and cost tracking.
-- **⌨️ Interactive Expansion**: Press `Alt+O` to toggle detailed execution traces on the active subagent card.
-- **🔄 Flexible Execution Modes**:
-  - `single`: Focus on one task/investigation.
-  - `parallel`: Run multiple prompts concurrently and aggregate results.
-  - `chain`: Run multi-step pipeline passing previous output forward.
-- **🎯 Precision Control**:
-  - `tools`: Restrict child agent capabilities (e.g. `["read", "grep", "find", "web_search"]` for safe read-only research).
-  - `model`: Model override per sub-agent run (e.g. use a faster or specialized reasoning model).
-  - `thinking`: Thinking level override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`).
-- **📁 Agent Definitions**: Automatically discovers agent definitions in `.pi/agents/<name>.md` or `~/.pi/agent/agents/<name>.md`.
+- **🎭 Built-in Golden Roles**:
+  - `scout`: Fast read-only codebase reconnaissance (`read, grep, find`, `thinking: low`).
+  - `researcher`: Autonomous web & technical documentation research (`read, grep, find, web_search, web_fetch`, `thinking: medium`).
+  - `reviewer`: Disciplined adversarial code review and test validation (`read, grep, find, bash`, `thinking: high`).
+- **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
+- **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
+- **📊 Real-time TUI Card**: Differential progress card showing live execution duration, current thinking intent, active tool call traces with arguments, token usage, and cost tracking (`Alt+O` to expand/collapse).
+- **⚙️ `/subagent` Slash Command**: Interactive TUI menu to configure global/project default models, thinking levels, and per-role overrides.
 
 ## Installation
 

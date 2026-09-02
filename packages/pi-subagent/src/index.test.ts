@@ -36,6 +36,7 @@ describe("pi-subagent unit tests", () => {
       id: "test-1",
       agent: "tester",
       prompt: "do something",
+      sessionId: "session-1",
       status: "pending",
       finalText: "",
       textTail: "",
@@ -128,11 +129,39 @@ describe("pi-subagent unit tests", () => {
     expect(args).toContain("--mode");
     expect(args).toContain("json");
     expect(args).toContain("-p");
-    expect(args).toContain("--no-session");
     expect(args).toContain("--model");
     expect(args).toContain("openai/gpt-4o:low");
     expect(args).toContain("--tools");
     expect(args).toContain("read,grep");
+  });
+
+  it("builds session args for new session and resume", () => {
+    const newSessionArgs = buildPiArgs({ sessionId: "sub_123" });
+    expect(newSessionArgs).toContain("--session-id");
+    expect(newSessionArgs).toContain("sub_123");
+    expect(newSessionArgs).not.toContain("--no-session");
+
+    const resumeSessionArgs = buildPiArgs({ resumeSession: "sub_123" });
+    expect(resumeSessionArgs).toContain("--session");
+    expect(resumeSessionArgs).toContain("sub_123");
+  });
+
+  it("resolves built-in agent presets when no disk file exists", () => {
+    const scout = findAgentDefinition(process.cwd(), "scout");
+    expect(scout.found).toBe(true);
+    expect(scout.config.tools).toEqual(["read", "grep", "find"]);
+    expect(scout.config.thinking).toBe("low");
+    expect(scout.config.systemPrompt).toContain("scouting subagent");
+
+    const researcher = findAgentDefinition(process.cwd(), "researcher");
+    expect(researcher.found).toBe(true);
+    expect(researcher.config.tools).toEqual(["read", "grep", "find", "web_search", "web_fetch"]);
+    expect(researcher.config.thinking).toBe("medium");
+
+    const reviewer = findAgentDefinition(process.cwd(), "reviewer");
+    expect(reviewer.found).toBe(true);
+    expect(reviewer.config.tools).toEqual(["read", "grep", "find", "bash"]);
+    expect(reviewer.config.thinking).toBe("high");
   });
 
   it("resolves model and thinking through settings hierarchy", () => {

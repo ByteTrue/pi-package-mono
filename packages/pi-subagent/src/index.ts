@@ -7,7 +7,10 @@ import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
 import { loadSubagentSettings, type SubagentSettings } from "./settings.js";
 import { runSubagentCommand } from "./command.js";
+import { BUILTIN_AGENTS, type AgentConfig } from "./builtin-agents.js";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+
+export { BUILTIN_AGENTS, type AgentConfig };
 
 // ── Types ──────────────────────────────────────────────────────────────
 export type JsonObject = Record<string, unknown>;
@@ -41,6 +44,10 @@ export interface SubagentTaskItem {
   thinking?: string;
   tools?: string[];
   cwd?: string;
+  resume?: string;
+  id?: string;
+  timeoutMs?: number;
+  maxTurns?: number;
 }
 
 export interface SubagentInput {
@@ -49,6 +56,9 @@ export interface SubagentInput {
   chain?: boolean;
   async?: boolean;
   background?: boolean;
+  resume?: string;
+  timeoutMs?: number;
+  maxTurns?: number;
   // Legacy / fallback fields
   mode?: string;
   prompts?: string[];
@@ -59,18 +69,15 @@ export interface SubagentInput {
   cwd?: string;
 }
 
-export interface AgentConfig {
-  model?: string;
-  thinking?: string;
-  tools?: string[];
-  systemPrompt?: string;
-}
-
 export interface PiRunConfig {
   model?: string;
   thinking?: string;
   tools?: string[];
   cwd?: string;
+  sessionId?: string;
+  resumeSession?: string;
+  timeoutMs?: number;
+  maxTurns?: number;
 }
 
 // ── Lazy-load pi-tui with safe string truncation fallback ──────────────
@@ -113,10 +120,12 @@ const MAX_PARALLEL_TASKS = 16;
 const ABORT_KILL_GRACE_MS = 1500;
 const THROTTLE_MS = 300;
 const MAX_FALLBACK_OUTPUT_CHARS = 8192;
+const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+const DEFAULT_MAX_TURNS = 50; // 50 turns
 let toolCallCounter = 0;
 
 // ── State types ───────────────────────────────────────────────────────
-export type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled" | "paused";
 export type ToolStatus = "running" | "succeeded" | "failed";
 
 export interface Usage {
@@ -142,8 +151,10 @@ export interface RunState {
   id: string;
   agent: string;
   prompt: string;
+  sessionId: string;
   step?: number;
   status: RunStatus;
+  pauseReason?: "timeout" | "max_turns";
   startedAt?: number;
   finishedAt?: number;
   finalText: string;
@@ -274,6 +285,7 @@ function thinkingIntent(text: string): string {
 
 function behaviorSummary(r: RunState): string {
   if (r.status === "succeeded") return "Task completed successfully";
+  if (r.status === "paused") return `Task paused (${r.pauseReason === "timeout" ? "timeout" : "max turns reached"})`;
   if (r.status === "failed") return "Task failed with error";
   if (r.status === "cancelled") return "Task was cancelled";
 
@@ -310,13 +322,16 @@ function behaviorSummary(r: RunState): string {
 function progressState(d: ProgressDetails): string {
   const running = d.runs.filter((r) => r.status === "running").length;
   const failed = d.runs.some((r) => r.status === "failed");
+  const paused = d.runs.some((r) => r.status === "paused");
   return failed
     ? "failed"
-    : d.final
-      ? "completed"
-      : running
-        ? `${running} running`
-        : "pending";
+    : paused
+      ? "paused"
+      : d.final
+        ? "completed"
+        : running
+          ? `${running} running`
+          : "pending";
 }
 
 function progressDone(d: ProgressDetails): number {
@@ -388,7 +403,9 @@ function renderProgressCard(
   const icon = d.final
     ? d.runs.some((x) => x.status === "failed")
       ? "✗"
-      : "✓"
+      : d.runs.some((x) => x.status === "paused")
+        ? "⏸"
+        : "✓"
     : spinner;
   const totalElapsed = fmtDur((d.final ? d.updatedAt : Date.now()) - d.startedAt);
   const modeLabel = d.mode === "chain" ? "pipeline" : d.runs.length > 1 ? "parallel" : "single";
@@ -540,11 +557,18 @@ function newUsage(): Usage {
   };
 }
 
-function newRun(id: string, agent: string, prompt: string, step?: number): RunState {
+function newRun(
+  id: string,
+  agent: string,
+  prompt: string,
+  sessionId: string,
+  step?: number,
+): RunState {
   return {
     id,
     agent,
     prompt: trunc(prompt.replace(/\s+/g, " ").trim(), 120) || "(empty)",
+    sessionId,
     step,
     status: "pending",
     finalText: "",
@@ -685,7 +709,7 @@ export function parseAgentFile(filePath: string): AgentConfig {
 
 export function findAgentDefinition(cwd: string, agentName?: string): { config: AgentConfig; found: boolean } {
   if (!agentName) return { config: {}, found: false };
-  const sanitized = agentName.replace(/[\\/]/g, "").replace(/\.\./g, "").trim();
+  const sanitized = agentName.replace(/[\\/]/g, "").replace(/\.\./g, "").trim().toLowerCase();
   if (!sanitized) return { config: {}, found: false };
   const baseName = sanitized.endsWith(".md") ? sanitized : `${sanitized}.md`;
   const agentHome = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -699,6 +723,13 @@ export function findAgentDefinition(cwd: string, agentName?: string): { config: 
       return { config: parseAgentFile(p), found: true };
     }
   }
+
+  // Check built-in agent presets (scout, researcher, reviewer)
+  const cleanKey = sanitized.replace(/\.md$/, "");
+  if (cleanKey in BUILTIN_AGENTS) {
+    return { config: BUILTIN_AGENTS[cleanKey]!, found: true };
+  }
+
   return { config: {}, found: false };
 }
 
@@ -748,15 +779,43 @@ export function resolveRunCfg(
         ? roleSettings.tools
         : agentCfg.tools;
   const cwd = item.cwd ? resolve(item.cwd) : undefined;
+  const resumeSession = str(item.resume);
+  const sessionId = item.id ? str(item.id) : undefined;
+  const timeoutMs = typeof item.timeoutMs === "number" && item.timeoutMs > 0 ? item.timeoutMs : undefined;
+  const maxTurns = typeof item.maxTurns === "number" && item.maxTurns > 0 ? item.maxTurns : undefined;
 
   if (baseModel && thinking && thinking !== "off") {
-    return { model: `${baseModel}:${thinking}`, thinking, tools, cwd };
+    return {
+      model: `${baseModel}:${thinking}`,
+      thinking,
+      tools,
+      cwd,
+      sessionId: sessionId || undefined,
+      resumeSession: resumeSession || undefined,
+      timeoutMs,
+      maxTurns,
+    };
   }
-  return { model: baseModel || rawModel || undefined, thinking, tools, cwd };
+  return {
+    model: baseModel || rawModel || undefined,
+    thinking,
+    tools,
+    cwd,
+    sessionId: sessionId || undefined,
+    resumeSession: resumeSession || undefined,
+    timeoutMs,
+    maxTurns,
+  };
 }
 
 export function buildPiArgs(cfg: PiRunConfig): string[] {
-  const args = ["--mode", "json", "-p", "--no-session"];
+  const args = ["--mode", "json", "-p"];
+  if (cfg.resumeSession) {
+    args.push("--session", cfg.resumeSession);
+  } else if (cfg.sessionId) {
+    args.push("--session-id", cfg.sessionId);
+  }
+
   if (cfg.model) {
     args.push(
       "--model",
@@ -952,7 +1011,7 @@ export function runPi(
   state: RunState,
   emit: () => void,
   signal?: AbortSignal,
-): Promise<{ output: string; failed: boolean }> {
+): Promise<{ output: string; failed: boolean; paused?: boolean }> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
       state.status = "cancelled";
@@ -982,9 +1041,14 @@ export function runPi(
     let settled = false;
     let aborted = false;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const abort = () => {
+    const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const maxTurns = cfg.maxTurns ?? DEFAULT_MAX_TURNS;
+
+    const abort = (reason?: "timeout" | "max_turns") => {
       aborted = true;
+      if (reason) state.pauseReason = reason;
       cli.kill();
       killTimer = setTimeout(() => {
         if (!settled && cli.exitCode === null) cli.kill("SIGKILL");
@@ -992,23 +1056,37 @@ export function runPi(
       killTimer?.unref?.();
     };
 
-    const done = (v: { output: string; failed: boolean }) => {
+    if (timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        abort("timeout");
+      }, timeoutMs);
+      timeoutTimer?.unref?.();
+    }
+
+    const onAbort = () => abort();
+    const done = (v: { output: string; failed: boolean; paused?: boolean }) => {
       if (settled) return;
       settled = true;
       if (killTimer) clearTimeout(killTimer);
-      signal?.removeEventListener("abort", abort);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      signal?.removeEventListener("abort", onAbort);
       emit();
       resolve(v);
     };
 
-    signal?.addEventListener("abort", abort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
     state.status = "running";
     state.startedAt = Date.now();
     emit();
 
     const processLine = (line: string) => {
       const evt = parseJsonEvent(line);
-      if (evt && applyEvent(state, evt)) emit();
+      if (evt && applyEvent(state, evt)) {
+        emit();
+        if (state.usage.turns >= maxTurns && !aborted) {
+          abort("max_turns");
+        }
+      }
     };
 
     cli.stdout?.on("data", (d: Buffer) => {
@@ -1049,6 +1127,23 @@ export function runPi(
       const err = stderr.toString();
       state.stderrTail = appendTail("", stderrDecoder.end() || err, MAX_TAIL);
       state.finishedAt = Date.now();
+
+      if (state.pauseReason) {
+        state.status = "paused";
+        const reasonText =
+          state.pauseReason === "timeout"
+            ? `timed out after ${fmtDur(timeoutMs)}`
+            : `reached maximum limit of ${maxTurns} turns`;
+        const partialResult = finalize(state, formatPiOutput(out, err));
+        const notice = `\n\n---\n⚠️ [Subagent session ${state.sessionId} paused: ${reasonText}]\n💡 To resume this session from where it left off, call: subagent({ tasks: [{ resume: "${state.sessionId}", task: "Continue the remaining work" }] })`;
+        done({
+          output: partialResult ? `${partialResult}${notice}` : notice.trim(),
+          failed: false,
+          paused: true,
+        });
+        return;
+      }
+
       if (aborted) {
         state.status = "cancelled";
         state.errorMessage = "cancelled";
@@ -1090,9 +1185,13 @@ export function normalizeTasks(input: SubagentInput): {
   tasks: SubagentTaskItem[];
   isChain: boolean;
   isAsync: boolean;
+  timeoutMs?: number;
+  maxTurns?: number;
 } {
   const isChain = Boolean(input.chain || input.mode === "chain");
   const isAsync = Boolean(input.async || input.background);
+  const timeoutMs = typeof input.timeoutMs === "number" && input.timeoutMs > 0 ? input.timeoutMs : undefined;
+  const maxTurns = typeof input.maxTurns === "number" && input.maxTurns > 0 ? input.maxTurns : undefined;
 
   const rawList = input.tasks ?? input.prompts;
   const items: SubagentTaskItem[] = [];
@@ -1109,6 +1208,9 @@ export function normalizeTasks(input: SubagentInput): {
             thinking: input.thinking,
             tools: input.tools,
             cwd: input.cwd,
+            resume: input.resume,
+            timeoutMs,
+            maxTurns,
           });
         }
       } else if (item && typeof item === "object") {
@@ -1121,6 +1223,10 @@ export function normalizeTasks(input: SubagentInput): {
             thinking: item.thinking ?? input.thinking,
             tools: item.tools ?? input.tools,
             cwd: item.cwd ?? input.cwd,
+            resume: item.resume ?? input.resume,
+            id: item.id,
+            timeoutMs: item.timeoutMs ?? timeoutMs,
+            maxTurns: item.maxTurns ?? maxTurns,
           });
         }
       }
@@ -1138,11 +1244,14 @@ export function normalizeTasks(input: SubagentInput): {
         thinking: input.thinking,
         tools: input.tools,
         cwd: input.cwd,
+        resume: input.resume,
+        timeoutMs,
+        maxTurns,
       });
     }
   }
 
-  return { tasks: items, isChain, isAsync };
+  return { tasks: items, isChain, isAsync, timeoutMs, maxTurns };
 }
 
 // ── Background Manager ────────────────────────────────────────────────
@@ -1150,7 +1259,7 @@ export interface BackgroundSubagentTask {
   id: string;
   parentSessionId: string;
   description: string;
-  status: "running" | "succeeded" | "failed" | "cancelled";
+  status: "running" | "succeeded" | "failed" | "cancelled" | "paused";
   output: string;
   startedAt: number;
   finishedAt?: number;
@@ -1174,10 +1283,10 @@ export class SubagentBackgroundManager {
     this.emitChange();
   }
 
-  complete(id: string, output: string, failed: boolean, cancelled = false): void {
+  complete(id: string, output: string, failed: boolean, cancelled = false, paused = false): void {
     const t = this.tasks.get(id);
     if (!t) return;
-    t.status = cancelled ? "cancelled" : failed ? "failed" : "succeeded";
+    t.status = cancelled ? "cancelled" : paused ? "paused" : failed ? "failed" : "succeeded";
     t.output = output;
     t.finishedAt = Date.now();
     this.emitChange();
@@ -1225,10 +1334,10 @@ export async function runSubagent(
   onUpdate?: (r: PiToolResult) => void,
   inheritedThinking?: string,
   inheritedModel?: string,
-): Promise<{ output: string; details: ProgressDetails; failed: boolean }> {
+): Promise<{ output: string; details: ProgressDetails; failed: boolean; paused?: boolean }> {
   const { tasks: taskItems, isChain } = normalizeTasks(input);
   if (taskItems.length === 0) {
-    throw new Error("No task specified. Provide 'tasks' or 'task'.");
+    throw new Error("No task specified. Provide 'tasks' with at least one task item.");
   }
   if (taskItems.length > MAX_PARALLEL_TASKS) {
     throw new Error(`Subagent supports at most ${MAX_PARALLEL_TASKS} tasks.`);
@@ -1270,29 +1379,31 @@ export async function runSubagent(
     pushPartial(force);
   };
 
-  const finish = (output: string, failed: boolean) => {
+  const finish = (output: string, failed: boolean, paused = false) => {
     closed = true;
     details.final = true;
     details.updatedAt = Date.now();
-    return { output, details: cloneProgress(details), failed };
+    return { output, details: cloneProgress(details), failed, paused };
   };
 
   try {
     if (isChain) {
       let prev = "";
       let failed = false;
+      let paused = false;
       for (let i = 0; i < taskItems.length; i++) {
         const item = taskItems[i]!;
         const role = item.agent || "subagent";
+        const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
         const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
         const runCfg = resolveRunCfg(
-          item,
+          { ...item, id: sessionId },
           agentCfg,
           inheritedThinking,
           inheritedModel,
           subagentSettings,
         );
-        const rs = newRun(`${role}-${i + 1}`, role, item.task, i + 1);
+        const rs = newRun(`${role}-${i + 1}`, role, item.task, sessionId, i + 1);
         applyRunConfig(rs, runCfg);
         details.runs.push(rs);
         emit(true);
@@ -1310,23 +1421,25 @@ export async function runSubagent(
         );
         prev = result.output;
         failed = failed || result.failed;
-        if (result.failed) break;
+        paused = paused || Boolean(result.paused);
+        if (result.failed || result.paused) break;
       }
-      return finish(prev, failed);
+      return finish(prev, failed, paused);
     }
 
     // Concurrent mode (single or parallel)
     details.runs = taskItems.map((item, i) => {
       const role = item.agent || "subagent";
+      const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
       const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
       const runCfg = resolveRunCfg(
-        item,
+        { ...item, id: sessionId },
         agentCfg,
         inheritedThinking,
         inheritedModel,
         subagentSettings,
       );
-      const r = newRun(`${role}-${i + 1}`, role, item.task);
+      const r = newRun(`${role}-${i + 1}`, role, item.task, sessionId);
       applyRunConfig(r, runCfg);
       return r;
     });
@@ -1334,9 +1447,10 @@ export async function runSubagent(
 
     const results = await Promise.all(
       taskItems.map((item, i) => {
+        const sessionId = details.runs[i]!.sessionId;
         const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
         const runCfg = resolveRunCfg(
-          item,
+          { ...item, id: sessionId },
           agentCfg,
           inheritedThinking,
           inheritedModel,
@@ -1354,13 +1468,17 @@ export async function runSubagent(
     );
 
     if (results.length === 1) {
-      return finish(results[0]!.output, results[0]!.failed);
+      return finish(results[0]!.output, results[0]!.failed, results[0]!.paused);
     }
 
     const aggregated = results
       .map((r, i) => `### Task ${i + 1} (${taskItems[i]?.agent || "subagent"}):\n${r.output}`)
       .join("\n\n---\n\n");
-    return finish(aggregated, results.some((r) => r.failed));
+    return finish(
+      aggregated,
+      results.some((r) => r.failed),
+      results.some((r) => r.paused),
+    );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const r = activeRun(details);
@@ -1463,7 +1581,7 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Execute tasks in isolated child agent sessions. Runs concurrently by default, or sequentially when chain is true. Supports background execution.",
+      "Execute tasks in isolated child agent sessions. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). Runs concurrently by default, or sequentially when chain is true. Supports background execution and session resumption.",
     parameters: {
       type: "object",
       properties: {
@@ -1479,7 +1597,8 @@ export default function subagentExtension(pi: {
               },
               agent: {
                 type: "string",
-                description: "Optional agent role name (e.g. 'reviewer', 'researcher').",
+                description:
+                  "Optional agent role (e.g. 'scout', 'researcher', 'reviewer', or custom name).",
               },
               model: {
                 type: "string",
@@ -1499,6 +1618,18 @@ export default function subagentExtension(pi: {
                 type: "string",
                 description: "Optional working directory.",
               },
+              resume: {
+                type: "string",
+                description: "Optional session ID or partial UUID to resume a previous subagent session.",
+              },
+              timeoutMs: {
+                type: "number",
+                description: "Optional task timeout in milliseconds. Default: 1200000 (20 minutes).",
+              },
+              maxTurns: {
+                type: "number",
+                description: "Optional maximum turns before pausing. Default: 50.",
+              },
             },
             required: ["task"],
           },
@@ -1512,6 +1643,16 @@ export default function subagentExtension(pi: {
           type: "boolean",
           description:
             "Optional. If true, runs in the background and notifies the main session when finished. Default: false.",
+        },
+        timeoutMs: {
+          type: "number",
+          description:
+            "Optional global timeout in milliseconds for all tasks. Default: 1200000 (20 minutes).",
+        },
+        maxTurns: {
+          type: "number",
+          description:
+            "Optional global maximum turns before pausing. Default: 50.",
         },
       },
       required: ["tasks"],
@@ -1569,7 +1710,13 @@ export default function subagentExtension(pi: {
           inheritedModel,
         )
           .then((res) => {
-            subagentManager.complete(taskId, res.output, res.failed, taskController.signal.aborted);
+            subagentManager.complete(
+              taskId,
+              res.output,
+              res.failed,
+              taskController.signal.aborted,
+              res.paused,
+            );
           })
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1707,8 +1854,10 @@ function formatSubagentExitMessage(task: BackgroundSubagentTask): string {
   const outcome =
     task.status === "cancelled"
       ? "was cancelled"
-      : task.status === "failed"
-        ? "failed"
-        : "completed successfully";
+      : task.status === "paused"
+        ? "was paused"
+        : task.status === "failed"
+          ? "failed"
+          : "completed successfully";
   return `[Subagent Task ${task.id}] (${task.description}) ${outcome}.\n\n${task.output}`;
 }

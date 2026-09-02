@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-subagent",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Pi extension: lightweight subagent runner with streaming execution, live TUI progress card, parallel/chain execution, and zero framework lock-in.",
   "keywords": [
     "pi-package",
