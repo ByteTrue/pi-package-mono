@@ -25,3 +25,10 @@ created: 2026-09-03
 - codestable：已同步 `codestable/spec/pi-background-terminal/index.md`（定位、当前表面、使用路径、实现地图、明确不做、验证、证据）
 
 顺手发现（可选）：`isToolCallEventType` 自 0.51.0 就有、入参 mutation 自 0.63.1 文档化，都远低于 peer 下限 0.80.4，无需动 peer。
+
+## 发布
+
+- 版本 `0.5.0` → `0.6.0`（minor：新增默认超时行为，对所有用户是行为变化）。
+- commit `2dca539` 推送 origin/main；tag `pi-background-terminal-v0.6.0` 触发 `release.yml`（run `33785955690`）：typecheck → npm test → OIDC Trusted Publishing 全部 ✓，历时 1m2s。
+- npm 已生效：`latest = 0.6.0`；tarball 反验 10 文件干净（测试未泄漏，`bash-default-timeout.ts` 在包内）。
+- 本机全局包更新至 0.6.0，正常配置启动冒烟无扩展加载错误。README peer 说明同步修正为 `>=0.80.4`（与 package.json 实际一致）。
