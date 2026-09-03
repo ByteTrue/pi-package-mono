@@ -2,11 +2,20 @@
 
 ## 定位
 
-`@bytetrue/pi-background-terminal` 提供三个独立 Agent 工具和一个 `/background` 用户菜单：后台启动命令、查看单个任务、停止单个任务。它不覆盖或注册任何 Pi 内建工具名，不改变 `bash`。
+`@bytetrue/pi-background-terminal` 提供三层能力：给内建 `bash`/`powershell` 工具注入默认超时（tool_call 钩子，非覆盖）、三个独立后台 Agent 工具、一个 `/background` 用户菜单。它不覆盖、不重注册任何 Pi 内建工具名。
 
-Peer：`@earendil-works/pi-coding-agent >=0.80.4`（`agent_settled` 事件的最低版本）。npm `latest`：`0.5.0`。
+Peer：`@earendil-works/pi-coding-agent >=0.80.4`（`agent_settled` 事件的最低版本）。npm `latest`：`0.6.0`。
 
 ## 当前表面
+
+### 默认 shell 超时
+
+- Pi 内建 `bash`（及 Windows 下的 `powershell`，两者共享同一 schema）默认无超时，一条失控前台命令能把 Agent 卡住数小时。
+- 扩展监听 `tool_call` 事件（Pi 自 0.63.1 文档化支持原地改写入参），对未传 `timeout` 的 shell 工具调用注入 `timeout: 600`（10 分钟）。
+- 显式传入的 `timeout` 原样尊重；`background_run` 不在注入范围（后台任务本就应该长时间运行）；其他工具（read/grep/find/…）不受影响。
+- 内建工具本身从未被覆盖或重注册；注入对模型不可见（不改变工具 schema）。
+
+### 后台工具
 
 - `background_run(command)`：通过 Pi 的 `createLocalBashOperations().exec()` 启动命令并立即返回 task id 与输出文件路径。只用于需要越过本次工具调用继续运行的 dev server、watch mode 或长任务；普通命令使用内建 `bash`。
 - `background_status(id)`：返回该任务的状态、退出码、输出文件路径、累计行数和约 4000 字符 tail。完整输出由 Agent 用内建 `read` 读取文件。
@@ -33,7 +42,7 @@ Pi 的 `/reload` 会在同一 session 重新加载 extension module。manager �
 
 | 目的 | 入口 |
 |---|---|
-| 普通命令，等待结果 | Pi 内建 `bash` |
+| 普通命令，等待结果（默认 10 分钟超时，可显式传 timeout） | Pi 内建 `bash` |
 | 启动需要后台继续运行的命令 | `background_run(command)` |
 | 查看一个任务 | `background_status(id)` |
 | 阅读完整或大量输出 | `read` 读取 status 返回的文件路径 |
@@ -48,6 +57,7 @@ src/index.ts
   ├─ tools/background-run.ts
   ├─ tools/background-status.ts
   ├─ tools/background-kill.ts
+  ├─ bash-default-timeout.ts    tool_call 钩子：注入默认 timeout: 600
   ├─ background-command.ts       /background 菜单
   └─ background/manager.ts
        ├─ createLocalBashOperations().exec()
@@ -59,9 +69,9 @@ src/index.ts
 
 ## 明确不做
 
-- 覆盖或修改 Pi 原生工具；
+- 覆盖、重注册或改 schema 任何 Pi 原生工具；
 - PTY、交互式 stdin、tmux、daemon、Web UI 或远程面板；
-- 自动 timeout；
+- 可配置的默认超时值（固定 600 秒）；
 - 自定义 workdir/env；
 - 自制 shell backend、输出分页或文件查看工具；
 - Pi 退出后的进程持久化。
@@ -74,7 +84,7 @@ npm --workspace @bytetrue/pi-background-terminal run typecheck
 npm --workspace @bytetrue/pi-background-terminal pack --dry-run
 ```
 
-真实 Pi 回归还应确认：三个 tool schema 只有必填参数；后台命令立即返回；自然完成自动唤醒；kill 静默；session shutdown 无残留进程；`/reload` 后任务仍可查询和停止。
+真实 Pi 回归还应确认：三个 tool schema 只有必填参数；后台命令立即返回；自然完成自动唤醒；kill 静默；session shutdown 无残留进程；`/reload` 后任务仍可查询和停止；无 timeout 的 bash 调用被注入 600s 默认值（超时后报 `Command timed out after 600 seconds`）、显式 timeout 与 background_run 不受影响。
 
 ## 证据
 
@@ -83,5 +93,6 @@ npm --workspace @bytetrue/pi-background-terminal pack --dry-run
 - 讨论：`codestable/talks/004-background-terminal-redesign.md`
 - 历史：`codestable/issues/025-x-background-terminal-package.md`、`codestable/issues/037-x-background-terminal-tool-selection.md`、`codestable/issues/038-x-background-terminal-bash-override-redesign.md`
 - 独立工具版本：`codestable/issues/039-x-background-terminal-standalone-tools.md`
+- 默认超时注入（本次）：`codestable/issues/065-x-ff-bash-default-timeout.md`
 - 生命周期与菜单：`codestable/issues/042-x-background-terminal-menu-lifecycle.md`
 - 自动发布：`.github/workflows/release.yml`

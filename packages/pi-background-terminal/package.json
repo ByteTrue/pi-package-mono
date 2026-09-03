@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-background-terminal",
-  "version": "0.5.0",
-  "description": "Pi extension: run a shell command in the background, check on it, stop it, get notified when it finishes. Does not override bash.",
+  "version": "0.6.0",
+  "description": "Pi extension: run a shell command in the background, check on it, stop it, get notified when it finishes. Also gives the built-in bash/powershell tools a default timeout without overriding them.",
   "keywords": [
     "pi-package",
     "pi-extension",

@@ -1,5 +1,6 @@
 import { truncateLine, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { manager, type BackgroundTask } from "./background/manager.js";
+import { registerBashDefaultTimeout } from "./bash-default-timeout.js";
 import { registerBackgroundCommand } from "./background-command.js";
 import { registerBackgroundKillTool } from "./tools/background-kill.js";
 import { registerBackgroundRunTool } from "./tools/background-run.js";
@@ -47,6 +48,7 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
   );
 
   registerBackgroundCommand(pi);
+  registerBashDefaultTimeout(pi);
   registerBackgroundRunTool(pi);
   registerBackgroundStatusTool(pi);
   registerBackgroundKillTool(pi);

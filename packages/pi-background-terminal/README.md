@@ -10,7 +10,10 @@
   <a href="https://www.npmjs.com/package/@bytetrue/pi-background-terminal"><img src="https://img.shields.io/npm/v/@bytetrue/pi-background-terminal?style=flat-square" alt="npm version"></a>
 </p>
 
-Pi's built-in `bash` is the right tool for commands that finish during the current call. This extension adds a separate path for dev servers, watch mode, and long-running work—without overriding `bash`.
+Pi's built-in `bash` is the right tool for commands that finish during the current call. This extension adds two things on top of it—without overriding any built-in tool:
+
+- a separate background path for dev servers, watch mode, and long-running work; and
+- a **default 10-minute timeout** for built-in `bash`/`powershell` calls that do not pass one.
 
 ## Install
 
@@ -33,6 +36,16 @@ The Agent starts the command, returns immediately, and receives a follow-up when
 | `background_kill` | `id` | Stops a running task |
 
 All three schemas contain required parameters only. There are no timeout, working-directory, environment, list, or pagination arguments.
+
+## Default shell timeout
+
+Pi's built-in `bash` (and `powershell` on Windows) runs with **no timeout at all** unless the model passes one—which means a single runaway foreground command (`find /`, a wedged build) can hang the agent for hours.
+
+This extension listens to Pi's `tool_call` event and injects `timeout: 600` into shell tool calls that did not pass their own:
+
+- the model explicitly passing `timeout` is respected as-is;
+- background tasks (`background_run`) are not affected—they are supposed to run long;
+- the built-in tools themselves are never overridden or re-registered.
 
 > [!NOTE]
 > Full stdout and stderr stream to the output file returned by `background_run`. The Agent uses Pi's built-in `read` tool when it needs more than the recent preview.
@@ -58,8 +71,8 @@ Output is stored under `$TMPDIR/pi-background-terminal/` and removed at real ses
 ## Deliberate limits
 
 - No PTY or interactive stdin
-- No automatic timeout
 - No custom `cwd` or environment input
+- No configurable default timeout value (600 seconds is fixed)
 - No daemon, tmux dependency, Web UI, or cross-session persistence
 - No replacement for Pi's built-in `bash` or `read`
 
@@ -71,4 +84,4 @@ npm --workspace @bytetrue/pi-background-terminal run typecheck
 npm --workspace @bytetrue/pi-background-terminal pack --dry-run
 ```
 
-Requires `@earendil-works/pi-coding-agent >=0.79.10`.
+Requires `@earendil-works/pi-coding-agent >=0.80.4`.
