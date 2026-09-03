@@ -14,7 +14,12 @@ Spawns focused child agents in isolated sessions for delegating tasks, backgroun
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
 - **📊 Real-time TUI Card**: Differential progress card showing live execution duration, current thinking intent, active tool call traces with arguments, token usage, and cost tracking (`Alt+O` to expand/collapse).
-- **⚙️ `/subagent` Slash Command**: Interactive TUI menu to configure global/project default models, thinking levels, and per-role overrides.
+- **⚙️ `/subagent` Interactive Menu**:
+  - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect output, or stop running tasks.
+  - **Fuzzy Model Search**: Model picker with real-time text filter and wrap-around keyboard navigation (Up at top loops to bottom).
+  - **Back Navigation**: Pressing `Esc` in any sub-menu smoothly returns to the parent menu level.
+  - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `scout`, `researcher`, `reviewer` or custom).
+- **📟 Live Status Bar**: Displays `sub:N` in the footer whenever any foreground or background subagent is actively executing.
 
 ## Installation
 
@@ -31,9 +36,10 @@ pi -e packages/pi-subagent/src/index.ts
 ## Interactive Configuration (`/subagent`)
 
 Run `/subagent` in the Pi TUI to interactively:
-- Set default subagent model and thinking level (global or project scope).
-- Configure specific roles (e.g. `researcher`, `reviewer`, `scout` or custom roles) with their preferred model, thinking level, and tools.
-- Run `/subagent list` or `/subagent show` to view effective configurations and discovered agent templates.
+- **View Active Subagents**: Browse all active/recent subagent tasks in the current session, view output, stop running tasks, or see resume instructions.
+- **Set default subagent model and thinking level**: Use real-time fuzzy search to pick models across all configured providers with wrap-around cursor movement (`Esc` to go back).
+- **Configure specific roles**: Customize `scout`, `researcher`, `reviewer`, or any custom role with dedicated model and thinking overrides.
+- **Run `/subagent list` or `/subagent show`**: View effective configurations and discovered agent templates.
 
 ## Tool Reference
 

@@ -1254,33 +1254,53 @@ export function normalizeTasks(input: SubagentInput): {
   return { tasks: items, isChain, isAsync, timeoutMs, maxTurns };
 }
 
-// ── Background Manager ────────────────────────────────────────────────
-export interface BackgroundSubagentTask {
+// ── Task Manager ──────────────────────────────────────────────────
+export interface SubagentTaskRecord {
   id: string;
   parentSessionId: string;
   description: string;
+  agent?: string;
+  model?: string;
+  mode: "foreground" | "background";
   status: "running" | "succeeded" | "failed" | "cancelled" | "paused";
   output: string;
   startedAt: number;
   finishedAt?: number;
   controller: AbortController;
   notifyOnExit: boolean;
-  done: Promise<void>;
+  done?: Promise<void>;
+  pauseReason?: "timeout" | "max_turns";
 }
 
-export class SubagentBackgroundManager {
-  private readonly tasks = new Map<string, BackgroundSubagentTask>();
-  private onExit?: (task: BackgroundSubagentTask) => void;
+export type BackgroundSubagentTask = SubagentTaskRecord;
+
+export class SubagentTaskManager {
+  private readonly tasks = new Map<string, SubagentTaskRecord>();
+  private onExit?: (task: SubagentTaskRecord) => void;
   private onChange?: () => void;
 
-  init(onExit: (task: BackgroundSubagentTask) => void, onChange?: () => void): void {
+  init(onExit: (task: SubagentTaskRecord) => void, onChange?: () => void): void {
     this.onExit = onExit;
     this.onChange = onChange;
   }
 
-  register(task: BackgroundSubagentTask): void {
+  register(task: SubagentTaskRecord): void {
     this.tasks.set(task.id, task);
     this.emitChange();
+  }
+
+  get(id: string): SubagentTaskRecord | undefined {
+    return this.tasks.get(id);
+  }
+
+  stop(id: string): boolean {
+    const t = this.tasks.get(id);
+    if (!t || t.status !== "running") return false;
+    t.controller.abort();
+    t.status = "cancelled";
+    t.finishedAt = Date.now();
+    this.emitChange();
+    return true;
   }
 
   complete(id: string, output: string, failed: boolean, cancelled = false, paused = false): void {
@@ -1297,8 +1317,16 @@ export class SubagentBackgroundManager {
     }
   }
 
-  list(parentSessionId: string): BackgroundSubagentTask[] {
-    return Array.from(this.tasks.values()).filter((t) => t.parentSessionId === parentSessionId);
+  list(parentSessionId?: string): SubagentTaskRecord[] {
+    return Array.from(this.tasks.values())
+      .filter((t) => !parentSessionId || t.parentSessionId === parentSessionId)
+      .sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  getRunningCount(parentSessionId?: string): number {
+    return Array.from(this.tasks.values()).filter(
+      (t) => (!parentSessionId || t.parentSessionId === parentSessionId) && t.status === "running",
+    ).length;
   }
 
   async clearSession(parentSessionId: string): Promise<void> {
@@ -1310,7 +1338,7 @@ export class SubagentBackgroundManager {
       if (t.status === "running") t.controller.abort();
       this.tasks.delete(t.id);
     }
-    await Promise.all(sessionTasks.map((t) => t.done.catch(() => {})));
+    await Promise.all(sessionTasks.map((t) => t.done?.catch(() => {})));
     this.emitChange();
   }
 
@@ -1321,10 +1349,13 @@ export class SubagentBackgroundManager {
   }
 }
 
+export const SubagentBackgroundManager = SubagentTaskManager;
+export type SubagentBackgroundManager = SubagentTaskManager;
+
 const SUBAGENT_MGR_KEY = Symbol.for("@bytetrue/pi-subagent.manager");
-const globalStore = globalThis as unknown as Record<symbol, SubagentBackgroundManager | undefined>;
-export const subagentManager: SubagentBackgroundManager =
-  (globalStore[SUBAGENT_MGR_KEY] ??= new SubagentBackgroundManager());
+const globalStore = globalThis as unknown as Record<symbol, SubagentTaskManager | undefined>;
+export const subagentManager: SubagentTaskManager =
+  (globalStore[SUBAGENT_MGR_KEY] ??= new SubagentTaskManager());
 
 // ── Orchestrator ──────────────────────────────────────────────────────
 export async function runSubagent(
@@ -1689,10 +1720,13 @@ export default function subagentExtension(pi: {
             ? trunc(tasks[0]!.task, 60)
             : `${tasks.length} tasks (${isChain ? "chain" : "parallel"})`;
 
-        const bgTask: BackgroundSubagentTask = {
+        const bgTask: SubagentTaskRecord = {
           id: taskId,
           parentSessionId: sessionId,
           description: desc,
+          agent: tasks[0]?.agent,
+          model: tasks[0]?.model,
+          mode: "background",
           status: "running",
           output: "",
           startedAt: Date.now(),
@@ -1738,19 +1772,63 @@ export default function subagentExtension(pi: {
       }
 
       // Foreground synchronous execution
-      const result = await runSubagent(
-        cwd,
-        input,
-        signal,
-        onUpdate,
-        inheritedThinking,
-        inheritedModel,
-      );
+      const taskId = `sub_${randomBytes(6).toString("hex")}`;
+      const sessionId =
+        ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
+      const fgController = new AbortController();
 
-      return {
-        content: [{ type: "text", text: result.output }],
-        details: result.details,
+      const desc =
+        tasks.length === 1
+          ? trunc(tasks[0]!.task, 60)
+          : `${tasks.length} tasks (${isChain ? "chain" : "concurrent"})`;
+
+      const fgRecord: SubagentTaskRecord = {
+        id: taskId,
+        parentSessionId: sessionId,
+        description: desc,
+        agent: tasks[0]?.agent,
+        model: tasks[0]?.model,
+        mode: "foreground",
+        status: "running",
+        output: "",
+        startedAt: Date.now(),
+        controller: fgController,
+        notifyOnExit: false,
       };
+
+      if (signal) {
+        signal.addEventListener("abort", () => fgController.abort(), { once: true });
+      }
+
+      subagentManager.register(fgRecord);
+
+      try {
+        const result = await runSubagent(
+          cwd,
+          input,
+          fgController.signal,
+          onUpdate,
+          inheritedThinking,
+          inheritedModel,
+        );
+
+        subagentManager.complete(
+          taskId,
+          result.output,
+          result.failed,
+          fgController.signal.aborted,
+          result.paused,
+        );
+
+        return {
+          content: [{ type: "text", text: result.output }],
+          details: result.details,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        subagentManager.complete(taskId, msg, true, fgController.signal.aborted);
+        throw err;
+      }
     },
     renderCall: () => ({
       render() {
@@ -1810,9 +1888,7 @@ export default function subagentExtension(pi: {
     const sessionId = ctx?.sessionManager?.getSessionId?.() ?? "default";
     currentSessionId = sessionId;
     updateStatus = () => {
-      const running = subagentManager
-        .list(sessionId)
-        .filter((t) => t.status === "running").length;
+      const running = subagentManager.getRunningCount(sessionId);
       ctx?.ui?.setStatus?.("subagent", running === 0 ? undefined : `sub:${running}`);
     };
     updateStatus();

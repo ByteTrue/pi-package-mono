@@ -8,9 +8,11 @@ import {
   findAgentDefinition,
   resolvePiCli,
   normalizeTasks,
+  SubagentTaskManager,
   SubagentBackgroundManager,
   type RunState,
   type JsonObject,
+  type SubagentTaskRecord,
 } from "./index.js";
 import {
   loadSubagentSettings,
@@ -292,10 +294,10 @@ You are an expert researcher. Read references carefully.
     expect(stringArray.tasks[1]?.task).toBe("task b");
   });
 
-  it("manages background subagent tasks lifecycle", async () => {
-    const mgr = new SubagentBackgroundManager();
+  it("manages subagent tasks lifecycle including running count and stop", async () => {
+    const mgr = new SubagentTaskManager();
     let exitNotified = false;
-    mgr.init((t) => {
+    mgr.init((t: SubagentTaskRecord) => {
       if (t.id === "sub_1") exitNotified = true;
     });
 
@@ -303,7 +305,8 @@ You are an expert researcher. Read references carefully.
     mgr.register({
       id: "sub_1",
       parentSessionId: "session_123",
-      description: "testing bg",
+      description: "testing task",
+      mode: "foreground",
       status: "running",
       output: "",
       startedAt: Date.now(),
@@ -312,10 +315,19 @@ You are an expert researcher. Read references carefully.
       done: Promise.resolve(),
     });
 
+    expect(mgr.getRunningCount("session_123")).toBe(1);
+
     const list = mgr.list("session_123");
     expect(list.length).toBe(1);
     expect(list[0]?.status).toBe("running");
 
+    // Test stop
+    const stopped = mgr.stop("sub_1");
+    expect(stopped).toBe(true);
+    expect(controller.signal.aborted).toBe(true);
+    expect(mgr.getRunningCount("session_123")).toBe(0);
+
+    // Complete notification
     mgr.complete("sub_1", "all good", false);
     expect(exitNotified).toBe(true);
     expect(list[0]?.status).toBe("succeeded");

@@ -1,6 +1,5 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
-  COMMAND_NAME,
   loadSubagentSettings,
   updateSubagentSettings,
   settingsPathForScope,
@@ -8,6 +7,8 @@ import {
   type SettingsScope,
   type SubagentSettings,
 } from "./settings.js";
+import { promptFuzzySelect, type PickerItem } from "./tui-picker.js";
+import { subagentManager, type SubagentTaskRecord } from "./index.js";
 
 const THINKING_CHOICES = [
   "off",
@@ -19,6 +20,17 @@ const THINKING_CHOICES = [
   "max",
 ] as const;
 
+function fmtDur(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m${s % 60}s`;
+}
+
+function trunc(s: string, w: number): string {
+  return s.length <= w ? s : `${s.slice(0, w - 1)}…`;
+}
+
 async function chooseScope(ctx: ExtensionCommandContext): Promise<SettingsScope | undefined> {
   const globalLabel = `Global — ${settingsPathForScope(ctx.cwd, "global")}`;
   const projectLabel = `Project — ${settingsPathForScope(ctx.cwd, "project")}`;
@@ -26,62 +38,104 @@ async function chooseScope(ctx: ExtensionCommandContext): Promise<SettingsScope 
   if (ctx.isProjectTrusted()) {
     options.push(projectLabel);
   }
+  options.push("🔙 Back");
+
   const selected = await ctx.ui.select("Where should subagent settings be saved?", options);
-  if (!selected) return undefined;
+  if (!selected || selected === "🔙 Back") return undefined;
   return selected === projectLabel ? "project" : "global";
 }
 
-async function pickModel(
+export async function pickModel(
   ctx: ExtensionCommandContext,
   current?: string,
 ): Promise<string | undefined | null> {
   const available = ctx.modelRegistry.getAvailable();
-  const modelRefs = available.map((m) => `${m.provider}/${m.id}`);
-  const customOption = "✏️ Enter custom model ID manually...";
-  const clearOption = "🗑️ Clear (inherit session model)";
-  const keepOption = current ? `Keep current (${current})` : undefined;
+  const items: PickerItem[] = [];
 
-  const choices = [
-    ...(keepOption ? [keepOption] : []),
-    ...modelRefs,
-    customOption,
-    ...(current ? [clearOption] : []),
-  ];
+  if (current) {
+    items.push({
+      value: "__KEEP__",
+      label: `Keep current (${current})`,
+      description: "retain existing model",
+    });
+    items.push({
+      value: "__CLEAR__",
+      label: "Clear model override",
+      description: "inherit parent session model",
+    });
+  }
 
-  const picked = await ctx.ui.select(
-    current ? `Subagent Model (Current: ${current})` : "Select Subagent Model",
-    choices,
-  );
+  items.push({
+    value: "__CUSTOM__",
+    label: "Custom model ref...",
+    description: "enter model ID manually",
+  });
+
+  for (const m of available) {
+    const id = `${m.provider}/${m.id}`;
+    items.push({
+      value: id,
+      label: id,
+      description: m.name,
+    });
+  }
+
+  const title = current
+    ? `Select Subagent Model (Current: ${current})`
+    : "Select Subagent Model";
+
+  const picked = await promptFuzzySelect(ctx, title, items, "Type to filter models...");
   if (!picked) return undefined;
-  if (picked === keepOption) return current;
-  if (picked === clearOption) return null;
-  if (picked === customOption) {
-    const input = await ctx.ui.input("Custom Model Ref", "Example: bytetrueapi/gemini-3.7-flash:low");
-    if (!input?.trim()) return undefined;
-    return input.trim();
+
+  if (picked === "__KEEP__") return current;
+  if (picked === "__CLEAR__") return null;
+  if (picked === "__CUSTOM__") {
+    const input = await ctx.ui.input(
+      "Custom Model Ref",
+      "Example: bytetrueapi/gemini-3.7-flash:low",
+    );
+    if (input === undefined) return undefined;
+    return input.trim() || undefined;
   }
   return picked;
 }
 
-async function pickThinking(
+export async function pickThinking(
   ctx: ExtensionCommandContext,
   current?: string,
 ): Promise<string | undefined | null> {
-  const customOptions = [
-    ...(current ? [`Keep current (${current})`] : []),
-    ...THINKING_CHOICES.map((t) => (t === current ? `${t} (current)` : t)),
-    "🗑️ Clear (inherit default)",
-  ];
+  const items: PickerItem[] = [];
 
-  const picked = await ctx.ui.select(
-    current ? `Subagent Thinking Level (Current: ${current})` : "Select Subagent Thinking Level",
-    customOptions,
-  );
+  if (current) {
+    items.push({
+      value: "__KEEP__",
+      label: `Keep current (${current})`,
+      description: "retain existing thinking level",
+    });
+    items.push({
+      value: "__CLEAR__",
+      label: "Clear thinking override",
+      description: "inherit default thinking level",
+    });
+  }
+
+  for (const t of THINKING_CHOICES) {
+    items.push({
+      value: t,
+      label: t === current ? `${t} (current)` : t,
+    });
+  }
+
+  const title = current
+    ? `Select Subagent Thinking Level (Current: ${current})`
+    : "Select Subagent Thinking Level";
+
+  const picked = await promptFuzzySelect(ctx, title, items, "Filter thinking level...");
   if (!picked) return undefined;
-  if (picked.startsWith("Keep current")) return current;
-  if (picked.startsWith("🗑️ Clear")) return null;
-  const match = THINKING_CHOICES.find((t) => picked.startsWith(t));
-  return match ?? null;
+
+  if (picked === "__KEEP__") return current;
+  if (picked === "__CLEAR__") return null;
+  return picked;
 }
 
 function showConfig(ctx: ExtensionCommandContext): void {
@@ -108,9 +162,9 @@ function showConfig(ctx: ExtensionCommandContext): void {
   }
 
   lines.push("");
-  lines.push(`Discovered Agent Templates (.pi/agents/*.md):`);
+  lines.push("Discovered Agent Templates (built-in + .pi/agents/*.md):");
   if (discoveredRoles.length === 0) {
-    lines.push("  (none found in .pi/agents or ~/.pi/agent/agents)");
+    lines.push("  (none found)");
   } else {
     lines.push(`  ${discoveredRoles.join(", ")}`);
   }
@@ -118,15 +172,16 @@ function showConfig(ctx: ExtensionCommandContext): void {
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
-async function configureDefault(
-  ctx: ExtensionCommandContext,
-  scope: SettingsScope,
-  settings: SubagentSettings,
-): Promise<void> {
-  const model = await pickModel(ctx, settings.defaultModel);
+async function configureDefaultMenu(ctx: ExtensionCommandContext): Promise<void> {
+  const scope = await chooseScope(ctx);
+  if (!scope) return;
+
+  const currentSettings = loadSubagentSettings(ctx.cwd, ctx.isProjectTrusted());
+
+  const model = await pickModel(ctx, currentSettings.defaultModel);
   if (model === undefined) return;
 
-  const thinking = await pickThinking(ctx, settings.defaultThinking);
+  const thinking = await pickThinking(ctx, currentSettings.defaultThinking);
   if (thinking === undefined) return;
 
   const path = updateSubagentSettings(ctx.cwd, scope, (current) => ({
@@ -136,63 +191,159 @@ async function configureDefault(
   }));
 
   ctx.ui.notify(
-    `Subagent default model/thinking saved to ${path}\nModel: ${model ?? "(inherited)"}, Thinking: ${thinking ?? "(inherited)"}`,
+    `Subagent default saved to ${path}\nModel: ${model ?? "(inherited)"}, Thinking: ${thinking ?? "(inherited)"}`,
     "info",
   );
 }
 
-async function configureRole(
-  ctx: ExtensionCommandContext,
-  scope: SettingsScope,
-  settings: SubagentSettings,
-): Promise<void> {
-  const discovered = listDiscoveredAgentNames(ctx.cwd);
-  const customOption = "➕ Enter a new role name...";
-  const choices = [...discovered, customOption];
+async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
+  while (true) {
+    const discovered = listDiscoveredAgentNames(ctx.cwd);
+    const customOption = "➕ Enter a new role name...";
+    const choices = [...discovered, customOption, "🔙 Back"];
 
-  const pickedRole = await ctx.ui.select("Select an Agent Role to Configure", choices);
-  if (!pickedRole) return;
+    const pickedRole = await ctx.ui.select("Select an Agent Role to Configure", choices);
+    if (!pickedRole || pickedRole === "🔙 Back") return;
 
-  let roleName = pickedRole;
-  if (pickedRole === customOption) {
-    const input = await ctx.ui.input("Role Name", "Example: researcher, reviewer, scout");
-    if (!input?.trim()) return;
-    roleName = input.trim().toLowerCase();
-  }
-
-  const existingRole = settings.agents?.[roleName] ?? {};
-  const model = await pickModel(ctx, existingRole.model);
-  if (model === undefined) return;
-
-  const thinking = await pickThinking(ctx, existingRole.thinking);
-  if (thinking === undefined) return;
-
-  const path = updateSubagentSettings(ctx.cwd, scope, (current) => {
-    const nextAgents = { ...(current.agents ?? {}) };
-    const updatedRole = { ...(nextAgents[roleName] ?? {}) };
-
-    if (model === null) delete updatedRole.model;
-    else updatedRole.model = model;
-
-    if (thinking === null) delete updatedRole.thinking;
-    else updatedRole.thinking = thinking;
-
-    if (Object.keys(updatedRole).length > 0) {
-      nextAgents[roleName] = updatedRole;
-    } else {
-      delete nextAgents[roleName];
+    let roleName = pickedRole;
+    if (pickedRole === customOption) {
+      const input = await ctx.ui.input(
+        "Role Name",
+        "Example: scout, reviewer, researcher",
+      );
+      if (input === undefined || !input.trim()) continue;
+      roleName = input.trim().toLowerCase();
     }
 
-    return {
-      ...current,
-      agents: Object.keys(nextAgents).length > 0 ? nextAgents : undefined,
-    };
-  });
+    const scope = await chooseScope(ctx);
+    if (!scope) continue;
 
-  ctx.ui.notify(
-    `Role "${roleName}" configured in ${path}\nModel: ${model ?? "(default)"}, Thinking: ${thinking ?? "(default)"}`,
-    "info",
-  );
+    const currentSettings = loadSubagentSettings(ctx.cwd, ctx.isProjectTrusted());
+    const existingRole = currentSettings.agents?.[roleName] ?? {};
+
+    const model = await pickModel(ctx, existingRole.model);
+    if (model === undefined) continue;
+
+    const thinking = await pickThinking(ctx, existingRole.thinking);
+    if (thinking === undefined) continue;
+
+    const path = updateSubagentSettings(ctx.cwd, scope, (current) => {
+      const nextAgents = { ...(current.agents ?? {}) };
+      const updatedRole = { ...(nextAgents[roleName] ?? {}) };
+
+      if (model === null) delete updatedRole.model;
+      else updatedRole.model = model;
+
+      if (thinking === null) delete updatedRole.thinking;
+      else updatedRole.thinking = thinking;
+
+      if (Object.keys(updatedRole).length > 0) {
+        nextAgents[roleName] = updatedRole;
+      } else {
+        delete nextAgents[roleName];
+      }
+
+      return {
+        ...current,
+        agents: Object.keys(nextAgents).length > 0 ? nextAgents : undefined,
+      };
+    });
+
+    ctx.ui.notify(
+      `Role "${roleName}" configured in ${path}\nModel: ${model ?? "(default)"}, Thinking: ${thinking ?? "(default)"}`,
+      "info",
+    );
+    return;
+  }
+}
+
+async function viewSubagentsMenu(ctx: ExtensionCommandContext): Promise<void> {
+  const sessionId = ctx.sessionManager?.getSessionId?.() ?? "default";
+
+  while (true) {
+    const tasks = subagentManager.list(sessionId);
+    if (tasks.length === 0) {
+      ctx.ui.notify("No subagent tasks recorded in current session.", "info");
+      return;
+    }
+
+    const running = tasks.filter((t) => t.status === "running").length;
+    const taskChoices: PickerItem[] = tasks.map((t) => {
+      const dur = fmtDur((t.finishedAt ?? Date.now()) - t.startedAt);
+      const role = t.agent ? `[${t.agent}] ` : "";
+      const mode = t.mode === "background" ? "bg" : "fg";
+      return {
+        value: t.id,
+        label: `[${t.status}] ${role}${trunc(t.description, 40)} (${t.id})`,
+        description: `${mode} · ${dur}`,
+      };
+    });
+
+    taskChoices.push({
+      value: "__BACK__",
+      label: "🔙 Back",
+      description: "return to subagent menu",
+    });
+
+    const pickedId = await promptFuzzySelect(
+      ctx,
+      `Subagent Tasks (${running} running, ${tasks.length} total)`,
+      taskChoices,
+    );
+
+    if (!pickedId || pickedId === "__BACK__") return;
+
+    const task = subagentManager.get(pickedId);
+    if (!task) continue;
+
+    await viewSingleTaskMenu(ctx, task);
+  }
+}
+
+async function viewSingleTaskMenu(
+  ctx: ExtensionCommandContext,
+  task: SubagentTaskRecord,
+): Promise<void> {
+  while (true) {
+    const actions = ["📄 View Output"];
+    if (task.status === "running") {
+      actions.push("🛑 Stop Task");
+    }
+    if (task.status === "paused") {
+      actions.push("💡 How to Resume");
+    }
+    actions.push("🔙 Back");
+
+    const action = await ctx.ui.select(
+      `Task ${task.id} [${task.status}] — ${task.description}`,
+      actions,
+    );
+
+    if (!action || action === "🔙 Back") return;
+
+    if (action === "📄 View Output") {
+      const out = task.output || "(no output captured yet)";
+      const rawUI = ctx.ui as unknown as Record<string, Function>;
+      if (typeof rawUI?.editor === "function") {
+        await rawUI.editor(`Output for ${task.id}`, out);
+      } else {
+        ctx.ui.notify(out.slice(0, 500), "info");
+      }
+    } else if (action === "🛑 Stop Task") {
+      const confirmed = await ctx.ui.confirm(
+        "Stop this subagent task?",
+        `ID: ${task.id}\nTask: ${task.description}`,
+      );
+      if (confirmed) {
+        subagentManager.stop(task.id);
+        ctx.ui.notify(`Subagent task ${task.id} stopped.`, "info");
+        return;
+      }
+    } else if (action === "💡 How to Resume") {
+      const resumeCode = `subagent({ tasks: [{ resume: "${task.id}", task: "Continue the remaining work" }] })`;
+      ctx.ui.notify(`To resume this session in chat, run:\n${resumeCode}`, "info");
+    }
+  }
 }
 
 export async function runSubagentCommand(
@@ -211,31 +362,39 @@ export async function runSubagentCommand(
   }
 
   try {
-    const actionDefault = "⚙️ Configure Default Subagent Model & Thinking";
-    const actionRole = "🎭 Configure an Agent Role (e.g. researcher, reviewer)";
-    const actionShow = "📋 Show Current Configuration";
+    while (true) {
+      const sessionId = ctx.sessionManager?.getSessionId?.() ?? "default";
+      const runningCount = subagentManager.getRunningCount(sessionId);
+      const actionActive =
+        runningCount > 0
+          ? `👀 View Active Subagents (${runningCount} running)`
+          : "👀 View Subagent Tasks";
+      const actionDefault = "⚙️ Configure Default Subagent Model & Thinking";
+      const actionRole = "🎭 Configure an Agent Role (e.g. scout, reviewer)";
+      const actionShow = "📋 Show Current Configuration";
 
-    const action = await ctx.ui.select("Subagent Settings", [
-      actionDefault,
-      actionRole,
-      actionShow,
-    ]);
+      const choices = [
+        actionActive,
+        actionDefault,
+        actionRole,
+        actionShow,
+        "🚪 Exit",
+      ];
 
-    if (!action) return;
-    if (action === actionShow) {
-      showConfig(ctx);
-      return;
-    }
+      const action = await ctx.ui.select("Subagent Settings", choices);
+      if (!action || action === "🚪 Exit") {
+        return;
+      }
 
-    const scope = await chooseScope(ctx);
-    if (!scope) return;
-
-    const currentSettings = loadSubagentSettings(ctx.cwd, ctx.isProjectTrusted());
-
-    if (action === actionDefault) {
-      await configureDefault(ctx, scope, currentSettings);
-    } else if (action === actionRole) {
-      await configureRole(ctx, scope, currentSettings);
+      if (action === actionActive) {
+        await viewSubagentsMenu(ctx);
+      } else if (action === actionDefault) {
+        await configureDefaultMenu(ctx);
+      } else if (action === actionRole) {
+        await configureRoleMenu(ctx);
+      } else if (action === actionShow) {
+        showConfig(ctx);
+      }
     }
   } catch (error) {
     ctx.ui.notify(
