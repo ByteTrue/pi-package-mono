@@ -1555,6 +1555,50 @@ export default function subagentExtension(pi: {
   let updateStatus: (() => void) | undefined;
   let agentBusy = false;
   let pendingExits: BackgroundSubagentTask[] = [];
+  let activeParentModel: string | undefined = undefined;
+  let activeParentThinking: string | undefined = undefined;
+
+  const trackSessionModel = (modelObj?: { provider?: string; id?: string }) => {
+    if (modelObj?.provider && modelObj?.id) {
+      activeParentModel = `${modelObj.provider}/${modelObj.id}`;
+    }
+  };
+
+  const resolveInheritedModel = (ctx?: PiExtensionContext): string | undefined => {
+    // 1. Context model from tool execution
+    if (ctx?.model?.provider && ctx?.model?.id) {
+      activeParentModel = `${ctx.model.provider}/${ctx.model.id}`;
+      return activeParentModel;
+    }
+    // 2. Tracked active parent model
+    if (activeParentModel) {
+      return activeParentModel;
+    }
+    // 3. Environment variables (PI_PROVIDER & PI_MODEL)
+    const envProvider = process.env.PI_PROVIDER?.trim();
+    const envModel = process.env.PI_MODEL?.trim();
+    if (envProvider && envModel) {
+      return `${envProvider}/${envModel}`;
+    }
+    if (envModel && envModel.includes("/")) {
+      return envModel;
+    }
+    // 4. Default model configured in subagent / global settings
+    const settings = loadSubagentSettings(process.cwd(), true);
+    if (settings.defaultModel) {
+      return settings.defaultModel;
+    }
+    return undefined;
+  };
+
+  const resolveInheritedThinking = (): string | undefined => {
+    return (
+      pi.getThinkingLevel?.() ??
+      activeParentThinking ??
+      process.env.PI_REASONING_LEVEL?.trim() ??
+      undefined
+    );
+  };
 
   const flushPendingExits = () => {
     const batch = pendingExits;
@@ -1697,11 +1741,8 @@ export default function subagentExtension(pi: {
     ) => {
       activeSubagentToolCallId = id;
       const cwd = process.cwd();
-      const inheritedThinking = pi.getThinkingLevel?.();
-      const inheritedModel =
-        ctx?.model?.provider && ctx?.model?.id
-          ? `${ctx.model.provider}/${ctx.model.id}`
-          : undefined;
+      const inheritedThinking = resolveInheritedThinking();
+      const inheritedModel = resolveInheritedModel(ctx);
 
       const { tasks, isChain, isAsync } = normalizeTasks(input);
       if (tasks.length === 0) {
@@ -1885,6 +1926,7 @@ export default function subagentExtension(pi: {
   });
 
   pi.on?.("session_start", (_event, ctx) => {
+    trackSessionModel(ctx?.model);
     const sessionId = ctx?.sessionManager?.getSessionId?.() ?? "default";
     currentSessionId = sessionId;
     updateStatus = () => {
@@ -1892,6 +1934,20 @@ export default function subagentExtension(pi: {
       ctx?.ui?.setStatus?.("subagent", running === 0 ? undefined : `sub:${running}`);
     };
     updateStatus();
+  });
+
+  pi.on?.("before_agent_start", (_event, ctx) => {
+    trackSessionModel(ctx?.model);
+  });
+
+  pi.on?.("model_select", (event) => {
+    const ev = event as { model?: { provider?: string; id?: string } };
+    trackSessionModel(ev?.model);
+  });
+
+  pi.on?.("thinking_level_select", (event) => {
+    const ev = event as { level?: string };
+    if (ev?.level) activeParentThinking = ev.level;
   });
 
   pi.on?.("session_shutdown", async (event, ctx) => {

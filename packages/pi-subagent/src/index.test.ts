@@ -231,6 +231,38 @@ describe("pi-subagent unit tests", () => {
     }
   });
 
+  it("loads subagent settings with global defaultProvider/defaultModel and legacy subagents.agentOverrides fallback", () => {
+    const testDir = join(tmpdir(), `pi-subagent-fallback-${Date.now()}`);
+    mkdirSync(join(testDir, ".pi"), { recursive: true });
+
+    try {
+      writeFileSync(
+        join(testDir, ".pi", "settings.json"),
+        JSON.stringify({
+          defaultProvider: "bytetrueapi",
+          defaultModel: "gemini-3.7-flash",
+          defaultThinkingLevel: "medium",
+          subagents: {
+            agentOverrides: {
+              reviewer: {
+                model: "bytetrueapi/qwen3.8-max",
+                thinking: "high",
+              },
+            },
+          },
+        }),
+      );
+
+      const loaded = loadSubagentSettings(testDir, true);
+      expect(loaded.defaultModel).toBe("bytetrueapi/gemini-3.7-flash");
+      expect(loaded.defaultThinking).toBe("medium");
+      expect(loaded.agents?.reviewer?.model).toBe("bytetrueapi/qwen3.8-max");
+      expect(loaded.agents?.reviewer?.thinking).toBe("high");
+    } finally {
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
   it("parses agent frontmatter markdown file", () => {
     const tmpFile = join(tmpdir(), `test-agent-${Date.now()}.md`);
     writeFileSync(

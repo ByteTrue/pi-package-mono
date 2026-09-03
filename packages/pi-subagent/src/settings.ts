@@ -49,21 +49,25 @@ function readJsonFile(path: string): Record<string, unknown> | null {
   }
 }
 
-function parseSubagentSection(rawSection: unknown): SubagentSettings {
-  if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) {
-    return {};
-  }
-  const s = rawSection as Record<string, unknown>;
+function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unknown> | null): SubagentSettings {
   const settings: SubagentSettings = {};
 
-  if (typeof s.defaultModel === "string" && s.defaultModel.trim()) {
+  // 1. Try modern section: settings.subagent
+  const s = rawSection && typeof rawSection === "object" && !Array.isArray(rawSection)
+    ? (rawSection as Record<string, unknown>)
+    : null;
+
+  if (typeof s?.defaultModel === "string" && s.defaultModel.trim()) {
     settings.defaultModel = s.defaultModel.trim();
   }
-  if (typeof s.defaultThinking === "string" && s.defaultThinking.trim()) {
+  if (typeof s?.defaultThinking === "string" && s.defaultThinking.trim()) {
     settings.defaultThinking = s.defaultThinking.trim();
   }
-  if (s.agents && typeof s.agents === "object" && !Array.isArray(s.agents)) {
-    const agentsMap: Record<string, SubagentRoleConfig> = {};
+
+  const agentsMap: Record<string, SubagentRoleConfig> = {};
+
+  // Check modern settings.subagent.agents
+  if (s?.agents && typeof s.agents === "object" && !Array.isArray(s.agents)) {
     for (const [name, cfg] of Object.entries(s.agents as Record<string, unknown>)) {
       if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) continue;
       const c = cfg as Record<string, unknown>;
@@ -75,6 +79,46 @@ function parseSubagentSection(rawSection: unknown): SubagentSettings {
       }
       agentsMap[name] = role;
     }
+  }
+
+  // 2. Compatible with legacy settings.subagents (with 's') or settings.subagents.agentOverrides
+  if (rootObj) {
+    const legacy = rootObj["subagents"] as Record<string, unknown> | undefined;
+    if (legacy && typeof legacy === "object" && !Array.isArray(legacy)) {
+      const overrides = (legacy["agentOverrides"] ?? legacy["agents"]) as Record<string, unknown> | undefined;
+      if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
+        for (const [name, cfg] of Object.entries(overrides)) {
+          if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) continue;
+          if (agentsMap[name]) continue; // modern wins
+          const c = cfg as Record<string, unknown>;
+          const role: SubagentRoleConfig = {};
+          if (typeof c.model === "string" && c.model.trim()) role.model = c.model.trim();
+          if (typeof c.thinking === "string" && c.thinking.trim()) role.thinking = c.thinking.trim();
+          if (Array.isArray(c.tools)) {
+            role.tools = c.tools.map((t) => String(t).trim().toLowerCase()).filter(Boolean);
+          }
+          agentsMap[name] = role;
+        }
+      }
+    }
+
+    // 3. Fallback to global defaultProvider + defaultModel if defaultModel still unset
+    if (!settings.defaultModel) {
+      const defaultProvider = typeof rootObj["defaultProvider"] === "string" ? rootObj["defaultProvider"].trim() : "";
+      const defaultModelName = typeof rootObj["defaultModel"] === "string" ? rootObj["defaultModel"].trim() : "";
+      if (defaultProvider && defaultModelName) {
+        settings.defaultModel = `${defaultProvider}/${defaultModelName}`;
+      } else if (defaultModelName) {
+        settings.defaultModel = defaultModelName;
+      }
+    }
+
+    if (!settings.defaultThinking && typeof rootObj["defaultThinkingLevel"] === "string") {
+      settings.defaultThinking = rootObj["defaultThinkingLevel"].trim();
+    }
+  }
+
+  if (Object.keys(agentsMap).length > 0) {
     settings.agents = agentsMap;
   }
 
@@ -83,12 +127,12 @@ function parseSubagentSection(rawSection: unknown): SubagentSettings {
 
 export function loadSubagentSettings(cwd: string, projectTrusted = true): SubagentSettings {
   const globalObj = readJsonFile(globalSettingsPath());
-  const globalSettings = parseSubagentSection(globalObj?.[SETTINGS_KEY]);
+  const globalSettings = parseSubagentSection(globalObj?.[SETTINGS_KEY], globalObj);
 
   if (!projectTrusted) return globalSettings;
 
   const projectObj = readJsonFile(projectSettingsPath(cwd));
-  const projectSettings = parseSubagentSection(projectObj?.[SETTINGS_KEY]);
+  const projectSettings = parseSubagentSection(projectObj?.[SETTINGS_KEY], projectObj);
 
   return {
     defaultModel: projectSettings.defaultModel ?? globalSettings.defaultModel,
