@@ -7,12 +7,13 @@
 - 人类通过 `/image-gen` 在 Pi TUI 内完整配置；
 - Agent 只在真正生成或编辑图片时加载 `pi-image-gen` Skill，并通过 bash 调 bundled CLI。
 
-package 不注册常驻 Agent tool。
+package 不注册常驻 Agent tool，也不注册生命周期钩子。
 
 ## 它负责什么
 
-- `/image-gen` 一次配置 built-in 或 custom provider/model、base URL、credential、headers、output directory。
-- 配置始终写 Pi `settings.json` 的 `pi-image-gen` 节；支持 active global 与可信 project 两层。
+- `/image-gen` 提供单一统一配置流，支持选择预设厂商模板（OpenAI、Gemini、DashScope、Ark、OpenRouter）或自定义厂商/中转站，配置 base URL、credential、headers、output directory。
+- 支持轻量安全的目标端点模型探测（Model Discovery，默认 5s 超时与 fail-soft 降级）：在配置好 Key 与 URL 后自动探测兼容 `/models` 端点的可用模型列表并优先高亮候选生图模型。
+- 配置写入专用文件 `<config dir>/pi-image-gen/settings.json`（随 `PI_CODING_AGENT_DIR` / `PI_AGENT_HOME` 重定向，默认 `~/.pi/agent/pi-image-gen/settings.json`），顶层即配置本体；不读写 Pi 的 `settings.json`。
 - literal key 使用遮罩输入；也支持标准 env、任意 `$ENV_VAR` 和无 key 本地 route。
 - TUI 选择 `No API key` / `No extra headers` 时分别持久化 `apiKey: ""` / `headers: {}` tombstone，以显式阻断 lower layer 与标准 env fallback。
 - 已损坏或嵌套 shape 非法的 settings runtime fail-soft 为无配置；交互写入 fail-closed，绝不覆盖原文件。
@@ -21,17 +22,13 @@ package 不注册常驻 Agent tool。
 - custom provider id 不得与 `openai`、`gemini`、`dashscope`、`ark`、`openrouter` 五个 built-in routing prefix 冲突。
 - 支持 OpenAI、Gemini、DashScope、Ark、OpenRouter 五种真实 wire protocol。
 
-## 配置与信任边界
+## 配置边界
 
-读取顺序：
+读取与写入都只针对专用文件：`$PI_CODING_AGENT_DIR/pi-image-gen/settings.json`，否则 `$PI_AGENT_HOME/pi-image-gen/settings.json`，否则 `~/.pi/agent/pi-image-gen/settings.json`。
 
-1. `~/.pi/agent/settings.json`；
-2. `$PI_CODING_AGENT_DIR/settings.json` 或 `$PI_AGENT_HOME/settings.json`；
-3. 仅在运行中 Pi 对 exact canonical cwd 判定 trusted 时合并 `<cwd>/.pi/settings.json`。
+没有 project 层：配置永不落在项目目录里，因此不存在未受信仓库覆盖 endpoint 的注入面，也不需要向 Skill CLI 传递 Pi 的 project-trust 决策（已废弃的 `session_start` + env 传递机制随 project 层一起移除）。
 
-extension 在 `session_start` 把 `ctx.isProjectTrusted()` 绑定 cwd 后传给它启动的 Skill CLI。CLI 独立运行时默认不读取 project 层。该边界防止普通 Skill 路径把 global/env credential 发送到未受信 project 覆盖的 endpoint；它不是对主动篡改 shell invocation 的沙箱承诺。
-
-写入使用随机临时文件、`wx`、`0600` 与 atomic rename；malformed settings fail closed；保留其它 top-level key 和同节未修改字段。取消为零写入。
+写入使用随机临时文件、`wx`、`0600` 与 atomic rename；malformed settings fail closed；保留文件内其它 top-level key。取消为零写入。
 
 ## CLI 契约
 
@@ -52,15 +49,14 @@ stdin：一个不超过 1 MiB 的 JSON object：
 - stdout 成功时只返回 generated file 的 markdown 与非敏感元数据。
 - stderr 失败且退出非零。
 - settings literal、解析后的标准/自定义 env credential、credential header 值不得出现在 stdout/stderr；上游 revised prompt 同样经过遮罩。
-- `--list` 只显示 route、output directory 与 credential 是否存在，不显示值。
+- `--list` 只显示 route、output directory、配置文件路径与 credential 是否存在，不显示值。
 
 ## 它不负责什么
 
-- 不注册 `image_generate` 或其它 Agent tool。
+- 不注册 `image_generate` 或其它 Agent tool，不注册生命周期钩子。
 - 不提供 CLI model override。
-- 不做 provider/model discovery。
 - 不新增 wire protocol。
-- 不把配置迁移到独立 JSON、env-only 或 CLI-only。
+- 不把配置写进 Pi 的 `settings.json`；不使用 env-only 或 CLI-only 配置。
 - 不让 Skill/CLI 取代 TUI 配置面。
 
 ## 关键考量
