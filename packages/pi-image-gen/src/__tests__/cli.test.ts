@@ -46,7 +46,7 @@ describe('pi-image-gen CLI', () => {
 
   it('loads settings, invokes the shared generate core, and emits markdown', async () => {
     const cwd = isolated();
-    updateImageGenSettings(cwd, 'global', () => ({
+    updateImageGenSettings(() => ({
       defaultModel: 'gpt-image-2',
       providers: { openai: { apiKey: 'secret-value' } },
     }));
@@ -98,7 +98,7 @@ describe('pi-image-gen CLI', () => {
     expect(message).not.toMatch(/default-secret|fallback-secret|resolved-secret|literal-header-secret/);
 
     const cwd = isolated();
-    updateImageGenSettings(cwd, 'global', () => settings);
+    updateImageGenSettings(() => settings);
     const stdout: string[] = [];
     const code = await runImageGenCli({
       args: ['generate'],
@@ -121,9 +121,9 @@ describe('pi-image-gen CLI', () => {
   });
   it('returns a normal nonzero result for malformed nested settings', async () => {
     const cwd = isolated();
-    const path = imageGenSettingsPath(cwd, 'global');
+    const path = imageGenSettingsPath();
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ 'pi-image-gen': { customProviders: { corp: null } } }));
+    writeFileSync(path, JSON.stringify({ customProviders: { corp: null } }));
     const stderr: string[] = [];
     await expect(
       runImageGenCli({

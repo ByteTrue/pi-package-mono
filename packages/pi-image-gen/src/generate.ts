@@ -37,7 +37,7 @@ export async function generateImage(
   const requested = (options.settings.defaultModel ?? '').trim();
   if (!requested) {
     throw new Error(
-      'pi-image-gen.defaultModel is not set. Configure it in settings.json (e.g. "defaultModel": "nano-banana"). Run /image-gen list to see configured providers.',
+      'pi-image-gen defaultModel is not set. Run /image-gen in Pi to configure the image model and credentials.',
     );
   }
 

@@ -57,7 +57,7 @@ Custom providers select one of these wire protocols and supply their own endpoin
 
 ## Configuration
 
-`/image-gen` can write either the active global settings or a trusted project's `<cwd>/.pi/settings.json`. All fields stay under `pi-image-gen`; unrelated Pi settings are preserved.
+`/image-gen` writes a dedicated package config file — `<config dir>/pi-image-gen/settings.json` (by default `~/.pi/agent/pi-image-gen/settings.json`); it never touches Pi's `settings.json`.
 
 Credential choices include:
 
@@ -75,22 +75,20 @@ Relative output directories resolve from the Pi session working directory. The d
 
 ```json
 {
-  "pi-image-gen": {
-    "defaultModel": "my-sd/sd-3-large",
-    "outputDir": ".pi/images",
-    "providers": {
-      "openai": {
-        "baseUrl": "https://proxy.example.com/v1",
-        "apiKey": "$OPENAI_API_KEY"
-      }
-    },
-    "customProviders": {
-      "my-sd": {
-        "api": "openai",
-        "baseUrl": "https://api.example.com/v1",
-        "apiKey": "$SD_KEY",
-        "models": [{ "id": "sd-3-large", "alias": "sd3" }]
-      }
+  "defaultModel": "my-sd/sd-3-large",
+  "outputDir": ".pi/images",
+  "providers": {
+    "openai": {
+      "baseUrl": "https://proxy.example.com/v1",
+      "apiKey": "$OPENAI_API_KEY"
+    }
+  },
+  "customProviders": {
+    "my-sd": {
+      "api": "openai",
+      "baseUrl": "https://api.example.com/v1",
+      "apiKey": "$SD_KEY",
+      "models": [{ "id": "sd-3-large", "alias": "sd3" }]
     }
   }
 }
@@ -116,8 +114,8 @@ The bundled Skill sends one JSON object to `skills/pi-image-gen/scripts/image-ge
 
 `prompt` is required. `image`, `n` (1–8), `size`, `filename`, and `outputDir` are optional. Image inputs may be local paths or HTTP(S) URLs. The CLI never prints configured credentials.
 
-> [!IMPORTANT]
-> Project settings participate only when the running Pi session trusts that exact working directory. This prevents an untrusted repository from changing the endpoint while inheriting a global or environment credential during normal Skill use.
+> [!NOTE]
+> The CLI resolves `PI_CODING_AGENT_DIR` / `PI_AGENT_HOME` the same way Pi does, so a redirected Pi config dir carries the image-gen config with it.
 
 ## Development
 

@@ -9,8 +9,10 @@ import { resolveModel } from '../config.js';
 
 const originalHome = process.env.HOME;
 const originalDir = process.env.PI_CODING_AGENT_DIR;
+const originalFetch = globalThis.fetch;
 
 afterEach(() => {
+  globalThis.fetch = originalFetch;
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   if (originalDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -29,7 +31,6 @@ function setup(
   const ctx = {
     cwd,
     mode: 'tui',
-    isProjectTrusted: () => false,
     ui: {
       select: async (title: string, options: string[]) => {
         const answer = selections[title];
@@ -45,9 +46,8 @@ function setup(
   return { cwd, ctx, notices };
 }
 
-function savedSection(cwd: string): Record<string, any> {
-  const document = JSON.parse(readFileSync(imageGenSettingsPath(cwd, 'global'), 'utf8'));
-  return document['pi-image-gen'];
+function savedSection(): Record<string, any> {
+  return JSON.parse(readFileSync(imageGenSettingsPath(), 'utf8'));
 }
 
 describe('/image-gen configuration', () => {
@@ -55,7 +55,6 @@ describe('/image-gen configuration', () => {
     const { cwd, ctx, notices } = setup(
       {
         'Image generation': 'Configure a built-in provider and model',
-        'Where should image generation settings be saved?': (options) => options[0]!,
         'Built-in provider': 'OpenAI — openai',
         'Default image model': 'gpt-image-2',
         Credential: 'Use $OPENAI_API_KEY',
@@ -66,7 +65,7 @@ describe('/image-gen configuration', () => {
 
     await runImageGenCommand(ctx);
 
-    expect(savedSection(cwd)).toEqual({
+    expect(savedSection()).toEqual({
       defaultModel: 'gpt-image-2',
       outputDir: '.pi/generated',
       providers: {
@@ -80,7 +79,6 @@ describe('/image-gen configuration', () => {
     const { cwd, ctx } = setup(
       {
         'Image generation': 'Configure a custom provider and model',
-        'Where should image generation settings be saved?': (options) => options[0]!,
         'Image API protocol': 'openai',
         Credential: 'Use an environment variable…',
         'Extra request headers': 'No extra headers',
@@ -97,7 +95,7 @@ describe('/image-gen configuration', () => {
 
     await runImageGenCommand(ctx);
 
-    expect(savedSection(cwd)).toEqual({
+    expect(savedSection()).toEqual({
       defaultModel: 'corp/image-v1',
       outputDir: '.pi/art',
       customProviders: {
@@ -116,13 +114,12 @@ describe('/image-gen configuration', () => {
     const { cwd, ctx, notices } = setup(
       {
         'Image generation': 'Configure a custom provider and model',
-        'Where should image generation settings be saved?': (options) => options[0]!,
       },
       { 'Custom provider id': 'openai' },
     );
     await runImageGenCommand(ctx);
     expect(notices.join('\n')).toMatch(/reserved by a built-in provider/i);
-    expect(() => readFileSync(imageGenSettingsPath(cwd, 'global'), 'utf8')).toThrow();
+    expect(() => readFileSync(imageGenSettingsPath(), 'utf8')).toThrow();
   });
 
   it('saves a usable keyless built-in route for a local gateway', async () => {
@@ -132,7 +129,6 @@ describe('/image-gen configuration', () => {
       const { cwd, ctx } = setup(
         {
           'Image generation': 'Configure a built-in provider and model',
-          'Where should image generation settings be saved?': (options) => options[0]!,
           'Built-in provider': 'OpenAI — openai',
           'Default image model': 'gpt-image-2',
           Credential: 'No API key',
@@ -141,7 +137,7 @@ describe('/image-gen configuration', () => {
         { 'Base URL': 'http://127.0.0.1:8188/v1', 'Output directory': '.pi/images' },
       );
       await runImageGenCommand(ctx);
-      const settings = savedSection(cwd);
+      const settings = savedSection();
       expect(settings.providers?.openai).toMatchObject({ apiKey: '', headers: {} });
       const result = resolveModel('gpt-image-2', settings);
       if ('error' in result) throw new Error(result.error);
@@ -154,9 +150,110 @@ describe('/image-gen configuration', () => {
     }
   });
 
+  it('configures via unified "Configure image model" with preset provider', async () => {
+    globalThis.fetch = (async () => ({ ok: false })) as unknown as typeof fetch;
+    const { cwd, ctx, notices } = setup(
+      {
+        'Image generation': 'Configure image model',
+        'Built-in provider': 'Google Gemini — gemini',
+        'Default image model': 'gemini-3.1-flash-image (nano-banana-2)',
+        Credential: 'Use $GEMINI_API_KEY',
+        'Extra request headers': 'No extra headers',
+      },
+      { 'Output directory': '.pi/gemini-art' },
+    );
+
+    await runImageGenCommand(ctx);
+
+    expect(savedSection()).toEqual({
+      defaultModel: 'gemini-3.1-flash-image',
+      outputDir: '.pi/gemini-art',
+      providers: {
+        gemini: { apiKey: '$GEMINI_API_KEY', headers: {} },
+      },
+    });
+    expect(notices.at(-1)).toMatch(/configured/);
+  });
+
+  it('configures via unified "Configure image model" choosing Custom provider option', async () => {
+    globalThis.fetch = (async () => ({ ok: false })) as unknown as typeof fetch;
+    const { cwd, ctx } = setup(
+      {
+        'Image generation': 'Configure image model',
+        'Built-in provider': 'Custom provider / proxy / self-hosted…',
+        'Image API protocol': 'openai',
+        Credential: 'Use an environment variable…',
+        'Extra request headers': 'No extra headers',
+      },
+      {
+        'Custom provider id': 'siliconflow',
+        'Remote model id': 'Kwai-Kolors/Kolors',
+        'Optional local alias': 'kolors',
+        'Base URL': 'https://api.siliconflow.cn/v1',
+        'Environment variable name': 'SILICONFLOW_KEY',
+        'Output directory': '.pi/sf-images',
+      },
+    );
+
+    await runImageGenCommand(ctx);
+
+    expect(savedSection()).toEqual({
+      defaultModel: 'siliconflow/Kwai-Kolors/Kolors',
+      outputDir: '.pi/sf-images',
+      customProviders: {
+        siliconflow: {
+          api: 'openai',
+          baseUrl: 'https://api.siliconflow.cn/v1',
+          apiKey: '$SILICONFLOW_KEY',
+          headers: {},
+          models: [{ id: 'Kwai-Kolors/Kolors', alias: 'kolors' }],
+        },
+      },
+    });
+  });
+
+  it('configures using discovered models from endpoint', async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('/models')) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [{ id: 'black-forest-labs/flux-schnell' }, { id: 'meta/llama-3' }],
+          }),
+        };
+      }
+      return { ok: false };
+    }) as unknown as typeof fetch;
+
+    try {
+      const { cwd, ctx } = setup(
+        {
+          'Image generation': 'Configure image model',
+          'Built-in provider': 'OpenAI — openai',
+          'Default image model': 'black-forest-labs/flux-schnell (image)',
+          Credential: 'Use $OPENAI_API_KEY',
+          'Extra request headers': 'No extra headers',
+        },
+        { 'Output directory': '.pi/flux' },
+      );
+
+      await runImageGenCommand(ctx);
+
+      expect(savedSection()).toEqual({
+        defaultModel: 'openai/black-forest-labs/flux-schnell',
+        outputDir: '.pi/flux',
+        providers: {
+          openai: { apiKey: '$OPENAI_API_KEY', headers: {} },
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('does not write when the user cancels', async () => {
     const { cwd, ctx } = setup({ 'Image generation': undefined as unknown as string }, {});
     await runImageGenCommand(ctx);
-    expect(() => readFileSync(imageGenSettingsPath(cwd, 'global'), 'utf8')).toThrow();
+    expect(() => readFileSync(imageGenSettingsPath(), 'utf8')).toThrow();
   });
 });

@@ -1,7 +1,7 @@
 import type { GenerateImageParams, ImageGenResult, ImageGenSettings } from './types.js';
 import { generateImage } from './generate.js';
 import { formatImageResult } from './format.js';
-import { isCliProjectTrusted, loadImageGenSettings } from './settings.js';
+import { imageGenSettingsPath, loadImageGenSettings } from './settings.js';
 import { ENV_VARS } from './models.js';
 import { configEnvironmentValues, resolveConfigString, resolveModel } from './config.js';
 
@@ -126,7 +126,7 @@ export async function runImageGenCli(options: ImageGenCliOptions = {}): Promise<
   const cwd = options.cwd ?? process.cwd();
   const stdout = options.stdout ?? ((text: string) => process.stdout.write(`${text}\n`));
   const stderr = options.stderr ?? ((text: string) => process.stderr.write(`${text}\n`));
-  const settings = loadImageGenSettings(cwd, isCliProjectTrusted(cwd));
+  const settings = loadImageGenSettings();
 
   if (args.includes('--help') || args.includes('-h')) {
     stdout(HELP);
@@ -136,7 +136,7 @@ export async function runImageGenCli(options: ImageGenCliOptions = {}): Promise<
     const lines = [
       `Default model: ${settings.defaultModel ?? 'not configured'}`,
       `Output directory: ${settings.outputDir ?? '.pi/images'}`,
-      `Project settings: ${isCliProjectTrusted(cwd) ? 'trusted and active' : 'not active'}`,
+      `Config file: ${imageGenSettingsPath()}`,
     ];
     if (settings.defaultModel) {
       const resolved = resolveModel(settings.defaultModel, settings);

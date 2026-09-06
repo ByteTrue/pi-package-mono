@@ -1,5 +1,6 @@
 import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
-import { resolveModel } from './config.js';
+import { resolveConfigString, resolveModel } from './config.js';
+import { discoverRemoteModels, isLikelyImageModel } from './discovery.js';
 import {
   BUILT_IN_MODELS,
   DEFAULT_API_STYLE,
@@ -11,9 +12,7 @@ import { promptSecret } from './secret-input.js';
 import {
   imageGenSettingsPath,
   loadImageGenSettings,
-  readImageGenSettingsLayer,
   updateImageGenSettings,
-  type SettingsScope,
 } from './settings.js';
 import type {
   ApiStyle,
@@ -49,16 +48,6 @@ function applyChange<T extends Record<string, unknown>, K extends keyof T>(
 ): void {
   if (change.kind === 'set') target[key] = change.value;
   if (change.kind === 'clear') delete target[key];
-}
-
-async function chooseScope(ctx: ExtensionCommandContext): Promise<SettingsScope | undefined> {
-  const globalLabel = `Global — ${imageGenSettingsPath(ctx.cwd, 'global')}`;
-  const projectLabel = `Project — ${imageGenSettingsPath(ctx.cwd, 'project')}`;
-  const options = [globalLabel];
-  if (ctx.isProjectTrusted()) options.push(projectLabel);
-  const selected = await ctx.ui.select('Where should image generation settings be saved?', options);
-  if (!selected) return undefined;
-  return selected === projectLabel ? 'project' : 'global';
 }
 
 async function inputChange(
@@ -182,75 +171,6 @@ function modelLabel(id: string, aliases: readonly string[] | undefined): string 
   return aliases?.length ? `${id} (${aliases.join(', ')})` : id;
 }
 
-async function configureBuiltIn(
-  ctx: ExtensionCommandContext,
-  scope: SettingsScope,
-  effective: ImageGenSettings,
-): Promise<void> {
-  const labels = BUILT_IN_PROVIDERS.map((id) => `${PROVIDER_DISPLAY_NAME[id]} — ${id}`);
-  const selectedProvider = await ctx.ui.select('Built-in provider', labels);
-  if (!selectedProvider) return;
-  const provider = BUILT_IN_PROVIDERS[labels.indexOf(selectedProvider)];
-  if (!provider) return;
-
-  const known = BUILT_IN_MODELS.filter((model) => model.provider === provider);
-  const customLabel = 'Enter another remote model id…';
-  let remoteModel: string;
-  let defaultModel: string;
-  if (known.length > 0) {
-    const modelLabels = known.map((model) => modelLabel(model.id, model.aliases));
-    const selectedModel = await ctx.ui.select('Default image model', [...modelLabels, customLabel]);
-    if (!selectedModel) return;
-    if (selectedModel === customLabel) {
-      const value = await ctx.ui.input('Remote model id');
-      if (!value?.trim()) return;
-      remoteModel = value.trim();
-      defaultModel = `${provider}/${remoteModel}`;
-    } else {
-      const model = known[modelLabels.indexOf(selectedModel)];
-      if (!model) return;
-      remoteModel = model.id;
-      defaultModel = model.id;
-    }
-  } else {
-    const value = await ctx.ui.input('Remote model id', 'Example: google/gemini-3.1-flash-image');
-    if (!value?.trim()) return;
-    remoteModel = value.trim();
-    defaultModel = `${provider}/${remoteModel}`;
-  }
-
-  const existing = effective.providers?.[provider];
-  const baseUrl = await inputChange(ctx, 'Base URL', existing?.baseUrl ?? DEFAULT_BASE_URL[provider]);
-  if (!baseUrl) return;
-  const credential = await promptCredential(ctx, existing?.apiKey, ENV_VARS[provider]);
-  if (!credential) return;
-  const headers = await promptHeaders(ctx, credential.kind !== 'clear' && Boolean(existing?.headers));
-  if (!headers) return;
-  const outputDir = await promptOutputDir(ctx, effective.outputDir);
-  if (!outputDir) return;
-
-  const summary = [
-    `Provider: ${provider}`,
-    `Model: ${remoteModel}`,
-    `Credential: ${credential.summary ?? describeCredential(existing?.apiKey)}`,
-    `Headers: ${headers.kind === 'set' ? Object.keys(headers.value).length : headers.kind}`,
-    `Output: ${outputDir}`,
-    `Target: ${imageGenSettingsPath(ctx.cwd, scope)}`,
-  ].join('\n');
-  if (!(await ctx.ui.confirm('Save image model configuration?', summary))) return;
-
-  const path = updateImageGenSettings(ctx.cwd, scope, (current) => ({
-    ...current,
-    defaultModel,
-    outputDir,
-    providers: {
-      ...(current.providers ?? {}),
-      [provider]: providerOverride(current.providers?.[provider], baseUrl, credential, headers),
-    },
-  }));
-  ctx.ui.notify(`Image model configured in ${path}.`, 'info');
-}
-
 function upsertModel(
   models: Array<string | CustomImageModel> | undefined,
   model: CustomImageModel,
@@ -262,89 +182,216 @@ function upsertModel(
   return next;
 }
 
-async function configureCustom(
+async function configureUnifiedImageModel(
   ctx: ExtensionCommandContext,
-  scope: SettingsScope,
   effective: ImageGenSettings,
+  forceCustom = false,
 ): Promise<void> {
-  const providerInput = await ctx.ui.input('Custom provider id', 'Letters, numbers, dot, underscore, hyphen');
-  if (!providerInput?.trim()) return;
-  const providerId = providerInput.trim();
-  if (!/^[A-Za-z0-9._-]+$/.test(providerId)) {
-    ctx.ui.notify('Provider id may contain only letters, numbers, dot, underscore, and hyphen.', 'error');
-    return;
+  let isPreset = false;
+  let providerId = '';
+  let api: ApiStyle = 'openai';
+  let defaultBaseUrl = DEFAULT_BASE_URL.openai;
+  let defaultEnvVar: string | undefined = undefined;
+
+  if (forceCustom) {
+    const providerInput = await ctx.ui.input('Custom provider id', 'Letters, numbers, dot, underscore, hyphen');
+    if (!providerInput?.trim()) return;
+    providerId = providerInput.trim();
+    if (!/^[A-Za-z0-9._-]+$/.test(providerId)) {
+      ctx.ui.notify('Provider id may contain only letters, numbers, dot, underscore, and hyphen.', 'error');
+      return;
+    }
+    if (BUILT_IN_PROVIDERS.includes(providerId as BuiltInProviderId)) {
+      ctx.ui.notify(`Provider id "${providerId}" is reserved by a built-in provider. Choose another id.`, 'error');
+      return;
+    }
+    const existing = effective.customProviders?.[providerId];
+    const apiLabels = API_STYLES.map((a) => `${a}${existing?.api === a ? ' (current)' : ''}`);
+    const selectedApi = await ctx.ui.select('Image API protocol', apiLabels);
+    if (!selectedApi) return;
+    api = API_STYLES[apiLabels.indexOf(selectedApi)] ?? 'openai';
+    defaultBaseUrl = existing?.baseUrl ?? DEFAULT_BASE_URL[api as BuiltInProviderId] ?? 'https://api.openai.com/v1';
+  } else {
+    const presetLabels = BUILT_IN_PROVIDERS.map((id) => `${PROVIDER_DISPLAY_NAME[id]} — ${id}`);
+    const customOption = 'Custom provider / proxy / self-hosted…';
+    const selectedProvider = await ctx.ui.select('Built-in provider', [...presetLabels, customOption]);
+    if (!selectedProvider) return;
+
+    if (selectedProvider === customOption) {
+      const providerInput = await ctx.ui.input('Custom provider id', 'Letters, numbers, dot, underscore, hyphen');
+      if (!providerInput?.trim()) return;
+      providerId = providerInput.trim();
+      if (!/^[A-Za-z0-9._-]+$/.test(providerId)) {
+        ctx.ui.notify('Provider id may contain only letters, numbers, dot, underscore, and hyphen.', 'error');
+        return;
+      }
+      if (BUILT_IN_PROVIDERS.includes(providerId as BuiltInProviderId)) {
+        ctx.ui.notify(`Provider id "${providerId}" is reserved by a built-in provider. Choose another id.`, 'error');
+        return;
+      }
+      const existing = effective.customProviders?.[providerId];
+      const apiLabels = API_STYLES.map((a) => `${a}${existing?.api === a ? ' (current)' : ''}`);
+      const selectedApi = await ctx.ui.select('Image API protocol', apiLabels);
+      if (!selectedApi) return;
+      api = API_STYLES[apiLabels.indexOf(selectedApi)] ?? 'openai';
+      defaultBaseUrl = existing?.baseUrl ?? DEFAULT_BASE_URL[api as BuiltInProviderId] ?? 'https://api.openai.com/v1';
+    } else {
+      isPreset = true;
+      providerId = BUILT_IN_PROVIDERS[presetLabels.indexOf(selectedProvider)] ?? 'openai';
+      api = DEFAULT_API_STYLE[providerId as BuiltInProviderId];
+      defaultBaseUrl = DEFAULT_BASE_URL[providerId as BuiltInProviderId];
+      defaultEnvVar = ENV_VARS[providerId as BuiltInProviderId];
+    }
   }
-  if (BUILT_IN_PROVIDERS.includes(providerId as BuiltInProviderId)) {
-    ctx.ui.notify(`Provider id "${providerId}" is reserved by a built-in provider. Choose another id.`, 'error');
-    return;
-  }
-  const existing = effective.customProviders?.[providerId];
 
-  const apiLabels = API_STYLES.map((api) => `${api}${existing?.api === api ? ' (current)' : ''}`);
-  const selectedApi = await ctx.ui.select('Image API protocol', apiLabels);
-  if (!selectedApi) return;
-  const api = API_STYLES[apiLabels.indexOf(selectedApi)];
-  if (!api) return;
+  const existingBuiltIn = isPreset ? effective.providers?.[providerId as BuiltInProviderId] : undefined;
+  const existingCustom = !isPreset ? effective.customProviders?.[providerId] : undefined;
+  const currentBaseUrl = isPreset ? existingBuiltIn?.baseUrl : existingCustom?.baseUrl;
+  const currentApiKey = isPreset ? existingBuiltIn?.apiKey : existingCustom?.apiKey;
+  const currentHeaders = isPreset ? existingBuiltIn?.headers : existingCustom?.headers;
 
-  const modelIdInput = await ctx.ui.input('Remote model id');
-  if (!modelIdInput?.trim()) return;
-  const modelId = modelIdInput.trim();
-  const aliasInput = await ctx.ui.input('Optional local alias', 'Enter for no alias');
-  if (aliasInput === undefined) return;
-  const alias = aliasInput.trim() || undefined;
-
-  const baseUrl = await inputChange(
-    ctx,
-    'Base URL',
-    existing?.baseUrl ?? DEFAULT_BASE_URL[api as BuiltInProviderId],
-  );
+  const baseUrl = await inputChange(ctx, 'Base URL', currentBaseUrl ?? defaultBaseUrl);
   if (!baseUrl) return;
-  const credential = await promptCredential(ctx, existing?.apiKey);
+
+  const credential = await promptCredential(ctx, currentApiKey, defaultEnvVar);
   if (!credential) return;
-  const headers = await promptHeaders(ctx, credential.kind !== 'clear' && Boolean(existing?.headers));
+
+  const headers = await promptHeaders(ctx, credential.kind !== 'clear' && Boolean(currentHeaders));
   if (!headers) return;
+
+  // Resolve values for discovery probe
+  const effectiveBaseUrl = baseUrl.kind === 'set' ? baseUrl.value : (currentBaseUrl ?? defaultBaseUrl);
+  const rawKey = credential.kind === 'set'
+    ? credential.value
+    : (credential.kind === 'keep' ? currentApiKey : undefined);
+  const effectiveApiKey = resolveConfigString(rawKey) || (defaultEnvVar ? process.env[defaultEnvVar] : undefined);
+  const effectiveHeaders = headers.kind === 'set'
+    ? headers.value
+    : (headers.kind === 'keep' ? currentHeaders : undefined);
+
+  // Model selection (with discovery probe)
+  const discovered = await discoverRemoteModels({
+    api,
+    baseUrl: effectiveBaseUrl,
+    apiKey: effectiveApiKey,
+    headers: effectiveHeaders,
+  });
+
+  const customLabel = 'Enter another remote model id…';
+  let remoteModel: string;
+  let defaultModel: string;
+  let alias: string | undefined = undefined;
+
+  if (discovered.length > 0) {
+    const discoveredOptions = discovered.map((id) => (isLikelyImageModel(id) ? `${id} (image)` : id));
+    const selectedModel = await ctx.ui.select('Default image model', [...discoveredOptions, customLabel]);
+    if (!selectedModel) return;
+
+    if (selectedModel === customLabel) {
+      const value = await ctx.ui.input('Remote model id');
+      if (!value?.trim()) return;
+      remoteModel = value.trim();
+    } else {
+      const idx = discoveredOptions.indexOf(selectedModel);
+      remoteModel = discovered[idx]!;
+    }
+  } else if (isPreset) {
+    const known = BUILT_IN_MODELS.filter((m) => m.provider === providerId);
+    if (known.length > 0) {
+      const modelLabels = known.map((m) => modelLabel(m.id, m.aliases));
+      const selectedModel = await ctx.ui.select('Default image model', [...modelLabels, customLabel]);
+      if (!selectedModel) return;
+
+      if (selectedModel === customLabel) {
+        const value = await ctx.ui.input('Remote model id');
+        if (!value?.trim()) return;
+        remoteModel = value.trim();
+      } else {
+        const model = known[modelLabels.indexOf(selectedModel)];
+        if (!model) return;
+        remoteModel = model.id;
+      }
+    } else {
+      const value = await ctx.ui.input('Remote model id', 'Example: google/gemini-3.1-flash-image');
+      if (!value?.trim()) return;
+      remoteModel = value.trim();
+    }
+  } else {
+    const value = await ctx.ui.input('Remote model id');
+    if (!value?.trim()) return;
+    remoteModel = value.trim();
+  }
+
+  if (isPreset) {
+    const isKnownBuiltIn = BUILT_IN_MODELS.some((m) => m.id === remoteModel && m.provider === providerId);
+    defaultModel = isKnownBuiltIn ? remoteModel : `${providerId}/${remoteModel}`;
+  } else {
+    const aliasInput = await ctx.ui.input('Optional local alias', 'Enter for no alias');
+    if (aliasInput === undefined) return;
+    alias = aliasInput.trim() || undefined;
+    defaultModel = `${providerId}/${remoteModel}`;
+  }
+
   const outputDir = await promptOutputDir(ctx, effective.outputDir);
   if (!outputDir) return;
 
   const summary = [
     `Provider: ${providerId}`,
     `Protocol: ${api}`,
-    `Model: ${modelId}${alias ? ` as ${alias}` : ''}`,
-    `Credential: ${credential.summary ?? describeCredential(existing?.apiKey)}`,
+    `Model: ${remoteModel}${alias ? ` as ${alias}` : ''}`,
+    `Credential: ${credential.summary ?? describeCredential(currentApiKey)}`,
     `Headers: ${headers.kind === 'set' ? Object.keys(headers.value).length : headers.kind}`,
     `Output: ${outputDir}`,
-    `Target: ${imageGenSettingsPath(ctx.cwd, scope)}`,
+    `Target: ${imageGenSettingsPath()}`,
   ].join('\n');
-  if (!(await ctx.ui.confirm('Save custom image model?', summary))) return;
 
-  const path = updateImageGenSettings(ctx.cwd, scope, (current) => {
-    const previous = current.customProviders?.[providerId];
-    const next: CustomImageProvider = {
-      ...(previous ?? {}),
-      api,
-      models: upsertModel(previous?.models, alias ? { id: modelId, alias } : { id: modelId }),
-    };
-    applyChange(next as Record<string, unknown>, 'baseUrl', baseUrl as Change<unknown>);
-    if (credential.kind === 'clear') next.apiKey = '';
-    else applyChange(next as Record<string, unknown>, 'apiKey', credential as Change<unknown>);
-    if (headers.kind === 'clear') next.headers = {};
-    else applyChange(next as Record<string, unknown>, 'headers', headers as Change<unknown>);
-    return {
-      ...current,
-      defaultModel: `${providerId}/${modelId}`,
-      outputDir,
-      customProviders: { ...(current.customProviders ?? {}), [providerId]: next },
-    };
+  const confirmTitle = isPreset ? 'Save image model configuration?' : 'Save custom image model?';
+  if (!(await ctx.ui.confirm(confirmTitle, summary))) return;
+
+  const path = updateImageGenSettings((current) => {
+    if (isPreset) {
+      return {
+        ...current,
+        defaultModel,
+        outputDir,
+        providers: {
+          ...(current.providers ?? {}),
+          [providerId]: providerOverride(current.providers?.[providerId as BuiltInProviderId], baseUrl, credential, headers),
+        },
+      };
+    } else {
+      const previous = current.customProviders?.[providerId];
+      const next: CustomImageProvider = {
+        ...(previous ?? {}),
+        api,
+        models: upsertModel(previous?.models, alias ? { id: remoteModel, alias } : { id: remoteModel }),
+      };
+      applyChange(next as Record<string, unknown>, 'baseUrl', baseUrl as Change<unknown>);
+      if (credential.kind === 'clear') next.apiKey = '';
+      else applyChange(next as Record<string, unknown>, 'apiKey', credential as Change<unknown>);
+      if (headers.kind === 'clear') next.headers = {};
+      else applyChange(next as Record<string, unknown>, 'headers', headers as Change<unknown>);
+      return {
+        ...current,
+        defaultModel,
+        outputDir,
+        customProviders: { ...(current.customProviders ?? {}), [providerId]: next },
+      };
+    }
   });
-  ctx.ui.notify(`Custom image model configured in ${path}.`, 'info');
+
+  const notifyMsg = isPreset
+    ? `Image model configured in ${path}.`
+    : `Custom image model configured in ${path}.`;
+  ctx.ui.notify(notifyMsg, 'info');
 }
 
 function showConfiguration(ctx: ExtensionCommandContext): void {
-  const settings = loadImageGenSettings(ctx.cwd, ctx.isProjectTrusted());
+  const settings = loadImageGenSettings();
   const lines = [
     `Default model: ${settings.defaultModel ?? 'not configured'}`,
     `Output directory: ${settings.outputDir ?? '.pi/images'}`,
-    `Project settings: ${ctx.isProjectTrusted() ? 'trusted and active' : 'not active'}`,
+    `Config file: ${imageGenSettingsPath()}`,
   ];
   if (settings.defaultModel) {
     const resolved = resolveModel(settings.defaultModel, settings);
@@ -361,13 +408,12 @@ function showConfiguration(ctx: ExtensionCommandContext): void {
 
 async function setOutputDirectory(
   ctx: ExtensionCommandContext,
-  scope: SettingsScope,
   effective: ImageGenSettings,
 ): Promise<void> {
   const outputDir = await promptOutputDir(ctx, effective.outputDir);
   if (!outputDir) return;
-  if (!(await ctx.ui.confirm('Save output directory?', `${outputDir}\n${imageGenSettingsPath(ctx.cwd, scope)}`))) return;
-  const path = updateImageGenSettings(ctx.cwd, scope, (current) => ({ ...current, outputDir }));
+  if (!(await ctx.ui.confirm('Save output directory?', `${outputDir}\n${imageGenSettingsPath()}`))) return;
+  const path = updateImageGenSettings((current) => ({ ...current, outputDir }));
   ctx.ui.notify(`Output directory saved in ${path}.`, 'info');
 }
 
@@ -390,13 +436,11 @@ export async function runImageGenCommand(
   }
 
   try {
-    const configureBuiltInLabel = 'Configure a built-in provider and model';
-    const configureCustomLabel = 'Configure a custom provider and model';
+    const configureModelLabel = 'Configure image model';
     const outputLabel = 'Set output directory';
     const showLabel = 'Show effective configuration';
     const action = await ctx.ui.select('Image generation', [
-      configureBuiltInLabel,
-      configureCustomLabel,
+      configureModelLabel,
       outputLabel,
       showLabel,
     ]);
@@ -406,14 +450,23 @@ export async function runImageGenCommand(
       return;
     }
 
-    const scope = await chooseScope(ctx);
-    if (!scope) return;
-    readImageGenSettingsLayer(ctx.cwd, scope); // fail closed before collecting secrets
-    const effective = loadImageGenSettings(ctx.cwd, ctx.isProjectTrusted());
-    if (action === configureBuiltInLabel) await configureBuiltIn(ctx, scope, effective);
-    else if (action === configureCustomLabel) await configureCustom(ctx, scope, effective);
-    else if (action === outputLabel) await setOutputDirectory(ctx, scope, effective);
+    const effective = loadImageGenSettings();
+    if (action === configureModelLabel || action === 'Configure a built-in provider and model') {
+      await configureUnifiedImageModel(ctx, effective, false);
+      return;
+    }
+    if (action === 'Configure a custom provider and model') {
+      await configureUnifiedImageModel(ctx, effective, true);
+      return;
+    }
+    if (action === outputLabel) {
+      await setOutputDirectory(ctx, effective);
+      return;
+    }
   } catch (error) {
-    ctx.ui.notify(error instanceof Error ? error.message : String(error), 'error');
+    ctx.ui.notify(
+      `Failed to configure image generation: ${error instanceof Error ? error.message : String(error)}`,
+      'error',
+    );
   }
 }

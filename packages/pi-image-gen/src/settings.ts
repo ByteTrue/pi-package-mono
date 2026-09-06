@@ -12,9 +12,8 @@ import { randomUUID } from 'node:crypto';
 import type { ImageGenSettings } from './types.js';
 
 export const SETTINGS_KEY = 'pi-image-gen';
-export const TRUSTED_CWD_ENV = 'PI_IMAGE_GEN_TRUSTED_CWD';
-
-export type SettingsScope = 'global' | 'project';
+export const SETTINGS_DIRNAME = 'pi-image-gen';
+export const SETTINGS_FILENAME = 'settings.json';
 
 type JsonObject = Record<string, unknown>;
 
@@ -26,14 +25,9 @@ function activeConfigDir(): string {
   );
 }
 
-function defaultConfigDir(): string {
-  return resolve(join(homedir(), '.pi', 'agent'));
-}
-
-export function imageGenSettingsPath(cwd: string, scope: SettingsScope): string {
-  return scope === 'project'
-    ? join(resolve(cwd), '.pi', 'settings.json')
-    : join(activeConfigDir(), 'settings.json');
+/** Dedicated package config file: <config dir>/pi-image-gen/settings.json. */
+export function imageGenSettingsPath(): string {
+  return join(activeConfigDir(), SETTINGS_DIRNAME, SETTINGS_FILENAME);
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -93,108 +87,57 @@ function validProvider(value: unknown, custom: boolean): boolean {
 }
 
 function invalidSection(strict: boolean): ImageGenSettings {
-  if (strict) throw new Error(`${SETTINGS_KEY} has an invalid nested shape.`);
+  if (strict) throw new Error(`${SETTINGS_KEY} settings have an invalid shape.`);
   return {};
 }
 
+/** The dedicated file's top-level object IS the settings section. */
 function sectionFromDocument(document: JsonObject | undefined, strict: boolean): ImageGenSettings {
-  if (!document || !Object.prototype.hasOwnProperty.call(document, SETTINGS_KEY)) return {};
-  const section = document[SETTINGS_KEY];
-  if (!isObject(section)) return invalidSection(strict);
-  if (!hasOptionalString(section, 'defaultModel') || !hasOptionalString(section, 'outputDir')) {
+  if (!document) return {};
+  if (!hasOptionalString(document, 'defaultModel') || !hasOptionalString(document, 'outputDir')) {
     return invalidSection(strict);
   }
-  if (Object.prototype.hasOwnProperty.call(section, 'providers')) {
-    if (!isObject(section.providers) || !Object.values(section.providers).every((value) => validProvider(value, false))) {
+  if (Object.prototype.hasOwnProperty.call(document, 'providers')) {
+    if (!isObject(document.providers) || !Object.values(document.providers).every((value) => validProvider(value, false))) {
       return invalidSection(strict);
     }
   }
-  if (Object.prototype.hasOwnProperty.call(section, 'customProviders')) {
+  if (Object.prototype.hasOwnProperty.call(document, 'customProviders')) {
     if (
-      !isObject(section.customProviders) ||
-      !Object.values(section.customProviders).every((value) => validProvider(value, true))
+      !isObject(document.customProviders) ||
+      !Object.values(document.customProviders).every((value) => validProvider(value, true))
     ) {
       return invalidSection(strict);
     }
   }
-  return section as ImageGenSettings;
+  return document as ImageGenSettings;
 }
 
-function mergeProviderMaps<T extends Record<string, unknown>>(
-  base: T | undefined,
-  next: T | undefined,
-): T | undefined {
-  if (!base && !next) return undefined;
-  const merged: Record<string, unknown> = { ...(base ?? {}) };
-  for (const [name, value] of Object.entries(next ?? {})) {
-    const previous = merged[name];
-    merged[name] = isObject(previous) && isObject(value) ? { ...previous, ...value } : value;
-  }
-  return merged as T;
+/** Runtime reads are fail-soft. */
+export function loadImageGenSettings(): ImageGenSettings {
+  return sectionFromDocument(readDocument(imageGenSettingsPath(), false), false);
 }
 
-export function mergeImageGenSettings(
-  base: ImageGenSettings,
-  next: ImageGenSettings,
-): ImageGenSettings {
-  const providers = mergeProviderMaps(
-    base.providers as Record<string, unknown> | undefined,
-    next.providers as Record<string, unknown> | undefined,
-  ) as ImageGenSettings['providers'];
-  const customProviders = mergeProviderMaps(
-    base.customProviders as Record<string, unknown> | undefined,
-    next.customProviders as Record<string, unknown> | undefined,
-  ) as ImageGenSettings['customProviders'];
-  return {
-    ...base,
-    ...next,
-    ...(providers ? { providers } : {}),
-    ...(customProviders ? { customProviders } : {}),
-  };
-}
-
-/** Runtime reads are fail-soft; project settings participate only after Pi trust. */
-export function loadImageGenSettings(cwd: string, projectTrusted = false): ImageGenSettings {
-  const paths = [join(defaultConfigDir(), 'settings.json')];
-  const active = imageGenSettingsPath(cwd, 'global');
-  if (active !== paths[0]) paths.push(active);
-  if (projectTrusted) paths.push(imageGenSettingsPath(cwd, 'project'));
-
-  let settings: ImageGenSettings = {};
-  for (const path of paths) {
-    settings = mergeImageGenSettings(
-      settings,
-      sectionFromDocument(readDocument(path, false), false),
-    );
-  }
-  return settings;
-}
-
-/** Strict layer read for an interactive write flow. */
-export function readImageGenSettingsLayer(cwd: string, scope: SettingsScope): ImageGenSettings {
-  const path = imageGenSettingsPath(cwd, scope);
-  return sectionFromDocument(readDocument(path, true), true);
+/** Strict read for an interactive write flow. */
+export function readImageGenSettingsLayer(): ImageGenSettings {
+  return sectionFromDocument(readDocument(imageGenSettingsPath(), true), true);
 }
 
 /**
- * Atomically mutate one settings layer while preserving unrelated settings.
- * The latest file is re-read at commit time so unrelated concurrent changes survive.
+ * Atomically rewrite the package settings file, preserving unrelated
+ * top-level keys. The latest file is re-read at commit time.
  */
 export function updateImageGenSettings(
-  cwd: string,
-  scope: SettingsScope,
   mutate: (current: ImageGenSettings) => ImageGenSettings,
 ): string {
-  const path = imageGenSettingsPath(cwd, scope);
-  const document = readDocument(path, true) ?? {};
-  const current = sectionFromDocument(document, true);
+  const path = imageGenSettingsPath();
+  const current = sectionFromDocument(readDocument(path, true), true);
   const next = mutate(structuredClone(current));
-  document[SETTINGS_KEY] = next;
 
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.pi-image-gen-${randomUUID()}.tmp`;
   try {
-    writeFileSync(temp, `${JSON.stringify(document, null, 2)}\n`, {
+    writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, {
       encoding: 'utf8',
       mode: 0o600,
       flag: 'wx',
@@ -204,18 +147,4 @@ export function updateImageGenSettings(
     rmSync(temp, { force: true });
   }
   return path;
-}
-
-function canonicalCwd(cwd: string): string {
-  return resolve(cwd);
-}
-
-/** Pass Pi's authoritative session trust decision to package CLI child processes. */
-export function exposeProjectTrustToCli(cwd: string, trusted: boolean): void {
-  if (trusted) process.env[TRUSTED_CWD_ENV] = canonicalCwd(cwd);
-  else delete process.env[TRUSTED_CWD_ENV];
-}
-
-export function isCliProjectTrusted(cwd: string): boolean {
-  return process.env[TRUSTED_CWD_ENV] === canonicalCwd(cwd);
 }
