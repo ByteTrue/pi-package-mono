@@ -17,3 +17,10 @@ created: 2026-02-14
 - 改动：`packages/pi-subagent/src/index.test.ts` — 回退测试改为验证根层默认不泄露；层级测试补继承用例
 - 验证：`npm --workspace @bytetrue/pi-subagent test`（16 passed）+ `run typecheck` 通过
 - codestable：已同步 `codestable/spec/pi-subagent/`（模型解析优先级表述）
+
+## 发布记录（2026-09-07）
+
+- 版本：`0.5.2` → `0.6.0`（用户可见默认行为变更，minor）。README 补 Model Resolution 小节。
+- 全仓 typecheck + 489 tests 通过；rebase 到远端 image-gen 0.4.0 三提交之上，无冲突。
+- Release run `34079759607`：success；main CI run `34079756444`：success。
+- npm registry：`0.6.0` 存在，`dist-tags.latest` = `0.6.0`。
