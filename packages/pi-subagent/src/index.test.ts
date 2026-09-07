@@ -195,7 +195,12 @@ describe("pi-subagent unit tests", () => {
     expect(researcherCfg.thinking).toBe("high");
     expect(researcherCfg.tools).toEqual(["read", "grep", "find"]);
 
-    // 3. Direct tool call parameter takes highest precedence
+    // 3. No settings default → inherit the parent session's current model
+    const inheritCfg = resolveRunCfg({}, {}, "low", "parent-model", { agents: {} });
+    expect(inheritCfg.model).toBe("parent-model:low");
+    expect(inheritCfg.thinking).toBe("low");
+
+    // 4. Direct tool call parameter takes highest precedence
     const directCfg = resolveRunCfg(
       { agent: "researcher", model: "custom-model:low", thinking: "off" },
       {},
@@ -231,7 +236,7 @@ describe("pi-subagent unit tests", () => {
     }
   });
 
-  it("loads subagent settings with global defaultProvider/defaultModel and legacy subagents.agentOverrides fallback", () => {
+  it("ignores root-level pi defaults but keeps legacy subagents.agentOverrides fallback", () => {
     const testDir = join(tmpdir(), `pi-subagent-fallback-${Date.now()}`);
     mkdirSync(join(testDir, ".pi"), { recursive: true });
 
@@ -254,8 +259,10 @@ describe("pi-subagent unit tests", () => {
       );
 
       const loaded = loadSubagentSettings(testDir, true);
-      expect(loaded.defaultModel).toBe("bytetrueapi/gemini-3.7-flash");
-      expect(loaded.defaultThinking).toBe("medium");
+      // Root-level pi defaults must NOT leak into subagent defaults:
+      // unset means "inherit parent session model".
+      expect(loaded.defaultModel).toBeUndefined();
+      expect(loaded.defaultThinking).toBeUndefined();
       expect(loaded.agents?.reviewer?.model).toBe("bytetrueapi/qwen3.8-max");
       expect(loaded.agents?.reviewer?.thinking).toBe("high");
     } finally {

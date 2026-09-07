@@ -38,7 +38,8 @@
    - `/subagent` 采用栈式导航，任何子层级按 `Esc` 或选 Back 均返回上一层，根菜单按 `Esc` 退出。
    - 模型选择器支持输入文本实时模糊匹配（Fuzzy search），且支持上下循环滚动（在第一项按向上箭头直接循环到最后一项，反之亦然）。
    - 提供 `View Active Subagents` 面板，支持查看当前会话中每个任务的状态、已运行时长、输出，并可确认终止运行中的任务。
-5. **实时 TUI 差分渲染**：
+5. **模型解析优先级**：`task.model > subagent.agents[x].model > agent .md frontmatter model > subagent.defaultModel > 继承父会话当前模型（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`——不传 `--model` 时子进程自己回退到自己的默认。`defaultThinking` 同链对称（不再读根层 `defaultThinkingLevel`）。
+6. **实时 TUI 差分渲染**：
    - 流式解析子进程 stdout 输出的 JSON 事件，实时更新 Spinner、耗时、思考意图、活跃工具调用与 Token/费用统计。
    - 快捷键 `Alt+O` 随时展开/收起卡片详情。
 

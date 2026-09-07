@@ -102,20 +102,9 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
       }
     }
 
-    // 3. Fallback to global defaultProvider + defaultModel if defaultModel still unset
-    if (!settings.defaultModel) {
-      const defaultProvider = typeof rootObj["defaultProvider"] === "string" ? rootObj["defaultProvider"].trim() : "";
-      const defaultModelName = typeof rootObj["defaultModel"] === "string" ? rootObj["defaultModel"].trim() : "";
-      if (defaultProvider && defaultModelName) {
-        settings.defaultModel = `${defaultProvider}/${defaultModelName}`;
-      } else if (defaultModelName) {
-        settings.defaultModel = defaultModelName;
-      }
-    }
-
-    if (!settings.defaultThinking && typeof rootObj["defaultThinkingLevel"] === "string") {
-      settings.defaultThinking = rootObj["defaultThinkingLevel"].trim();
-    }
+    // Root-level defaultProvider/defaultModel/defaultThinkingLevel are intentionally
+    // NOT used as fallbacks: an unset subagent default means "inherit the parent
+    // session's model"; the child pi process falls back to its own default by itself.
   }
 
   if (Object.keys(agentsMap).length > 0) {

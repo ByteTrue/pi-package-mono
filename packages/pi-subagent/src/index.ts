@@ -1583,11 +1583,7 @@ export default function subagentExtension(pi: {
     if (envModel && envModel.includes("/")) {
       return envModel;
     }
-    // 4. Default model configured in subagent / global settings
-    const settings = loadSubagentSettings(process.cwd(), true);
-    if (settings.defaultModel) {
-      return settings.defaultModel;
-    }
+    // 4. No inherited model: leave unset so the child pi process uses its own default
     return undefined;
   };
 

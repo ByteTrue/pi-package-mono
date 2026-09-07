@@ -99,6 +99,19 @@ Execute tasks in isolated child agent sessions. Multiple tasks run concurrently 
 }
 ```
 
+#### Model Resolution
+
+When no model is specified, subagents **inherit the parent session's current model**. The full priority chain:
+
+1. `tasks[i].model` — per-task override
+2. `subagent.agents[role].model` — per-role binding (settings)
+3. `.pi/agents/<name>.md` frontmatter `model`
+4. `subagent.defaultModel` — explicit subagent default (settings)
+5. Parent session's current model (inherited)
+6. The child `pi` process's own default
+
+Note: root-level pi settings `defaultProvider`/`defaultModel` are deliberately **not** consulted — unset means "inherit", and the child process falls back to its own default by itself.
+
 ## License
 
 MIT
