@@ -16,6 +16,7 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 - 区分目标 provider 与官方模板来源 provider；
 - 模板有歧义时要求用户明确选择，不静默猜测；
 - 不编造 cost、context、capabilities、compat 等元数据；
+- 修改后检查刚编辑文件的每个 provider 的 models 数组是否符合约定顺序（家族 A-Z，家族内按 models.dev `release_date` 升序）；任一 provider 不整齐时询问用户是否整理整个文件，局部整理无意义；整理是仅重排对象、不改字段的窄编辑，完成后重新过离线验证；查不到日期/家族时问用户，不猜。
 - 任何回复、diff 或工具参数都不复现 `apiKey`；
 - 每次修改后必须运行 active Pi 的 `pi --list-models --offline`，检查两条输出流没有 `errors loading models.json` warning，并验证目标模型列表变化；exact sync 还必须执行 Skill 固定 Node 模板生成且用户确认的 plan 文件、写前 stale assertion、写后 exact-set assertion 与 discovery union assertion。
 

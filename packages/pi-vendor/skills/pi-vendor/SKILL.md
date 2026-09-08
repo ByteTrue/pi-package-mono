@@ -191,7 +191,22 @@ Every mutation has a hard completion gate:
 
 An actual generation request can consume quota and is not part of the default gate. Run one only when the user explicitly asks for a live model call.
 
-After successful verification, report only the changed JSON paths, selected official source or custom status, Pi offline verification result, and applicable discovery status.
+After successful verification, check model ordering (next section), then report only the changed JSON paths, selected official source or custom status, Pi offline verification result, and applicable discovery status.
+
+## Model ordering
+
+After a successful mutation, check the entire file just edited — every provider's `models` array, not only the provider you touched — against the agreed order. Partial reordering is meaningless. If any provider deviates, ask the user whether to reorganize the whole file; reorder only after they agree.
+
+The agreed order is:
+
+1. Model families in alphabetical order (A-Z) by family name.
+2. Models within a family by release date, oldest first.
+
+Family and release date come only from `https://models.dev/api.json`. Fetch it, match each configured model ID against the providers there, and use the matched model's `release_date`. If a model cannot be matched there, do not guess a date or family: keep its relative position and ask the user.
+
+Reordering is a narrow edit: move whole model objects without changing any field. Confirm the final family/date order with the user before editing. Then rerun the mandatory final verification.
+
+This check applies to the file just edited only; never touch other configuration files.
 
 ## API keys
 
