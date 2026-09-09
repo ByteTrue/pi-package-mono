@@ -26,4 +26,13 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("/v1/v1/messages");
 		expect(skill).toContain("Verify routing constraints, especially the Anthropic Messages rule");
 	});
+
+	it("enforces strict-patch integrity, 100% official template key order preservation, and model ordering gates", () => {
+		expect(skill).toContain("Strict-Patch Rule (In-Place Integrity)");
+		expect(skill).toContain("preserve 100% of the official template's non-routing metadata verbatim");
+		expect(skill).toContain("Retain the exact original key order of the official template");
+		expect(skill).toContain("Run the mandatory Model ordering check");
+		expect(skill).toContain("Enforcement Gate");
+		expect(skill).toContain("conclude or report final success silently");
+	});
 });

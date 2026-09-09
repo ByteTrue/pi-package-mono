@@ -128,14 +128,23 @@ Classify the request into exactly one workflow, then follow its numbered steps. 
 3. Compare `count` with `total`. If truncated, rerun with limit `100` and narrow the keyword until every relevant candidate is visible.
 4. Show the mapping `(user text -> candidate ID -> official provider)` and all viable matches. A fuzzy result is a candidate, never silent authorization. If identity or official source is ambiguous, ask the user to select it.
 5. Resolve the target provider. An exact target named by the user remains valid; do not ask twice.
-6. Locate only the target provider/model range and apply the narrow edit. Copy non-routing metadata only from the selected official template. Never copy catalog `baseUrl`, credentials, headers, `provider`, or `authHeader`.
+6. Locate only the target provider/model range and apply the narrow edit. When copying from the selected official template, preserve 100% of the official template's non-routing metadata verbatim:
+   - Retain every official field (e.g. `allowedFallbackModels`, `compat`, `thinkingLevelMap`, `contextWindow`, etc.) without dropping or trimming anything.
+   - Retain the exact original key order of the official template; never reorder keys to match other models or personal habits.
+   - Never copy catalog `baseUrl`, credentials, headers, `provider`, or `authHeader`.
+   - Apply the Anthropic Messages `baseUrl` Rule below if applicable.
 7. Run the mandatory final verification below. Do not report completion before it passes.
+8. Run the mandatory Model ordering check (see the "Model ordering" section). If any model order deviates, ask the user before concluding.
 
 If catalog returns no match, say this is not proof the model is invalid. Ask whether to use the requested text as a custom ID or provide another search term. Do not silently normalize, suffix, or substitute it.
 
 Use `models` for new/custom definitions and `modelOverrides` for partial changes to an existing built-in or extension model. Add model-level `api` or `baseUrl` only when it differs from the inherited provider route, with one mandatory exception:
 
 - **Anthropic Messages `baseUrl` Rule**: Pi's `anthropic-messages` adapter (via the Anthropic SDK) automatically appends `/v1/messages` to requests. If a model uses or inherits `api: "anthropic-messages"` while the provider's `baseUrl` contains a trailing `/v1` (e.g. `http://host:port/v1`), you **must** configure a model-level `baseUrl` stripped of the trailing `/v1` (e.g. `baseUrl: "http://host:port"`). Leaving it unconfigured causes requests to hit `/v1/v1/messages` and fail with 404. If the provider's `baseUrl` already has no `/v1` segment, do not add a model-level `baseUrl`.
+
+- **Strict-Patch Rule (In-Place Integrity)**:
+  - When updating an existing model, change **only** the specific field value requested by the user. Every other field and the original key declaration order must remain 100% unchanged. Never rewrite, reorder keys, or omit unmentioned fields during an update.
+  - When adding a model from an official template, carry over all non-routing fields in their exact official key order without reordering or dropping fields.
 
 Never create duplicate IDs in one provider's `models` array.
 
@@ -156,7 +165,8 @@ Never create duplicate IDs in one provider's `models` array.
 8. Immediately before editing, run **Assert before and after**. If it returns `plan_stale`, stop, regenerate the plan, show it verbatim, and obtain fresh confirmation. Never merge a concurrent change into the old plan.
 9. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; a Pi-loadable file is not sufficient.
 10. Run the mandatory final verification, then **Assert the final discovery union**. Exact sync is successful only when all three assertion templates pass.
-11. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
+11. Run the mandatory Model ordering check. If any order deviates, prompt the user before concluding.
+12. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
 
 ### 3. Add a provider
 
@@ -171,9 +181,10 @@ Never create duplicate IDs in one provider's `models` array.
 
 1. Locate the exact provider key or model ID without printing the full file.
 2. For a read, report only non-secret routing fields and model IDs.
-3. For an update, patch only the requested fields. Before changing inherited provider routing, identify affected models and preserve required model-level overrides (including the Anthropic Messages trailing `/v1` `baseUrl` rule).
+3. For an update, apply a strict in-place patch: modify only the requested field value. Keep every other existing field, nested structure, and key declaration order 100% intact. Before changing inherited provider routing, identify affected models and preserve required model-level overrides (including the Anthropic Messages trailing `/v1` `baseUrl` rule).
 4. For deletion, show the exact target and confirm unless the user already requested that exact deletion. Removing a built-in override restores built-in behavior; it does not delete Pi's built-in provider.
 5. Apply the narrow edit, then run the mandatory final verification.
+6. After a model update or deletion, run the mandatory Model ordering check. If any order deviates, ask the user before concluding.
 
 For conflicts, report the exact JSON path and ask whether to update, replace, skip, or choose another target. Do not upsert silently.
 
@@ -199,16 +210,21 @@ After successful verification, check model ordering (next section), then report 
 
 ## Model ordering
 
-After a successful mutation, check the entire file just edited — every provider's `models` array, not only the provider you touched — against the agreed order. Partial reordering is meaningless. If any provider deviates, ask the user whether to reorganize the whole file; reorder only after they agree.
+Every model mutation workflow (Configure a model, Exact sync, Update/delete a model) has a mandatory ordering check gate before reporting completion.
+
+After a successful mutation and mandatory final verification, check the entire file just edited — every provider's `models` array, not only the provider you touched — against the agreed order. Partial reordering is meaningless.
 
 The agreed order is:
 
-1. Model families in alphabetical order (A-Z) by family name.
-2. Models within a family by release date, oldest first.
+1. Model series / families in alphabetical order (A-Z) by top-level brand or series name (e.g. `claude` before `deepseek`, `deepseek` before `gemini`, `gemini` before `glm`, `glm` before `gpt`, `gpt` before `kimi`, `kimi` before `qwen`).
+2. Within the same model series, models are ordered strictly by release date (`release_date`), oldest first (e.g. across the entire `claude` series: `claude-haiku-4-5` [2025-10-15] before `claude-fable-5` [2026-06-07] before `claude-sonnet-5` [2026-06-29] before `claude-opus-5` [2026-07-24] before `claude-fable-5-1` [2026-09-01]; fable-5 was released before sonnet-5 and opus-5, so it must precede them).
 
-Family and release date come only from `https://models.dev/api.json`. Fetch it, match each configured model ID against the providers there, and use the matched model's `release_date`. If a model cannot be matched there, do not guess a date or family: keep its relative position and ask the user.
+Release dates come from `https://models.dev/api.json`. Fetch it, match each configured model ID against the providers/models there, and use the matched model's `release_date`. If a model cannot be matched there, do not guess a date: keep its relative position and ask the user.
 
-Reordering is a narrow edit: move whole model objects without changing any field. Confirm the final family/date order with the user before editing. Then rerun the mandatory final verification.
+**Enforcement Gate**:
+If any provider's `models` array deviates from the agreed order (such as `claude-fable-5` incorrectly placed after `claude-opus-5`), you **must not** conclude or report final success silently. You **must explicitly alert the user to the detected disorder** and ask whether to reorganize the entire file.
+
+Reordering is a narrow edit: move whole model objects without changing any field or key order within them. Confirm the proposed final order with the user before editing. Then rerun the mandatory final verification.
 
 This check applies to the file just edited only; never touch other configuration files.
 
