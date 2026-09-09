@@ -19,4 +19,11 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("discover '<provider-key>'");
 		expect(skill).toContain("There is no AI-facing CRUD, compare, or lint command.");
 	});
+
+	it("documents the mandatory Anthropic Messages trailing /v1 baseUrl rule and audit requirement", () => {
+		expect(skill).toContain("Anthropic Messages `baseUrl` Rule");
+		expect(skill).toContain("stripped of the trailing `/v1`");
+		expect(skill).toContain("/v1/v1/messages");
+		expect(skill).toContain("Verify routing constraints, especially the Anthropic Messages rule");
+	});
 });

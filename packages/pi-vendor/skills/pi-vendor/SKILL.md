@@ -133,7 +133,11 @@ Classify the request into exactly one workflow, then follow its numbered steps. 
 
 If catalog returns no match, say this is not proof the model is invalid. Ask whether to use the requested text as a custom ID or provide another search term. Do not silently normalize, suffix, or substitute it.
 
-Use `models` for new/custom definitions and `modelOverrides` for partial changes to an existing built-in or extension model. Add model-level `api` or `baseUrl` only when it differs from the inherited provider route. Never create duplicate IDs in one provider's `models` array.
+Use `models` for new/custom definitions and `modelOverrides` for partial changes to an existing built-in or extension model. Add model-level `api` or `baseUrl` only when it differs from the inherited provider route, with one mandatory exception:
+
+- **Anthropic Messages `baseUrl` Rule**: Pi's `anthropic-messages` adapter (via the Anthropic SDK) automatically appends `/v1/messages` to requests. If a model uses or inherits `api: "anthropic-messages"` while the provider's `baseUrl` contains a trailing `/v1` (e.g. `http://host:port/v1`), you **must** configure a model-level `baseUrl` stripped of the trailing `/v1` (e.g. `baseUrl: "http://host:port"`). Leaving it unconfigured causes requests to hit `/v1/v1/messages` and fail with 404. If the provider's `baseUrl` already has no `/v1` segment, do not add a model-level `baseUrl`.
+
+Never create duplicate IDs in one provider's `models` array.
 
 ### 2. List or synchronize a provider's upstream models
 
@@ -150,7 +154,7 @@ Use `models` for new/custom definitions and `modelOverrides` for partial changes
 6. Treat that generated JSON as immutable. Show it verbatim, run `catalog` for every ID in `add`, resolve every official source, and ask the user to confirm the exact `remove` and `after` arrays. Keep the whole batch read-only until every source and destructive choice is resolved.
 7. If any intended route failed, do not propose removals or exact synchronization. Report the unverified route; individually adding IDs with positive evidence may continue through workflow 1.
 8. Immediately before editing, run **Assert before and after**. If it returns `plan_stale`, stop, regenerate the plan, show it verbatim, and obtain fresh confirmation. Never merge a concurrent change into the old plan.
-9. Apply only the confirmed plan and selected catalog templates. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; a Pi-loadable file is not sufficient.
+9. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; a Pi-loadable file is not sufficient.
 10. Run the mandatory final verification, then **Assert the final discovery union**. Exact sync is successful only when all three assertion templates pass.
 11. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
 
@@ -167,7 +171,7 @@ Use `models` for new/custom definitions and `modelOverrides` for partial changes
 
 1. Locate the exact provider key or model ID without printing the full file.
 2. For a read, report only non-secret routing fields and model IDs.
-3. For an update, patch only the requested fields. Before changing inherited provider routing, identify affected models and preserve required model-level overrides.
+3. For an update, patch only the requested fields. Before changing inherited provider routing, identify affected models and preserve required model-level overrides (including the Anthropic Messages trailing `/v1` `baseUrl` rule).
 4. For deletion, show the exact target and confirm unless the user already requested that exact deletion. Removing a built-in override restores built-in behavior; it does not delete Pi's built-in provider.
 5. Apply the narrow edit, then run the mandatory final verification.
 
@@ -220,4 +224,4 @@ It prompts without echo and atomically writes mode `0600`. After the user report
 
 ## Audit
 
-For an audit, run Pi offline validation, use `discover` for configured upstream routes, and use `catalog` only for model metadata questions. Report exact JSON paths, route statuses, ambiguity, and remediation without credential values. Do not rewrite a clean file.
+For an audit, run Pi offline validation, use `discover` for configured upstream routes, and use `catalog` only for model metadata questions. Verify routing constraints, especially the Anthropic Messages rule: any model with `api: "anthropic-messages"` under a provider whose `baseUrl` ends in `/v1` must specify a model-level `baseUrl` without `/v1`. Report exact JSON paths, route statuses, routing defects, ambiguity, and remediation without credential values. Do not rewrite a clean file.
