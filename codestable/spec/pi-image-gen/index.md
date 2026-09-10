@@ -80,5 +80,6 @@ pack smoke 必须证明 tarball 含 extension、Skill、wrapper、CLI dist；pac
 ## 证据索引
 
 - 包 README：`packages/pi-image-gen/README.md`
+- 统一配置流与专用存储：`codestable/issues/066-x-image-gen-unified-config-and-discovery.md`
 - 已关闭 agent surface 变更：`codestable/epics/004-x-image-gen-web-agent-surface/spec.md`
 - License：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
