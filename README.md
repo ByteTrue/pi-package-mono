@@ -21,7 +21,7 @@ Each package is independent. Install one capability without inheriting a framewo
 
 | You want Pi to… | Package | What it adds | First step |
 | --- | --- | --- | --- |
-| Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `background_run`, `background_status`, `background_kill`, `/background` | Install and ask Pi to start a command in the background |
+| Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `bash(waitSeconds)`, `background_status`, `background_kill`, `/background` | Install and ask Pi to run a command without hanging on it |
 | Generate or edit images | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | On-demand Skill + CLI, `/image-gen` setup | Run `/image-gen` |
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |
 | Let a text-only model understand images | [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask`, optional attachment analysis, `/vision` | Run `/vision` |
@@ -87,7 +87,7 @@ npm --workspace @bytetrue/pi-image-gen run build
 
 ```text
 packages/
-  pi-background-terminal/  Background process lifecycle
+  pi-background-terminal/  Unified shell execution: bash waitSeconds + background tasks
   pi-image-gen/            Image generation and editing
   pi-vendor/               models.json provider/model management
   pi-vision/               Vision delegation for text-only models

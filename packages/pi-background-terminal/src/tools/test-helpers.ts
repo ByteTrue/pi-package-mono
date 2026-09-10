@@ -30,9 +30,13 @@ export function call(
   tool: RegisteredTool,
   params: Record<string, unknown>,
   sessionId: string,
+  extra: { signal?: AbortSignal } = {},
 ): ReturnType<RegisteredTool["execute"]> {
-  return tool.execute("call", params, new AbortController().signal, () => {}, {
+  return tool.execute("call", params, extra.signal ?? new AbortController().signal, () => {}, {
     cwd: process.cwd(),
-    sessionManager: { getSessionId: () => sessionId },
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => sessionId, getSessionFile: () => null },
+    model: { provider: "test", id: "test-model" },
+    thinkingLevel: "low",
   });
 }

@@ -47,9 +47,9 @@ const ctxFor = (sessionId: string, setStatus = vi.fn()) => ({
 });
 
 describe("pi-background-terminal extension", () => {
-  it("registers the three background tools and the /background command without touching native tools", () => {
+  it("overrides bash with waitSeconds and keeps the two background management tools; powershell stays unregistered", () => {
     const { toolNames, commandNames, events, rendererTypes } = harness();
-    expect(toolNames.sort()).toEqual(["background_kill", "background_run", "background_status"]);
+    expect(toolNames.sort()).toEqual(["background_kill", "background_status", "bash"]);
     expect(commandNames).toEqual(["background"]);
     expect(events.sort()).toEqual([
       "agent_settled",
@@ -60,7 +60,7 @@ describe("pi-background-terminal extension", () => {
     ]);
     // No renderer: Pi's default custom-message rendering already labels and boxes the content.
     expect(rendererTypes).toEqual([]);
-    expect(toolNames).not.toContain("bash");
+    expect(toolNames).not.toContain("background_run");
   });
 
   it("wakes the agent on completion with followUp + triggerTurn, which is what replaces polling", async () => {

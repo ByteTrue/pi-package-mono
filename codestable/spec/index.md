@@ -7,7 +7,7 @@
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
 3. **图像生成**（`@bytetrue/pi-image-gen`）：`/image-gen` 在 TUI 内完整配置，Agent 仅在需要时加载 Skill 并调用 bundled CLI；不注册常驻生成 tool。
-4. **背景终端**（`@bytetrue/pi-background-terminal`）：三个独立工具——后台跑命令、查看、停止。不覆盖 `bash`。
+4. **背景终端**（`@bytetrue/pi-background-terminal`）：覆盖内建 `bash` 加 `waitSeconds`——期内退出内联返回，超期自动转后台+通知；`background_status`/`background_kill` 管理任务。不再提供独立后台启动工具。
 5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
 6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：单工具 `subagent`，支持单任务/并行/串联链式运行子任务，带实时 TUI 差分卡片与 Token/费用统计。
 
@@ -18,7 +18,7 @@
 - `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
 - `pi-web-search` 保留高频 `web_search` / `web_fetch` 与完整 `/web` 配置面；一次搜索只联系一个 provider，失败后显式重试，fetch 固定走 SSRF-safe generic transport。
 - `pi-image-gen` 是低频 Skill + bundled CLI；`/image-gen` 继续在 TUI 内闭合 built-in/custom 首次配置，所有配置仍写 Pi `settings.json` 的 `pi-image-gen` 节。
-- `pi-background-terminal` 保持三个必填参数工具：`background_run(command)` 立即返回并把输出落盘，`background_status(id)` 查看单个任务，`background_kill(id)` 静默停止；`/background` 提供用户菜单。自然完成自动唤醒 Agent，session 结束清理进程树、输出流与文件，`/reload` 保留任务。它不覆盖 `bash`，不提供 timeout、PTY、原生 addon 或 Web UI。
+- `pi-background-terminal` 覆盖内建 `bash`（schema 从内建定义组合，不传 `waitSeconds` 时纯委托内建 execute）：`waitSeconds: N` 同步等待 N 秒，期内退出内联返回，超期转后台（`0` 立即转后台）；`timeout` 为总寿命硬杀（`timed_out` 可观测）；`background_status(id)`/`background_kill(id)` 管理后台任务，`/background` 提供用户菜单。自然完成自动唤醒 Agent，session 结束清理进程树、输出流与文件，`/reload` 保留任务；加载时扫除 >24h 孤儿日志。powershell 不覆盖（extension 注册工具会被强制激活，而 powershell 非默认 active）。
 - **`pi-vision`**：解决“主力模型没有视觉能力却需要按图工作”的诉求。`image_ask` 保留模型主动提出精确问题的路径；0.2.0 新增 opt-in 附件预分析，把 `before_agent_start.images` 在首轮主模型调用前批量交给所选视觉模型。自动模式默认关闭，不处理 TUI 粘贴后形成的路径文本，并受 project trust、数量/总字节与 60 秒 deadline 约束。
 - 近期优先：五个扩展的维护、回归与按需发版。
 
@@ -27,7 +27,7 @@
 - **搜网页 / 抓页面** → 读 [`pi-web-search/`](pi-web-search/index.md)
 - **管理自定义 provider / model** → 读 [`pi-vendor/`](pi-vendor/index.md)
 - **生成图像** → 读 [`pi-image-gen/`](pi-image-gen/index.md) 与 `packages/pi-image-gen/README.md`
-- **后台跑命令** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；三个独立工具，不影响内建 `bash`
+- **跑命令 / 后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；bash 覆盖 + waitSeconds，两个管理工具
 - **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 精确问图 + opt-in 附件预分析 + `/vision` 配置
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
 - **历史审计与旧流程证据** → [`codestable/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
@@ -50,7 +50,7 @@
 | `@bytetrue/pi-web-search` | agent 工具 `web_search`/`web_fetch`、`/web` | `~/.pi/byte-pi-web/config.json`（可用 `PI_CONFIG_DIR`） |
 | `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
 | `@bytetrue/pi-image-gen` | `/image-gen`、按需 Skill `pi-image-gen`、bundled CLI；零常驻 Agent tool | `~/.pi/agent/settings.json`、active agent dir 或可信 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
-| `@bytetrue/pi-background-terminal` | 工具 `background_run`/`background_status`/`background_kill` + 用户菜单 `/background`（不覆盖 `bash`） | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
+| `@bytetrue/pi-background-terminal` | bash 覆盖（`waitSeconds`）+ `background_status`/`background_kill` + 用户菜单 `/background` | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
 | `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `settings.json` 的 `pi-vision.model` 与 `pi-vision.autoAnalyzeAttachments`（`/vision` 写全局层；可信 project 可覆盖） |
 | `@bytetrue/pi-subagent` | 工具 `subagent`（单任务、并行、链式执行 + TUI 差分卡片） | 无独立持久配置；按需读取 `.pi/agents/*.md` 或单次参数覆盖 |
 

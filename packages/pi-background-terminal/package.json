@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-background-terminal",
-  "version": "0.6.0",
-  "description": "Pi extension: run a shell command in the background, check on it, stop it, get notified when it finishes. Also gives the built-in bash/powershell tools a default timeout without overriding them.",
+  "version": "0.7.0",
+  "description": "Pi extension: bash override where waitSeconds moves still-running commands to the background with exit notifications, plus a default timeout for foreground calls.",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -35,7 +35,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.4",
+    "@earendil-works/pi-coding-agent": ">=0.80.5",
     "typebox": "*"
   },
   "devDependencies": {
