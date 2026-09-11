@@ -33,6 +33,7 @@
 3. **后台异步脱机与状态栏监控**：
    - 声明 `async: true` 后立即返回 Task ID，主会话零阻塞。
    - 后台任务完成时，通过 Pi 的 `followUp` 事件唤醒主会话并递交结果；若主模型正在响应，暂存至 `agent_settled` 时合并唤醒。
+   - 不变式：退出通知 `subagent-exit` 的 `details` 必须是纯数据（`toMessageDetails()` 剥掉 `controller`/`done`/`notifyOnExit`）——pi core 每次 LLM 调用前对会话消息做 `structuredClone`，活 Promise 会撞炸整轮（ff 073）。
    - 状态栏实时显示当前活跃任务数（`sub:N`，覆盖前台和后台），会话退出时（`session_shutdown`）自动清理。
 4. **交互式 TUI 与任务监控面板**：
    - `/subagent` 采用栈式导航，任何子层级按 `Esc` 或选 Back 均返回上一层，根菜单按 `Esc` 退出。
