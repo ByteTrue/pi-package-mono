@@ -25,3 +25,10 @@ created: 2026-09-04
 - codestable：`codestable/spec/pi-subagent/index.md` 核心机制第 3 条补一句不变式（通知 details 必须纯数据）。
 
 **通用教训**（已入项目记忆 #1764）：凡经 `pi.sendMessage` / 会话消息传递的 `details` 必须可 `structuredClone`——字符串、数字、布尔，不含 Promise/AbortController/函数/类实例。上游加固（pi core 给 `emitContext` 的 `structuredClone` 包 try/catch）值得提给 getpaseo/paseo，但不在本包职责内。
+
+## 发布
+
+- 版本 `0.6.0` → `0.6.1`（patch：bug 修复，无新表面）。
+- commit `60876ce` 推送 origin/main；tag `pi-subagent-v0.6.1` 触发 `release.yml`（run `34557089694`）：typecheck → npm test → OIDC Trusted Publishing 全部 ✓，带 provenance。
+- npm 已生效：`latest = 0.6.1`；tarball 反验 7 文件 / 28.0 kB 一致。
+- 本机 pi 扩展目录 `~/.pi/agent/npm` 已 `npm update` 到 0.6.1；jiti 实加载冒烟通过（entry 正常、`toMessageDetails` 可用、克隆安全）。
