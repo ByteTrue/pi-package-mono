@@ -1,0 +1,11 @@
+{
+  "packages": [
+    "../packages/pi-web-search",
+    "../packages/pi-image-gen",
+    "../packages/pi-vendor",
+    "../packages/pi-background-terminal",
+    "../packages/pi-vision",
+    "../packages/pi-subagent",
+    "../packages/pi-browser"
+  ]
+}
