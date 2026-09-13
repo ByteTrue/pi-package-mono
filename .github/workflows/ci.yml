@@ -21,4 +21,6 @@ jobs:
       - run: npm test
       # Verify the source-loaded vendor extension and bundled skill are publishable.
       - run: npm --workspace @bytetrue/pi-vendor pack --dry-run
+      # Verify the source-loaded browser extension is publishable.
+      - run: npm --workspace @bytetrue/pi-browser pack --dry-run
       - run: node packages/pi-image-gen/scripts/pack-smoke.mjs
