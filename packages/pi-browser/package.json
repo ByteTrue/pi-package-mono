@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-browser",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension: set up the official playwright-cli + skill, and import your daily browser's login state into a managed profile.",
   "keywords": [
     "pi-package",
