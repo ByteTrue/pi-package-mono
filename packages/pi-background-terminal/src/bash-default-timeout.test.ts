@@ -57,10 +57,10 @@ describe("registerBashDefaultTimeout", () => {
     expect(call.input).toEqual({ path: "/tmp/x" });
   });
 
-  it("ignores background_run calls — background tasks are meant to run long", async () => {
+  it("skips injection when the call opted into waitSeconds — it demotes to background instead of hanging", async () => {
     const handlers = harness();
-    const call = event("background_run", { command: "npm run dev" });
+    const call = event("bash", { command: "npm run dev", waitSeconds: 5 });
     await handlers["tool_call"]?.(call, {});
-    expect(call.input).toEqual({ command: "npm run dev" });
+    expect(call.input).toEqual({ command: "npm run dev", waitSeconds: 5 });
   });
 });

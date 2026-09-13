@@ -53,3 +53,9 @@ closed: 2026-08-24
 - fallback 链按每个 provider 独立超时，多个 provider 可能累加等待时间；当前保留既有单次 15 秒超时，没有新增整链总 deadline。
 - 菜单只允许选择已配置或免 key 的 provider；需要 base URL 的 provider（如未配置 URL 的 SearXNG）不会进入候选。
 - 空结果不触发 fallback；只有 provider 创建失败、请求失败或超时才继续。
+
+## 关闭结论
+
+- **关闭判断**：目标达成——fallback 链按 `/web` 配置的 `providers` 顺序尝试，`web_search` 仍不暴露 provider 参数；已随 `pi-web-search-v0.3.0` 发布。
+- **回写位置**：provider chain 行为与统一语言已在 `codestable/spec/pi-web-search/`；后续 0.4.0 起旧单数 `provider` 字段不再读取，属后续演化，不回溯本 issue。
+- 本文件 2026-08-24 已置 `status: closed`；`-o-` → `-x-` 改名于 2026-09-10 补齐（当时遗漏）。

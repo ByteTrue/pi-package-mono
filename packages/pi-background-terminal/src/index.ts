@@ -1,12 +1,16 @@
 import { truncateLine, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { manager, type BackgroundTask } from "./background/manager.js";
+import { manager, sweepOrphanLogs, type BackgroundTask } from "./background/manager.js";
 import { registerBashDefaultTimeout } from "./bash-default-timeout.js";
 import { registerBackgroundCommand } from "./background-command.js";
 import { registerBackgroundKillTool } from "./tools/background-kill.js";
-import { registerBackgroundRunTool } from "./tools/background-run.js";
 import { registerBackgroundStatusTool } from "./tools/background-status.js";
+import { registerShellOverride } from "./tools/shell-override.js";
 
 export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
+  // Crash paths (uncaughtException, terminal EIO) never fire session_shutdown, so logs
+  // from those sessions survive on disk. Sweep stale ones on every load (startup + /reload).
+  sweepOrphanLogs();
+
   let currentSessionId: string | null = null;
   let updateStatus: (() => void) | undefined;
   let agentBusy = false;
@@ -49,7 +53,7 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
 
   registerBackgroundCommand(pi);
   registerBashDefaultTimeout(pi);
-  registerBackgroundRunTool(pi);
+  registerShellOverride(pi);
   registerBackgroundStatusTool(pi);
   registerBackgroundKillTool(pi);
 
@@ -90,9 +94,11 @@ function formatExitMessage(task: BackgroundTask): string {
   const outcome =
     task.status === "killed"
       ? "was stopped"
-      : task.status === "failed"
-        ? `failed: ${task.error ?? "unknown error"}`
-        : `exited with code ${task.exitCode}`;
+      : task.status === "timed_out"
+        ? `timed out after ${task.timeoutSeconds} seconds`
+        : task.status === "failed"
+          ? `failed: ${task.error ?? "unknown error"}`
+          : `exited with code ${task.exitCode}`;
   const lastLine = task.tail.trim().split("\n").at(-1);
   const summary = lastLine ? ` Last line: ${truncateLine(lastLine, 250).text}` : "";
   return `[${task.id}] ${task.command} ${outcome}.${summary} Output: ${task.outputPath}`;

@@ -3,7 +3,7 @@ kind: issue
 title: "subagent 默认模型优先级：不再劫持 pi 根层默认"
 type: ff
 status: closed
-created: 2026-02-14
+created: 2026-09-07
 ---
 
 # subagent 默认模型优先级：不再劫持 pi 根层默认

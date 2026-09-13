@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import subagentExtension from "./index.js";
 import {
   parseJsonEvent,
   applyEvent,
@@ -10,6 +11,8 @@ import {
   normalizeTasks,
   SubagentTaskManager,
   SubagentBackgroundManager,
+  toMessageDetails,
+  subagentManager,
   type RunState,
   type JsonObject,
   type SubagentTaskRecord,
@@ -380,5 +383,97 @@ You are an expert researcher. Read references carefully.
     const cli = resolvePiCli();
     expect(cli.command).toBeDefined();
     expect(Array.isArray(cli.args)).toBe(true);
+  });
+
+  it("strips live objects from exit-message details so structuredClone cannot throw", () => {
+    const task: SubagentTaskRecord = {
+      id: "sub_1",
+      parentSessionId: "session_123",
+      description: "audit task",
+      agent: "scout",
+      mode: "background",
+      status: "succeeded",
+      output: "done",
+      startedAt: 1,
+      finishedAt: 2,
+      controller: new AbortController(),
+      notifyOnExit: true,
+      done: new Promise(() => {}),
+    };
+
+    const details = toMessageDetails(task);
+    // Direct snapshot assertions:
+    expect(details).not.toHaveProperty("controller");
+    expect(details).not.toHaveProperty("done");
+    expect(details).not.toHaveProperty("notifyOnExit");
+    expect(details.id).toBe("sub_1");
+    expect(details.status).toBe("succeeded");
+
+    // The real contract: what lands in sendMessage details must survive
+    // pi core's structuredClone(messages) before every LLM call.
+    expect(() => structuredClone(details)).not.toThrow();
+    expect(() => structuredClone([task])).toThrow(); // the bug we just fixed
+  });
+
+  it("sends exit messages with clone-safe details through the manager wiring", async () => {
+    // Reproduces the real crash path end-to-end: SubagentTaskManager.complete →
+    // extension onExit → flushPendingExits → pi.sendMessage details. Before the fix
+    // the raw record (with a live Promise) was handed to sendMessage and crashed
+    // pi core's structuredClone before every subsequent LLM call.
+    const sent: { customType?: string; content: string; details?: unknown }[] = [];
+    const handlers = new Map<string, (event: unknown, ctx?: unknown) => unknown>();
+    const pi = {
+      sendMessage: (msg: { customType?: string; content: string; details?: unknown }) => {
+        sent.push(msg);
+      },
+      on: (event: string, handler: (event: unknown, ctx?: unknown) => unknown) => {
+        handlers.set(event, handler);
+      },
+    };
+    // subagentExtension early-returns under PI_SUBAGENT_CHILD=1 (e.g. when tests run
+    // from inside a pi subagent session) — force the parent path.
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    try {
+      subagentExtension(pi as Parameters<typeof subagentExtension>[0]);
+    } finally {
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+    }
+    expect(handlers.size).toBeGreaterThan(0);
+
+    // session_start wires currentSessionId; without it the exit callback drops notifications.
+    handlers
+      .get("session_start")
+      ?.({}, { sessionManager: { getSessionId: () => "s-wiring" } });
+
+    const task: SubagentTaskRecord = {
+      id: "sub_w",
+      parentSessionId: "s-wiring",
+      description: "scout run",
+      mode: "background",
+      status: "running",
+      output: "",
+      startedAt: Date.now(),
+      controller: new AbortController(),
+      notifyOnExit: true,
+      done: Promise.resolve(),
+    };
+    subagentManager.register(task);
+    subagentManager.complete("sub_w", "ok", false);
+
+    // The notification went through the real flushPendingExits path.
+    expect(sent.length).toBe(1);
+    expect(sent[0]?.customType).toBe("subagent-exit");
+    const details = sent[0]?.details as Record<string, unknown>;
+    expect(details).not.toHaveProperty("controller");
+    expect(details).not.toHaveProperty("done");
+    expect(details).not.toHaveProperty("notifyOnExit");
+    expect(details.id).toBe("sub_w");
+    // pi core clones every session message before each LLM call — must never throw.
+    expect(() => structuredClone(details)).not.toThrow();
+
+    // Don't leak the task into the process-global singleton for later tests.
+    await subagentManager.clearSession("s-wiring");
+    expect(subagentManager.list("s-wiring")).toHaveLength(0);
   });
 });

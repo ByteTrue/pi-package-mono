@@ -2,8 +2,9 @@
 kind: issue
 title: "统一 pi-image-gen 配置流与智能模型探测"
 type: feature
-status: done
+status: closed
 created: 2026-09-05
+closed: 2026-09-10
 ---
 
 # 统一 pi-image-gen 配置流与智能模型探测
@@ -50,4 +51,11 @@ created: 2026-09-05
   - 包表面收敛为一命令 + 一技能：删除 `session_start` 钩子、`PI_IMAGE_GEN_TRUSTED_CWD` trust env 与全局/项目 scope 选择（项目层不存在后 trust 传递失去意义）；`/image-gen` TUI 少一步询问，CLI `--list` 显示配置文件路径。
   - 测试同步重写（settings 套件覆盖专用路径/原子性/墓碑/损坏拒绝）；91 测试 + typecheck + build + pack-smoke 通过；本机实际配置已迁移并经真实 `--list` 验证。
   - README 更新为专用文件说明；废弃“项目层受信才生效”的 IMPORTANT 注记。
+
+## 关闭结论
+
+- **关闭判断**：目标达成，范围未暗扩——实现过程反而按用户决策两次收窄表面：单一 `Configure image model` 入口替代双轨菜单；存储收敛为专用文件后删除 `session_start` 钩子、`PI_IMAGE_GEN_TRUSTED_CWD` 与 scope 选择。
+- **验证摘要**：91 tests + typecheck + build + pack-smoke 全绿；本机真实配置已迁移并经 `--list` 验证。易用性（统一入口与 Custom 通道）由 config-command 套件覆盖；容错性（5s 探测超时与异常降级）由 discovery 套件覆盖；兼容性以“包只读写专用文件、不再读取 Pi `settings.json`”落地，边界已如实写入 spec。
+- **回写位置**：统一配置流、专用文件路径、tombstone、fail-soft/fail-closed、五协议与 custom id 冲突边界均已在 `codestable/spec/pi-image-gen/index.md`；本关闭在其证据索引补记本 issue。
+- **遗留**：无。
 

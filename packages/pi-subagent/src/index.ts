@@ -1274,6 +1274,17 @@ export interface SubagentTaskRecord {
 
 export type BackgroundSubagentTask = SubagentTaskRecord;
 
+/**
+ * Pure-data snapshot of a finished task for sendMessage details. Pi core runs
+ * structuredClone over session messages before every LLM call, and live objects
+ * like Promise / AbortController make that throw — so anything handed to
+ * sendMessage must be clone-safe (strings, numbers, booleans only).
+ */
+export function toMessageDetails(task: SubagentTaskRecord): Record<string, unknown> {
+  const { controller: _controller, done: _done, notifyOnExit: _notifyOnExit, ...safe } = task;
+  return safe;
+}
+
 export class SubagentTaskManager {
   private readonly tasks = new Map<string, SubagentTaskRecord>();
   private onExit?: (task: SubagentTaskRecord) => void;
@@ -1610,7 +1621,7 @@ export default function subagentExtension(pi: {
         customType: "subagent-exit",
         content,
         display: true,
-        details: batch.length === 1 ? first : batch,
+        details: batch.length === 1 ? toMessageDetails(first) : batch.map(toMessageDetails),
       },
       { deliverAs: "followUp", triggerTurn: true },
     );
