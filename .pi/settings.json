@@ -6,6 +6,54 @@
     "../packages/pi-background-terminal",
     "../packages/pi-vision",
     "../packages/pi-subagent",
-    "../packages/pi-browser"
+    "../packages/pi-browser",
+    {
+      "source": "npm:@bytetrue/pi-web-search",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    },
+    {
+      "source": "npm:@bytetrue/pi-image-gen",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    },
+    {
+      "source": "npm:@bytetrue/pi-vendor",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    },
+    {
+      "source": "npm:@bytetrue/pi-background-terminal",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    },
+    {
+      "source": "npm:@bytetrue/pi-vision",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    },
+    {
+      "source": "npm:@bytetrue/pi-subagent",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    }
   ]
 }
