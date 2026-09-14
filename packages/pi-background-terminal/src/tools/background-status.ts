@@ -21,7 +21,13 @@ export function registerBackgroundStatusTool(pi: ExtensionAPI): void {
         formatSummary(task),
         `Output file: ${task.outputPath}`,
         `Lines so far: ${task.lineCount}`,
-        task.tail ? `Recent output:\n${task.tail}` : "(no output yet)",
+        task.status === "running"
+          ? task.tail
+            ? `Output so far (still running):\n${task.tail}`
+            : "(no output yet, still running)"
+          : task.tail
+            ? `Recent output:\n${task.tail}`
+            : "(no output)",
         "Use the read tool on the output file path above to see the full output.",
       ].join("\n");
 

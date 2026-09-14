@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-background-terminal",
-  "version": "0.7.0",
-  "description": "Pi extension: bash override where waitSeconds moves still-running commands to the background with exit notifications, plus a default timeout for foreground calls.",
+  "version": "0.8.0",
+  "description": "Pi extension: background_run starts shell commands hands-off with automatic exit notifications, plus a 600s default timeout for the built-in bash/powershell tools.",
   "keywords": [
     "pi-package",
     "pi-extension",

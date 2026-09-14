@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BackgroundManager, manager as globalManager, type BackgroundTask } from "./manager.js";
+import { BackgroundManager, manager as globalManager, OUTPUT_FILE_CAP_BYTES, type BackgroundTask } from "./manager.js";
 
 // Passes through to the real implementation; only makes createWriteStream observable so the
 // output-stream error listener can be exercised. Transparent to every other test here.
@@ -184,5 +184,24 @@ describe("BackgroundManager", () => {
     } finally {
       (globalThis as unknown as Record<symbol, unknown>)[KEY] = undefined;
     }
+  });
+
+  it("stops writing the output file past the cap and records what was dropped", { timeout: 30_000 }, async () => {
+    const manager = new BackgroundManager();
+    managers.push(manager);
+    // Produce well past the 50 MiB cap, then a distinctive tail, then exit.
+    // ~56 MiB of 'x' lines: exceeds the cap; the marker must land and the file must stay bounded.
+    const cmd =
+      `node -e "for (let i = 0; i < 56; i++) process.stdout.write(Buffer.alloc(1024*1024, 120).toString()); console.log('TAIL-MARK')"`;
+    const task = manager.start(cmd, process.cwd(), SESSION_A);
+    await vi.waitFor(() => expect(manager.get(task.id, SESSION_A)?.status).not.toBe("running"), { timeout: 25_000 });
+    const settled = manager.get(task.id, SESSION_A)!;
+    const content = readFileSync(task.outputPath, "utf8");
+    expect(content).toContain("output truncated");
+    expect(content).toContain("bytes dropped");
+    expect(content).not.toContain("TAIL-MARK");
+    expect(content.length).toBeLessThan(OUTPUT_FILE_CAP_BYTES + 4096);
+    expect(settled.lineCount).toBeGreaterThan(0);
+    await manager.clearSession(SESSION_A);
   });
 });

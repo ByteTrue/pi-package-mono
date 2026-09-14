@@ -36,6 +36,13 @@ describe("registerBashDefaultTimeout", () => {
     expect(call.input).toEqual({ command: "find /", timeout: 600 });
   });
 
+  it("injects a 600s default timeout into powershell calls that did not pass one", async () => {
+    const handlers = harness();
+    const call = event("powershell", { command: "Get-ChildItem /" });
+    await handlers["tool_call"]?.(call, {});
+    expect(call.input).toEqual({ command: "Get-ChildItem /", timeout: 600 });
+  });
+
   it("leaves an explicitly passed timeout untouched", async () => {
     const handlers = harness();
     const call = event("bash", { command: "npm test", timeout: 1800 });
@@ -57,10 +64,10 @@ describe("registerBashDefaultTimeout", () => {
     expect(call.input).toEqual({ path: "/tmp/x" });
   });
 
-  it("skips injection when the call opted into waitSeconds — it demotes to background instead of hanging", async () => {
+  it("ignores waitSeconds (not a real powershell parameter — the hook keys only on timeout)", async () => {
     const handlers = harness();
-    const call = event("bash", { command: "npm run dev", waitSeconds: 5 });
+    const call = event("powershell", { command: "npm run dev", waitSeconds: 5 });
     await handlers["tool_call"]?.(call, {});
-    expect(call.input).toEqual({ command: "npm run dev", waitSeconds: 5 });
+    expect(call.input).toEqual({ command: "npm run dev", timeout: 600, waitSeconds: 5 });
   });
 });

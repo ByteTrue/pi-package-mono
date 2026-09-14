@@ -4,7 +4,7 @@ import { registerBashDefaultTimeout } from "./bash-default-timeout.js";
 import { registerBackgroundCommand } from "./background-command.js";
 import { registerBackgroundKillTool } from "./tools/background-kill.js";
 import { registerBackgroundStatusTool } from "./tools/background-status.js";
-import { registerShellOverride } from "./tools/shell-override.js";
+import { registerBackgroundRunTool } from "./tools/background-run.js";
 
 export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
   // Crash paths (uncaughtException, terminal EIO) never fire session_shutdown, so logs
@@ -53,7 +53,7 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
 
   registerBackgroundCommand(pi);
   registerBashDefaultTimeout(pi);
-  registerShellOverride(pi);
+  registerBackgroundRunTool(pi);
   registerBackgroundStatusTool(pi);
   registerBackgroundKillTool(pi);
 
@@ -95,7 +95,7 @@ function formatExitMessage(task: BackgroundTask): string {
     task.status === "killed"
       ? "was stopped"
       : task.status === "timed_out"
-        ? `timed out after ${task.timeoutSeconds} seconds`
+        ? `timed out after ${task.timeoutSeconds} seconds (restart with background_run and a larger timeout if it should run longer)`
         : task.status === "failed"
           ? `failed: ${task.error ?? "unknown error"}`
           : `exited with code ${task.exitCode}`;

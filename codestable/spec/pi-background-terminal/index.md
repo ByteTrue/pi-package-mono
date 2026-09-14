@@ -2,46 +2,53 @@
 
 ## 定位
 
-`@bytetrue/pi-background-terminal` 的核心是**一个统一的命令执行入口**：覆盖内建 `bash`，加一个可选 `waitSeconds` 参数——命令在等待期内退出就内联返回（与内建逐字节同形），超期自动转后台并在退出时唤醒 Agent。模型不再需要预测命令时长来选工具，只决定愿意阻塞多久。
+`@bytetrue/pi-background-terminal` 提供纯后台命令执行：`background_run(command, timeout?)` 立即返回 task id，命令自行运行，退出时自动唤醒 Agent。内建 `bash` 是前台执行器（原生，零触碰，仅 600s 安全网 hook）；本包的工具**没有任何前台等待能力**。选择轴是"要不要结果"——模型自己的知识，不是时长预测：
+
+- 需要输出才能继续 → `bash`（阻塞拿结果）
+- 应该脱手跑（build/测试套件/dev server/watch）→ `background_run`（立即返回 + 退出唤醒）
 
 Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 
+决策链：039（三独立工具，不覆盖）→ 071（翻转：覆盖 bash + waitSeconds）→ 077（覆盖上双默认）→ 078（翻转回不覆盖，`run` 工具带 wait-then-demote）→ **079（定调：纯后台专注，删除全部等待路径，恢复 `background_run` 诚实名）**。077/078 的机制遗产保留：600s 默认寿命、50MiB 文件上限、agent-bin PATH、PI_* 环境、进程同生共死。
+
 ## 当前表面
 
-### bash 覆盖（waitSeconds 语义）
+### background_run（纯后台）
 
-- `bash(command, timeout?, waitSeconds?)`：schema 从 `createBashToolDefinition()` 运行时组合追加一参数；不传 `waitSeconds` 时**纯委托内建 execute**（含 600s 默认超时注入，见下）；promptSnippet/promptGuidelines/label 显式携带（override 不继承）；renderCall/renderResult 省略，按槽位回退内建渲染器。
-- `waitSeconds: 0` → 立即转后台（收编原 `background_run`）；`N > 0` → 同步竞态：期内退出内联返回（`truncateTail` 截断 + 内建同款三种 footer + 非零退出/超时/abort 的错误形状），超期转后台返回 task id + 输出文件路径。
-- `timeout` 语义为**总寿命硬杀**：设了就到点必死（转后台后以 `timed_out` 状态可观测并入通知）；不设则后台任务不限寿命。
-- 等待期 abort（Esc）：静默杀任务 + 抛 `Command aborted`（带已产出输出），无后续唤醒——与内建 abort 同形。
-- 委托与 wait 路径都尊重用户 `shellPath`/`shellCommandPrefix`（经 `SettingsManager.create(cwd, undefined, {projectTrusted})` 读同一批文件，按 ctx 信任态决定项目层是否生效，损坏 fail-open）；wait 路径注入与内建相同的 `PI_*` 会话环境。已知边界：base env 未复刻内建的 agent-bin PATH 前置（不可导出；upgrade trigger 在代码注释）。
-- **powershell 不覆盖**：extension 注册的工具会被 `includeAllExtensionTools: true` 强制激活，而 powershell 在所有平台默认 active 集都不含——覆盖它会在 macOS/Linux 凭空多一个工具。600s hook 仍按名覆盖它。
+- `background_run(command, timeout?)`：schema 自定义（timeout 上限 2147483 对齐内建）；立即返回 `Started in background: <id> / Output file: <path> / Hard timeout: Ns. You will be notified when it exits; until then the output file is partial.`。
+- **`timeout` 缺省 600s**（总寿命硬杀；`timed_out` 可观测并入通知）；dev server 逃逸口写在 description（"pass a larger value like 86400"）。
+- **无等待路径**：不内联返回输出、无 waitSeconds、无 demote 竞态。print/JSON 会话无需特判——fire-and-forget 在所有 mode 行为一致，任务随进程死。
+- 尊重用户 `shellPath`/`shellCommandPrefix`（`SettingsManager.create`，尊重项目信任态，损坏 fail-open）；注入 `PI_*` 会话环境 + agent-bin PATH 前置（复刻内建 `getShellEnv()` 语义；上游导出后切换——upgrade trigger 在代码注释）。
+- promptGuidelines 五条引导：need the result now → bash；hands-off → background_run；退出自动通知勿轮询；dev server 传大 timeout；bash/powershell 默认也被 600s 硬杀（本扩展注入），需更久用 background_run。`timed_out` 唤醒消息附带恢复提示；background_status 运行中任务的 tail 标注 "still running"（防部分输出误读）。
 
 ### 后台管理
 
 - `background_status(id)`：状态、退出码、输出文件路径、行数、约 4000 字符 tail；全量阅读交给内建 `read`。
 - `background_kill(id)`：停止运行中任务；主动停止静默（无 follow-up）。
 - `/background`：仅面向用户的菜单；footer `bg:N` 显示运行数。
-- 通知：命令自然退出/失败/超时 → `followUp + triggerTurn:true` 唤醒空闲 Agent；忙碌期缓冲到 `agent_settled` 合并为一条；被等待过的任务抑制默认通知（内联结果已是结局），转后台时经 `notified` 标志重新武装，保证竞态下恰一次。
+- 通知：命令自然退出/失败/超时 → `followUp + triggerTurn:true` 唤醒空闲 Agent；忙碌期缓冲到 `agent_settled` 合并为一条。
 
-### 默认超时注入
+### 600s 默认超时 hook（bash + powershell）
 
-`tool_call` 钩子对未传 `timeout` **且未传 `waitSeconds`** 的 shell 调用注入 `timeout: 600`；显式 timeout 原样尊重；waitSeconds 调用跳过（降级的 dev server 不能被默认值杀死）。
+内建 shell 工具不传 timeout 时经 `tool_call` 钩子注入 600s——防跑飞命令挂死 agent。不注册工具、不接管执行，只补默认值（065 原设计）。
 
 ## 输出与生命周期
 
 - stdout/stderr 实时写 `$TMPDIR/pi-background-terminal/<id>.log`；内存只留 tail 预览与行数。
-- 状态 `running | exited | killed | failed | timed_out`；`timed_out` 依赖 `ops.exec` 原生 `timeout:N` 拒绝识别，与 killed/failed 可区分。
-- 内联读取有 2 MiB 上限（防病理性输出 OOM 宿主），超限读尾部并以跟踪行数修正 totalLines。
-- 任务按 `parentSessionId` 隔离；`/reload` 存活（manager 钉 `globalThis[Symbol.for(...)]`）；真实 session 结束等待进程树与输出流后删文件。
-- **崩溃路径兜底**：Pi 的 `uncaughtCrash`/`emergencyTerminalExit` 只杀进程不 fire session_shutdown，会留孤儿日志；extension 每次加载（启动 + `/reload`）扫除 mtime > 24h 的 `bg_*.log`，跳过本 manager 持有的任务输出文件，逐文件 fail-soft。跨进程的静默任务（>24h 无输出）可能被另一实例清掉——接受（OS 对 $TMPDIR 的清理迟早也会）。
+- **输出文件 50 MiB 上限**：到量停写 + 截断标记（含丢弃字节数），任务照常跑完。
+- 状态 `running | exited | killed | failed | timed_out`。
+- **进程同生共死不变式**（实测）：任务经 `ops.exec()` spawn 即进 Pi 的 tracked 集合；正常退出、SIGTERM/SIGHUP、uncaughtCrash、emergencyTerminalExit、print 退出全路径必杀。唯一例外：命令自行 daemonize（nohup/setsid）与 SIGKILL——内建 bash 同样无解。任务按 `parentSessionId` 隔离；`/reload` 存活（manager 钉 `globalThis[Symbol.for(...)]`）。
+- **崩溃日志兜底**：崩溃路径留孤儿日志；加载时扫除 mtime > 24h 的 `bg_*.log`，跳过 live 任务，逐文件 fail-soft。
+- manager 已删除全部等待路径（runWithWait/oneShot/inlineResult/readTail）——纯后台包，无死代码。
 
 ## 明确不做
 
-- 覆盖 `powershell` 或任何其它内建工具（理由见上）；
+- 覆盖、注册同名或以任何形式接管任何内建工具（除 600s 输入注入 hook）；
+- **前台等待/内联返回输出**（bash 的职责；071/078 的 wait-then-demote 已按 079 决策删除）；
 - PTY、交互式 stdin、tmux、daemon、Web UI；
-- 可配置默认超时值（固定 600 秒）；
-- 自定义 workdir/env 参数（PI_* 会话环境由工具自动注入）；
+- 可配置默认值（600s / 50 MiB 固定）；
+- 自定义 workdir/env 参数；
+- 输出文件滚动/轮转；
 - 自制 shell backend、输出分页或文件查看工具；
 - Pi 退出后的进程持久化。
 
@@ -49,9 +56,9 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 
 | 目的 | 入口 |
 |---|---|
-| 普通命令，等待结果（默认 600s 超时） | `bash(command)` |
-| 想要结果但别卡死 | `bash(command, waitSeconds: N)` |
-| dev server / watch mode | `bash(command, waitSeconds: 0)` |
+| 需要结果才能继续（含慢命令） | 内建 `bash`（阻塞，600s hook 兜底） |
+| 脱手跑（build/测试套件/长任务） | `background_run(command)`（600s 默认寿命） |
+| dev server / watch mode | `background_run(command, timeout: 86400)` |
 | 查看一个后台任务 | `background_status(id)` |
 | 阅读完整输出 | `read` 读取返回的文件路径 |
 | 停止一个任务 | `background_kill(id)` |
@@ -62,15 +69,15 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 
 ```text
 src/index.ts
-  ├─ tools/shell-override.ts      bash 覆盖：schema 组合 + 委托/waitSeconds 分派 + sessionEnv
+  ├─ tools/background-run.ts     background_run：600s 默认寿命 + sessionEnv（agent-bin PATH）
   ├─ tools/background-status.ts
   ├─ tools/background-kill.ts
-  ├─ bash-default-timeout.ts      tool_call 钩子：600s 注入（waitSeconds 跳过）
-  ├─ background-command.ts        /background 菜单
+  ├─ bash-default-timeout.ts     bash/powershell 600s 注入 hook（安全网）
+  ├─ background-command.ts       /background 菜单
   └─ background/manager.ts
-       ├─ spawn/runWithWait       exec + 输出文件 + 等待竞态 + 通知编排
+       ├─ spawn                  exec + 输出文件（50MiB 上限）+ 通知编排
        ├─ createLocalBashOperations({shellPath})
-       ├─ sweepOrphanLogs()       加载时年龄扫描（跳过 live 任务）
+       ├─ sweepOrphanLogs()      加载时年龄扫描（跳过 live 任务）
        └─ globalThis[Symbol.for(...)]
 ```
 
@@ -82,14 +89,15 @@ npm --workspace @bytetrue/pi-background-terminal run typecheck
 npm --workspace @bytetrue/pi-background-terminal pack --dry-run
 ```
 
-真实 Pi 回归还应确认：Shell 工具列表仅 bash；普通命令行为不变；waitSeconds 快路径内联/慢路径转后台+通知；timeout 硬杀 `timed_out`；abort 杀任务无唤醒；`/reload` 后任务可见可停；无新孤儿日志。
+真实 Pi 回归还应确认：快命令落在原生 bash；需要结果的慢命令落在 bash；hands-off 场景落在 background_run 且唤醒链路完整（退出码+末行）；dev server 逃逸口模型自主传大 timeout；SIGTERM 杀 pi 进程后台任务同死；`/reload` 后任务可见可停；无新孤儿日志。
 
 ## 证据
 
 - README：`packages/pi-background-terminal/README.md`
-- 设计论证：`codestable/talks/005-background-terminal-bash-waitseconds.md`
-- 主变更：`codestable/issues/071-x-background-terminal-bash-waitseconds.md`（含 review 轮记录）
-- 孤儿清理：`codestable/issues/072-x-background-terminal-orphan-log-cleanup.md`
-- 历史：`codestable/issues/039-x-background-terminal-standalone-tools.md`（本 issue 翻转其「不覆盖 bash」决策）、`codestable/talks/004-background-terminal-redesign.md`
+- 纯后台定调：`codestable/issues/079-x-bg-terminal-pure-background.md`（含验证与变异记录）
+- 解耦翻转：`codestable/issues/078-x-bg-terminal-decouple-run-tool.md`
+- 双默认/one-shot/文件上限/PATH 复刻机制：`codestable/issues/077-x-bg-terminal-dual-defaults.md`
+- 单入口设计与"名字撒谎"批判（079 通过删除快路径使其失效、恢复诚实名）：`codestable/talks/005-background-terminal-bash-waitseconds.md`
+- 历史链：039 → 071 → 077 → 078 → 079；`codestable/talks/004-background-terminal-redesign.md`
 - 默认超时注入：`codestable/issues/065-x-ff-bash-default-timeout.md`
 - 自动发布：`.github/workflows/release.yml`

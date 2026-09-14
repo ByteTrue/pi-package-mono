@@ -7,7 +7,7 @@
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
 3. **图像生成**（`@bytetrue/pi-image-gen`）：`/image-gen` 在 TUI 内完整配置，Agent 仅在需要时加载 Skill 并调用 bundled CLI；不注册常驻生成 tool。
-4. **背景终端**（`@bytetrue/pi-background-terminal`）：覆盖内建 `bash` 加 `waitSeconds`——期内退出内联返回，超期自动转后台+通知；`background_status`/`background_kill` 管理任务。不再提供独立后台启动工具。
+4. **背景终端**（`@bytetrue/pi-background-terminal`）：纯后台执行——`background_run` 立即返回 task id，退出时 followUp 唤醒（含退出码+末行）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值逃逸。内建 `bash` 是前台执行器（零触碰，仅 600s 安全网 hook）。选择轴是"要不要结果"：需要输出 → bash；脱手跑 → background_run。
 5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
 6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：单工具 `subagent`，支持单任务/并行/串联链式运行子任务，带实时 TUI 差分卡片与 Token/费用统计。
 7. **浏览器能力安装与登录态导入**（`@bytetrue/pi-browser`）：`/browser` 菜单负责安装官方 `@playwright/cli` 与 skill、把日常浏览器（Edge/Chrome）登录态导入受管 profile、写全局 CLI 配置，并提供会话查看与清理；不注册 agent 工具。
@@ -19,7 +19,7 @@
 - `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
 - `pi-web-search` 保留高频 `web_search` / `web_fetch` 与完整 `/web` 配置面；一次搜索只联系一个 provider，失败后显式重试，fetch 固定走 SSRF-safe generic transport。
 - `pi-image-gen` 是低频 Skill + bundled CLI；`/image-gen` 继续在 TUI 内闭合 built-in/custom 首次配置，所有配置仍写 Pi `settings.json` 的 `pi-image-gen` 节。
-- `pi-background-terminal` 覆盖内建 `bash`（schema 从内建定义组合，不传 `waitSeconds` 时纯委托内建 execute）：`waitSeconds: N` 同步等待 N 秒，期内退出内联返回，超期转后台（`0` 立即转后台）；`timeout` 为总寿命硬杀（`timed_out` 可观测）；`background_status(id)`/`background_kill(id)` 管理后台任务，`/background` 提供用户菜单。自然完成自动唤醒 Agent，session 结束清理进程树、输出流与文件，`/reload` 保留任务；加载时扫除 >24h 孤儿日志。powershell 不覆盖（extension 注册工具会被强制激活，而 powershell 非默认 active）。
+- `pi-background-terminal` 提供纯后台执行 `background_run(command, timeout?)`：立即返回 task id + 输出文件路径，退出（自然/失败/timed_out）经 followUp+triggerTurn 自动唤醒 Agent（忙碌期缓冲合并）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值（如 86400）逃逸。内建 `bash`/`powershell` 零触碰（仅 tool_call hook 注入 600s 默认超时的安全网）。`background_status(id)`/`background_kill(id)` 管理后台任务，`/background` 提供用户菜单。任务经 Pi 的 tracked spawn 集合随进程同生共死（正常退出/信号/崩溃全路径）；session 结束清理进程树、输出流与文件，`/reload` 保留任务；输出文件 50MiB 上限；加载时扫除 >24h 孤儿日志。
 - **`pi-vision`**：解决“主力模型没有视觉能力却需要按图工作”的诉求。`image_ask` 保留模型主动提出精确问题的路径；0.2.0 新增 opt-in 附件预分析，把 `before_agent_start.images` 在首轮主模型调用前批量交给所选视觉模型。自动模式默认关闭，不处理 TUI 粘贴后形成的路径文本，并受 project trust、数量/总字节与 60 秒 deadline 约束。
 - 近期优先：五个扩展的维护、回归与按需发版。
 
@@ -28,7 +28,7 @@
 - **搜网页 / 抓页面** → 读 [`pi-web-search/`](pi-web-search/index.md)
 - **管理自定义 provider / model** → 读 [`pi-vendor/`](pi-vendor/index.md)
 - **生成图像** → 读 [`pi-image-gen/`](pi-image-gen/index.md) 与 `packages/pi-image-gen/README.md`
-- **跑命令 / 后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；bash 覆盖 + waitSeconds，两个管理工具
+- **跑命令 / 后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；纯后台 background_run + 两个管理工具
 - **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 精确问图 + opt-in 附件预分析 + `/vision` 配置
 - **驱动已登录浏览器 / 配置与刷新浏览器登录态** → 读 [`pi-browser/`](pi-browser/index.md)；setup-only 包，不注册 agent tool
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
