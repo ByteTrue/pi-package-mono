@@ -7,6 +7,7 @@ import { buildStatusReport, runBrowserCommand, type StatusFacts } from "./browse
 import { mergePlaywrightConfig, type ManagedBrowserConfig } from "./config.js";
 import { INSTALL_CLI } from "./env.js";
 import { profileDir } from "./paths.js";
+import { SOURCE_BROWSERS } from "./import/detect.js";
 
 const saved = {
   PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
@@ -55,6 +56,19 @@ function makePi(stdout = "0.1.19\n", code = 0, impl?: ExecImpl) {
 }
 
 const MANUAL = "Manual sign-in (opens a window)";
+
+/**
+ * A fake user-data-dir for `id` under this test's temp HOME, using the platform root the
+ * detector actually looks for — hardcoding a macOS path would make the browser invisible
+ * to detection on a Linux runner.
+ */
+function browserRoot(id: string): string {
+  const def = SOURCE_BROWSERS.find((entry) => entry.id === id);
+  if (!def) throw new Error("unknown browser id " + id);
+  const root = def.roots[process.platform];
+  if (!root) return join(dir, "home", "no-browser-for-this-platform", id);
+  return join(dir, "home", root.slice(2));
+}
 
 const managed: ManagedBrowserConfig = {
   channel: "msedge",
@@ -312,7 +326,7 @@ describe("/browser command", () => {
   });
 
   it("keeps a headed choice across a re-import", async () => {
-    const edgeRoot = join(dir, "home", "Library/Application Support/Microsoft Edge");
+    const edgeRoot = browserRoot("msedge");
     mkdirSync(join(edgeRoot, "Default"), { recursive: true });
     writeFileSync(join(edgeRoot, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Personal" } } } }));
     writeFileSync(join(edgeRoot, "Default", "Cookies"), "cookie-db");
@@ -413,11 +427,11 @@ describe("/browser command", () => {
   });
 
   it("switches the target to a real profile only after informed consent, writing nothing", async () => {
-    const chromeRoot = join(dir, "home", "Library/Application Support/Google/Chrome");
+    const chromeRoot = browserRoot("chrome");
     mkdirSync(join(chromeRoot, "Default"), { recursive: true });
     writeFileSync(join(chromeRoot, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Main" } } } }));
     writeFileSync(join(chromeRoot, "Default", "Cookies"), "cookie-db");
-    const edgeRoot = join(dir, "home", "Library/Application Support/Microsoft Edge");
+    const edgeRoot = browserRoot("msedge");
     mkdirSync(join(edgeRoot, "Default"), { recursive: true });
     writeFileSync(join(edgeRoot, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Personal" } } } }));
     writeFileSync(join(edgeRoot, "Default", "Cookies"), "cookie-db");
@@ -455,7 +469,7 @@ describe("/browser command", () => {
   });
 
   it("refuses to point at a real profile while that browser is running", async () => {
-    const chromeRoot = join(dir, "home", "Library/Application Support/Google/Chrome");
+    const chromeRoot = browserRoot("chrome");
     mkdirSync(join(chromeRoot, "Default"), { recursive: true });
     writeFileSync(join(chromeRoot, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Main" } } } }));
     // A lock whose pid is alive blocks the switch; the copy stays untouched.
