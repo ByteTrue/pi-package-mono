@@ -29,6 +29,15 @@ export function artifactsDir(): string {
   return join(packageDir(), "artifacts");
 }
 
+/** Scratch configs we own: the smoke test and the sign-in window never reuse the live one. */
+export function smokeConfigPath(): string {
+  return join(packageDir(), "smoke.config.json");
+}
+
+export function signInConfigPath(): string {
+  return join(packageDir(), "sign-in.config.json");
+}
+
 export function statePath(): string {
   return join(packageDir(), "state.json");
 }

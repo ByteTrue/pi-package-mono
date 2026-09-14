@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-browser",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Pi extension: set up the official playwright-cli + skill, and import your daily browser's login state into a managed profile.",
   "keywords": [
     "pi-package",
@@ -35,7 +35,8 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.4"
+    "@earendil-works/pi-coding-agent": ">=0.80.4",
+    "@earendil-works/pi-tui": ">=0.84.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

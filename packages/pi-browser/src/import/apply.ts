@@ -17,27 +17,41 @@ function defaultIsAlive(pid: number): boolean {
 
 /**
  * Chromium holds a profile via a SingletonLock symlink shaped `<hostname>-<pid>`.
- * A lock with a dead pid is stale and does not block an import.
+ * Returns the holder pid when the lock exists and carries one. Note the lock is a
+ * *dangling* symlink by design, so existence must come from lstat, not existsSync.
  */
-export function isProfileInUse(profileDir: string, isAlive: (pid: number) => boolean = defaultIsAlive): boolean {
-  const lock = join(profileDir, "SingletonLock");
+export function readProfileLockPid(profilePath: string): number | undefined {
   let stats;
   try {
-    // lstat: the lock is a dangling symlink by design, so existsSync would lie.
-    stats = lstatSync(lock);
+    stats = lstatSync(join(profilePath, "SingletonLock"));
+  } catch {
+    return undefined;
+  }
+  if (!stats.isSymbolicLink()) return undefined; // a plain file (Windows): no pid to read
+  let target: string;
+  try {
+    target = readlinkSync(join(profilePath, "SingletonLock"));
+  } catch {
+    return undefined;
+  }
+  const match = /-(\d+)$/.exec(target);
+  const pid = match ? Number.parseInt(match[1] ?? "", 10) : Number.NaN;
+  return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+}
+
+/**
+ * A lock with a dead pid is stale and does not block an import.
+ */
+export function isProfileInUse(profilePath: string, isAlive: (pid: number) => boolean = defaultIsAlive): boolean {
+  let stats;
+  try {
+    stats = lstatSync(join(profilePath, "SingletonLock"));
   } catch {
     return false;
   }
   if (!stats.isSymbolicLink()) return true; // a plain file (Windows) — assume the browser holds it
-  let target: string;
-  try {
-    target = readlinkSync(lock);
-  } catch {
-    return true;
-  }
-  const match = /-(\d+)$/.exec(target);
-  const pid = match ? Number.parseInt(match[1] ?? "", 10) : Number.NaN;
-  if (!Number.isFinite(pid) || pid <= 0) return true;
+  const pid = readProfileLockPid(profilePath);
+  if (pid === undefined) return true; // a lock we cannot parse: assume it holds
   return isAlive(pid);
 }
 

@@ -10,9 +10,11 @@ export const MOCK_KEYCHAIN_FLAG = "--use-mock-keychain";
 export const BASE_LAUNCH_ARGS = ["--no-first-run", "--no-default-browser-check"] as const;
 
 export type ManagedBrowserConfig = {
-  /** Playwright channel matching the import source family, e.g. "msedge". */
+  /** Playwright channel matching the profile's browser family, e.g. "msedge". */
   channel: string;
   userDataDir: string;
+  /** Profile inside userDataDir; anything but "Default" adds --profile-directory. */
+  profileDirectory?: string;
   headless: boolean;
   outputDir: string;
 };
@@ -73,7 +75,12 @@ export function mergePlaywrightConfig(
   browser.userDataDir = managed.userDataDir;
   launchOptions.channel = managed.channel;
   launchOptions.headless = managed.headless;
-  launchOptions.args = mergeStringArray(launchOptions.args, BASE_LAUNCH_ARGS);
+  launchOptions.args = mergeStringArray(launchOptions.args, [
+    ...BASE_LAUNCH_ARGS,
+    ...(managed.profileDirectory && managed.profileDirectory !== "Default"
+      ? ["--profile-directory=" + managed.profileDirectory]
+      : []),
+  ]);
   // true means "ignore every Playwright default", which already drops --use-mock-keychain.
   if (launchOptions.ignoreDefaultArgs !== true) {
     launchOptions.ignoreDefaultArgs = mergeStringArray(launchOptions.ignoreDefaultArgs, [MOCK_KEYCHAIN_FLAG]);
@@ -100,10 +107,22 @@ export function setHeadless(config: JsonObject, headless: boolean): Result<JsonO
   return { ok: true, value: { ...config, browser } };
 }
 
+/** Our own `--profile-directory` arg (not a caller-supplied one), if any. */
+function managedProfileDirectory(launchOptions: JsonObject | undefined): string | undefined {
+  const args = Array.isArray(launchOptions?.args) ? (launchOptions!.args as unknown[]) : [];
+  for (const arg of args) {
+    if (typeof arg !== "string") continue;
+    const match = /^--profile-directory=(.+)$/.exec(arg);
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
+}
+
 /** What the browser config would look like right now, for status display. */
 export function managedBrowserSummary(config: JsonObject | undefined): {
   channel?: string;
   userDataDir?: string;
+  profileDirectory?: string;
   headless?: boolean;
   mockKeychainDisabled: boolean;
 } {
@@ -116,6 +135,7 @@ export function managedBrowserSummary(config: JsonObject | undefined): {
   return {
     channel: typeof launchOptions?.channel === "string" ? launchOptions.channel : undefined,
     userDataDir: typeof browser?.userDataDir === "string" ? browser.userDataDir : undefined,
+    profileDirectory: managedProfileDirectory(launchOptions),
     headless: typeof launchOptions?.headless === "boolean" ? launchOptions.headless : undefined,
     mockKeychainDisabled,
   };
