@@ -414,10 +414,23 @@ export class BackgroundManager {
 // /reload, orphaning tasks started before it: invisible to background_status, unstoppable by
 // background_kill, and never notified. Pinning to a process global keeps one manager across
 // re-imports. Tasks stay isolated by parentSessionId, so sharing one manager is safe.
+//
+// A stale install of an older version (e.g. an outdated npm cache) can load first in the same
+// process and occupy the symbol with an instance that lacks newer methods, which would crash
+// this module at load ("manager.listAll is not a function"). Reuse the global only if it has
+// the methods this module needs; otherwise replace it — safe, because extensions all load at
+// startup before any task can start. The check is by capability, not instanceof: /reload
+// re-evaluates the class, so instances worth keeping are not instanceof this module's class.
 const MANAGER_KEY = Symbol.for("@bytetrue/pi-background-terminal.manager");
 const globalStore = globalThis as unknown as Record<symbol, BackgroundManager | undefined>;
 
-export const manager: BackgroundManager = (globalStore[MANAGER_KEY] ??= new BackgroundManager());
+function isCompatibleManager(instance: BackgroundManager | undefined): instance is BackgroundManager {
+  return typeof instance?.listAll === "function";
+}
+
+export const manager: BackgroundManager = isCompatibleManager(globalStore[MANAGER_KEY])
+  ? globalStore[MANAGER_KEY]
+  : (globalStore[MANAGER_KEY] = new BackgroundManager());
 
 /** Same layout the built-in bash tool uses when it appends a status to captured output. */
 function appendStatus(text: string, status: string): string {

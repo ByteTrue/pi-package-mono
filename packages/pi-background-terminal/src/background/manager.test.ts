@@ -169,4 +169,20 @@ describe("BackgroundManager", () => {
 
     await second.manager.clearSession(SESSION_A);
   });
+
+  it("replaces a stale instance that an older copy of this module left on the global", async () => {
+    // What happens with an outdated npm cache: the older copy evaluates first and pins an
+    // instance without the newer methods; this module must not crash on manager.listAll().
+    const KEY = Symbol.for("@bytetrue/pi-background-terminal.manager");
+    const stale = { listSession: () => [] } as unknown as BackgroundManager;
+    (globalThis as unknown as Record<symbol, unknown>)[KEY] = stale;
+    try {
+      vi.resetModules();
+      const mod = await import("./manager.js");
+      expect(mod.manager).not.toBe(stale);
+      expect(typeof mod.manager.listAll).toBe("function");
+    } finally {
+      (globalThis as unknown as Record<symbol, unknown>)[KEY] = undefined;
+    }
+  });
 });
