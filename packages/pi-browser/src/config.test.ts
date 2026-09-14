@@ -7,6 +7,7 @@ import {
   managedBrowserSummary,
   mergePlaywrightConfig,
   readPlaywrightConfig,
+  setHeadless,
   writePlaywrightConfig,
   type ManagedBrowserConfig,
 } from "./config.js";
@@ -75,6 +76,30 @@ describe("mergePlaywrightConfig", () => {
   it("refuses to overwrite non-object shapes", () => {
     expect(mergePlaywrightConfig({ browser: "nope" }, managed).ok).toBe(false);
     expect(mergePlaywrightConfig({ browser: { launchOptions: 42 } }, managed).ok).toBe(false);
+  });
+});
+
+describe("setHeadless", () => {
+  it("flips only headless and keeps foreign keys untouched", () => {
+    const merged = mergePlaywrightConfig(
+      { browser: { contextOptions: { viewport: { width: 1280, height: 720 } }, launchOptions: { args: ["--lang=en-US"] } } },
+      managed,
+    );
+    if (!merged.ok) throw new Error("merge failed");
+    const next = setHeadless(merged.value, false);
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    const browser = next.value.browser as Record<string, unknown>;
+    const launch = browser.launchOptions as Record<string, unknown>;
+    expect(launch.headless).toBe(false);
+    expect(launch.channel).toBe("msedge");
+    expect(launch.args).toEqual(expect.arrayContaining(["--lang=en-US", "--no-first-run"]));
+    expect(browser.contextOptions).toEqual({ viewport: { width: 1280, height: 720 } });
+  });
+
+  it("refuses non-object shapes", () => {
+    expect(setHeadless({ browser: "x" }, false).ok).toBe(false);
+    expect(setHeadless({ browser: { launchOptions: 7 } }, false).ok).toBe(false);
   });
 });
 

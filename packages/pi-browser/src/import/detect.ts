@@ -10,7 +10,7 @@ export type SourceBrowserDef = {
   roots: Partial<Record<NodeJS.Platform, string>>;
 };
 
-/** v1 supports the two Chromium browsers that also have a Playwright channel. */
+/** Only browsers with a Playwright channel: launching and keychain decryption ride on it. */
 export const SOURCE_BROWSERS: SourceBrowserDef[] = [
   {
     id: "msedge",

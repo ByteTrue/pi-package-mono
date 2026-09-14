@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -232,5 +232,69 @@ describe("/browser command", () => {
     (ctx as { hasUI: boolean }).hasUI = false;
     await runBrowserCommand(pi, ctx);
     expect(ui.select).not.toHaveBeenCalled();
+  });
+
+  it("toggles headless off from Settings", async () => {
+    const { pi } = makePi();
+    const { ctx, ui } = makeContext(() => undefined);
+    const configPath = join(dir, "cli.config.json");
+    const merged = mergePlaywrightConfig(undefined, { ...managed, userDataDir: profileDir() });
+    if (!merged.ok) throw new Error("merge failed");
+    writeFileSync(configPath, JSON.stringify(merged.value));
+
+    const top = ["Settings", "Close"];
+    ui.select.mockImplementation(async (title: string, options: string[]) => {
+      if (title === "Browser") return top.shift() ?? "Close";
+      if (title.startsWith("Settings — ")) return "Open headed (visible window)";
+      return options[options.length - 1];
+    });
+    await runBrowserCommand(pi, ctx);
+
+    const saved = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(saved.browser.launchOptions.headless).toBe(false);
+    expect(saved.browser.launchOptions.channel).toBe("msedge");
+    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining("Headless off"), "info");
+  });
+
+  it("points Settings at Import when there is no config yet", async () => {
+    const { pi } = makePi();
+    const { ctx, ui } = makeContext(() => undefined);
+    const top = ["Settings", "Close"];
+    ui.select.mockImplementation(async (title: string, _options: string[]) => {
+      if (title === "Browser") return top.shift() ?? "Close";
+      return "Back";
+    });
+    await runBrowserCommand(pi, ctx);
+
+    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining("No CLI config yet"), "warning");
+    expect(ui.select).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a headed choice across a re-import", async () => {
+    const edgeRoot = join(dir, "home", "Library/Application Support/Microsoft Edge");
+    mkdirSync(join(edgeRoot, "Default"), { recursive: true });
+    writeFileSync(join(edgeRoot, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Personal" } } } }));
+    writeFileSync(join(edgeRoot, "Default", "Cookies"), "cookie-db");
+
+    const configPath = join(dir, "cli.config.json");
+    const headed = mergePlaywrightConfig(undefined, { ...managed, userDataDir: profileDir(), headless: false });
+    if (!headed.ok) throw new Error("merge failed");
+    writeFileSync(configPath, JSON.stringify(headed.value));
+
+    const { pi } = makePi();
+    const { ctx, ui } = makeContext(() => undefined);
+    const top = ["Import login data", "Close"];
+    ui.select.mockImplementation(async (title: string, options: string[]) => {
+      if (title === "Browser") return top.shift() ?? "Close";
+      if (title.startsWith("Import login data — source")) return "Microsoft Edge";
+      if (title.startsWith("Profile — ")) return "Personal  (Default)";
+      return options[options.length - 1];
+    });
+    await runBrowserCommand(pi, ctx);
+
+    const saved = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(saved.browser.launchOptions.headless).toBe(false);
+    expect(saved.browser.launchOptions.channel).toBe("msedge");
+    expect(saved.browser.userDataDir).toBe(profileDir());
   });
 });

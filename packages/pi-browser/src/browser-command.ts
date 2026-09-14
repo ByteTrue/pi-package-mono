@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { managedBrowserSummary, mergePlaywrightConfig, readPlaywrightConfig, writePlaywrightConfig, type JsonObject } from "./config.js";
+import { managedBrowserSummary, mergePlaywrightConfig, readPlaywrightConfig, setHeadless, writePlaywrightConfig, type JsonObject } from "./config.js";
 import { INSTALL_CLI, INSTALL_SKILL, MIN_CLI_VERSION, isPlaywrightSkillInstalled, probePlaywrightCli, type CliProbe, type ExecFn, type InstallCommand } from "./env.js";
 import { clearProfileData, isProfileInUse } from "./import/apply.js";
 import { detectSourceBrowsers, profilePath, type DetectedBrowser, type DetectedProfile } from "./import/detect.js";
@@ -17,11 +17,14 @@ const IMPORT = "Import login data";
 const REIMPORT = "Re-import";
 const CLEAR = "Clear imported data";
 const SESSIONS = "Sessions";
+const SETTINGS = "Settings";
 const CLOSE = "Close";
 const BACK = "Back";
 const CLOSE_ALL = "Close all sessions";
 const CLOSE_ONE = "Close this session";
 const KILL_ALL = "Force kill all sessions (all workspaces)";
+const GO_HEADED = "Open headed (visible window)";
+const GO_HEADLESS = "Open headless (no window)";
 
 export function registerBrowserCommand(pi: ExtensionAPI): void {
   pi.registerCommand("browser", {
@@ -36,7 +39,7 @@ export async function runBrowserCommand(pi: ExtensionAPI, ctx: ExtensionCommandC
   if (!ctx.hasUI) return;
 
   while (true) {
-    const choice = await ctx.ui.select("Browser", [STATUS, SETUP, IMPORT, REIMPORT, CLEAR, SESSIONS, CLOSE]);
+    const choice = await ctx.ui.select("Browser", [STATUS, SETUP, IMPORT, REIMPORT, CLEAR, SESSIONS, SETTINGS, CLOSE]);
     if (!choice || choice === CLOSE) return;
 
     if (choice === STATUS) {
@@ -61,6 +64,10 @@ export async function runBrowserCommand(pi: ExtensionAPI, ctx: ExtensionCommandC
     }
     if (choice === SESSIONS) {
       await runSessionsMenu(pi, ctx);
+      continue;
+    }
+    if (choice === SETTINGS) {
+      await runSettingsMenu(ctx);
       continue;
     }
   }
@@ -223,16 +230,56 @@ function writeManagedConfig(
   const path = playwrightConfigPath();
   const existing = readPlaywrightConfig(path);
   if (!existing.ok) return { ok: false, error: existing.error };
+  // Keep a headless choice from an earlier import / Settings toggle; the first import defaults to headless.
+  const headless = managedBrowserSummary(existing.value).headless ?? true;
   const merged = mergePlaywrightConfig(existing.value, {
     channel,
     userDataDir: targetProfileDir,
-    headless: true,
+    headless,
     outputDir: artifactsDir(),
   });
   if (!merged.ok) return { ok: false, error: merged.error };
   const written = writePlaywrightConfig(path, merged.value);
   if (!written.ok) return { ok: false, error: written.error };
   return { ok: true, ...(written.backupPath ? { backupPath: written.backupPath } : {}) };
+}
+
+async function runSettingsMenu(ctx: ExtensionCommandContext): Promise<void> {
+  const path = playwrightConfigPath();
+  const existing = readPlaywrightConfig(path);
+  if (!existing.ok) {
+    ctx.ui.notify(existing.error, "error");
+    return;
+  }
+  if (!existing.value) {
+    ctx.ui.notify("No CLI config yet. Run Import login data first — it writes the browser settings.", "warning");
+    return;
+  }
+
+  const summary = managedBrowserSummary(existing.value);
+  const headless = summary.headless ?? true;
+  const title =
+    "Settings — browser: " + (summary.channel ?? "(unset)") + " — sessions open " + (headless ? "headless" : "headed") +
+    " — to use another browser, run Import";
+  const choice = await ctx.ui.select(title, [headless ? GO_HEADED : GO_HEADLESS, BACK]);
+  if (!choice || choice === BACK) return;
+
+  const next = setHeadless(existing.value, !headless);
+  if (!next.ok) {
+    ctx.ui.notify(next.error, "error");
+    return;
+  }
+  const written = writePlaywrightConfig(path, next.value);
+  if (!written.ok) {
+    ctx.ui.notify("Could not update the CLI config: " + written.error, "error");
+    return;
+  }
+  ctx.ui.notify(
+    headless
+      ? "Headless off — new sessions open a visible window. Running sessions are unaffected."
+      : "Headless on — new sessions run without a window. Running sessions are unaffected.",
+    "info",
+  );
 }
 
 async function runImportFlow(

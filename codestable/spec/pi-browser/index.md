@@ -4,7 +4,7 @@
 
 `@bytetrue/pi-browser` 让 Pi 具备"驱动一个已登录浏览器"的能力，但**不自研引擎、不注册 agent 工具**：它把官方 `@playwright/cli` 与官方 skill 准备好，把日常浏览器（Edge/Chrome）的登录态导入一个由本包维护的持久 profile，并在 `~/.playwright/cli.config.json` 里把它设为默认。随后 agent 通过官方 skill 直接使用 `playwright-cli`。
 
-Peer：`@earendil-works/pi-coding-agent >=0.80.4`。npm `latest`：尚未发布（0.1.0 已在仓库就绪）。
+Peer：`@earendil-works/pi-coding-agent >=0.80.4`。npm `latest`：0.1.1（Trusted Publisher 发布）。
 
 ## 当前表面
 
@@ -16,6 +16,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.4`。npm `latest`：尚未发布�
 - **Re-import**：复用 state 记录的上次来源一键重导。
 - **Clear imported data**：二次确认后删除 managed profile 内容并清空 state（CLI config 保留）。
 - **Sessions**：列出全部 workspace 的 CLI 会话；本 workspace 的可单独 close/detach；`Close all sessions` 只作用当前 workspace；存在其他 workspace 会话时才出现 `Force kill all sessions (all workspaces)`。
+- **Settings**：切换 headless ↔ headed（只改 `launchOptions.headless`，原子写+备份，其余键不动）；channel 只读展示并注明"换浏览器走 Import"（channel 与导入来源强耦合，不做自由开关）。config 尚未生成时提示先 Import。
 
 ## 工作方式
 
@@ -38,7 +39,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.4`。npm `latest`：尚未发布�
 | `browser.userDataDir` | 指向 `<agent dir>/pi-browser/profiles/<name>` |
 | `browser.launchOptions.ignoreDefaultArgs: ["--use-mock-keychain"]` | Playwright 默认带 mock keychain（假钥匙串），导入的 cookie 会解密失败并被静默丢弃 |
 
-另有 `outputDir = <agent dir>/pi-browser/artifacts`。
+另有 `outputDir = <agent dir>/pi-browser/artifacts`；`launchOptions.headless` 也是本包管理的键（默认 true；导入保留已有值，Settings 切换只动这一个键，运行中会话不受影响——launchOptions 在会话创建时读取）。
 
 ### 会话生命周期
 
@@ -71,7 +72,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.4`。npm `latest`：尚未发布�
 ## 已知限制
 
 - 登录态是**快照**：会过期；Google 一类 source-bound 域名导入后可能失效；掉登录走 Re-import。
-- 只覆盖 macOS/Windows/Linux 的 Edge 与 Chrome；其他 Chromium 需要 executablePath，留待 v2。
+- 只支持 macOS/Windows/Linux 的 Edge 与 Chrome——即 Playwright 有 channel 的浏览器（2026-09-14 决策：菜单只列 Playwright channel 选项；Brave/Arc 等其他 Chromium 不支持，不走 executablePath）。
 - 会话清单跨 workspace 可见，但关闭能力受 workspace 边界限制（`kill-all` 兜底）。
 
 ## 验证
@@ -82,11 +83,12 @@ npm --workspace @bytetrue/pi-browser run typecheck
 npm --workspace @bytetrue/pi-browser pack --dry-run
 ```
 
-真实 Pi 回归还应确认：`/browser` 六个入口；Setup 两条命令；导入后在任意目录、无 env 直接 `playwright-cli open <需鉴权页面>` 是登录态；`/reload` 后 Import / Re-import / Clear 可用；有遗留会话时启动提示出现、无则不打扰。
+真实 Pi 回归还应确认：`/browser` 七个入口（含 Settings）；Setup 两条命令；导入后在任意目录、无 env 直接 `playwright-cli open <需鉴权页面>` 是登录态；`/reload` 后 Import / Re-import / Clear 可用；有遗留会话时启动提示出现、无则不打扰；Settings 切换 headless 后 config 实际变化且 Status 同步；重导不清掉已设的 headless。
 
 ## 证据
 
 - README：`packages/pi-browser/README.md`
 - 当前实现：`packages/pi-browser/src/`
-- 包事项（M1–M4 执行记录、真机穿刺、CLI 会话语义实测）：`codestable/issues/done/068-x-browser-package.md`
-- 发布：`.github/workflows/release.yml`（tag `pi-browser-v*`）；npm Trusted Publisher 待配置
+- 包事项（M1–M4 执行记录、真机穿刺、CLI 会话语义实测）：`codestable/issues/done/074-x-browser-package.md`
+- Settings 菜单与浏览器范围决策（只支持 Playwright channel 浏览器，Brave/Arc 撤除）：`codestable/issues/075-x-browser-settings-and-v2-browsers.md`
+- 发布：`.github/workflows/release.yml`（tag `pi-browser-v*`）；Trusted Publisher 已配置，0.1.1 已发布

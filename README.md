@@ -21,7 +21,7 @@ Each package is independent. Install one capability without inheriting a framewo
 
 | You want Pi to… | Package | What it adds | First step |
 | --- | --- | --- | --- |
-| Drive a browser that is already logged in | [`@bytetrue/pi-browser`](packages/pi-browser) | `/browser` setup, login-data import, session cleanup | Run `/browser` |
+| Drive a browser that is already logged in | [`@bytetrue/pi-browser`](packages/pi-browser) | `/browser` setup, login-data import, headless/headed settings, session cleanup | Run `/browser` |
 | Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `bash(waitSeconds)`, `background_status`, `background_kill`, `/background` | Install and ask Pi to run a command without hanging on it |
 | Generate or edit images | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | On-demand Skill + CLI, `/image-gen` setup | Run `/image-gen` |
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |

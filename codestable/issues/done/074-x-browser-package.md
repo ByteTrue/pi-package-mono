@@ -216,4 +216,5 @@ CLI 会话语义（本次实测确认，关闭时应进 spec）：
 - **质量证据**：64 个单测（paths / env / config / state / command / index / detect / snapshot / apply / pipeline / sessions）；全仓 typecheck 与 test exit 0；pack dry-run 内容正确（仅 src + README）；真实 Pi 加载无错误、空态不打扰。
 - **真机验收**：导入 43.7 MB（Edge Default：cookies / local storage / session storage / indexeddb），cookies 行数源=目标=468；`/settings/profile` 保持登录；bilibili console error 0（leveldb 拷贝无损）；`pi --mode rpc` 实测启动遗留会话提示；配置写入产生一次备份后转为规范形式（后续导入不再重复备份）。
 - **发布状态**：仓库内 0.1.0 就绪，`pi-browser-v*` tag 与 release.yml 已接线；npmjs Trusted Publisher 待配置，尚未发布。
-- **遗留**：Brave/Arc 等无 Playwright channel 的浏览器支持（v2）；导入后的"登录态抽查"功能；npm 首发（需用户操作）。
+- **发布与 TP 握手验证**：0.1.0 由用户本机手动首发（2026-09-13，2FA 完成）。首次 tag `pi-browser-v0.1.1` 触发的发布被 npm 拒绝（`403 OIDC permission denied`，provenance 已签名——当时 Trusted Publisher 尚未配置）。用户在 npmjs 配置 TP（`ByteTrue/pi-package-mono` / `release.yml` / 权限 `npm publish`、Environment 留空）后，本包与远端 main 合并（issue 改号 068→074）并重推 tag，`release.yml` 成功执行：`+ @bytetrue/pi-browser@0.1.1`，provenance 已签名入 transpareer/log，registry `latest = 0.1.1`。此后发版 = bump 版本 + 推 `pi-browser-v<version>` tag。
+- **遗留**：Brave/Arc 等无 Playwright channel 的浏览器支持（v2）；导入后的"登录态抽查"功能。

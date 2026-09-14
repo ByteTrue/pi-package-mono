@@ -85,6 +85,21 @@ export function mergePlaywrightConfig(
   return { ok: true, value: next };
 }
 
+/** Flip only headless; every other key, including foreign ones, stays untouched. */
+export function setHeadless(config: JsonObject, headless: boolean): Result<JsonObject> {
+  if (config.browser !== undefined && !isObject(config.browser)) {
+    return { ok: false, error: '"browser" in the playwright config is not an object; refusing to overwrite it.' };
+  }
+  const browser: JsonObject = isObject(config.browser) ? { ...config.browser } : {};
+  if (browser.launchOptions !== undefined && !isObject(browser.launchOptions)) {
+    return { ok: false, error: '"browser.launchOptions" in the playwright config is not an object; refusing to overwrite it.' };
+  }
+  const launchOptions: JsonObject = isObject(browser.launchOptions) ? { ...browser.launchOptions } : {};
+  launchOptions.headless = headless;
+  browser.launchOptions = launchOptions;
+  return { ok: true, value: { ...config, browser } };
+}
+
 /** What the browser config would look like right now, for status display. */
 export function managedBrowserSummary(config: JsonObject | undefined): {
   channel?: string;

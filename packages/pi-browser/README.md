@@ -6,6 +6,7 @@ One command, `/browser`:
 
 - **Setup** — install or update the official [`@playwright/cli`](https://github.com/microsoft/playwright-cli) and its skill (`playwright-cli install --skills=agents -g`, which Pi reads from `~/.agents/skills`).
 - **Import login data** — copy cookies and storage from your daily Edge/Chrome profile into a profile this package owns, then point the global `~/.playwright/cli.config.json` at it. **Re-import** refreshes that snapshot; **Clear imported data** removes it.
+- **Settings** — switch between headless and headed sessions; the browser itself follows the import source, so switching browsers means importing from that browser.
 - **Status** — profile, config, CLI version, skill, and the last import.
 - **Sessions** — see and close browser sessions the CLI left running (force kill reaches other workspaces).
 
@@ -13,7 +14,7 @@ The agent then works through the official skill and CLI; this package registers 
 
 ## How the import works
 
-The managed profile is a copy, not a live bridge. Playwright launches Edge with `--user-data-dir=<agent dir>/pi-browser/profiles/default` and without `--use-mock-keychain`, so **the browser itself decrypts the imported cookies** through the normal OS keychain. No extension, no tab groups, no dedicated-profile re-login.
+The managed profile is a copy, not a live bridge. Playwright launches the import source's browser with `--user-data-dir=<agent dir>/pi-browser/profiles/default` and without `--use-mock-keychain`, so **the browser itself decrypts the imported cookies** through the normal OS keychain. No extension, no tab groups, no dedicated-profile re-login.
 
 Three config keys make or break this; the package writes and repairs them:
 

@@ -110,7 +110,7 @@
 
 - 根 `package.json` workspaces、`npm test`
 - BySpace worktree 准备：`byspace.json`
-- 浏览器能力：`packages/pi-browser`、`codestable/spec/pi-browser/index.md`、`codestable/issues/done/068-x-browser-package.md`（含配置四件套、导入/会话语义与真机穿刺证据）
+- 浏览器能力：`packages/pi-browser`、`codestable/spec/pi-browser/index.md`、`codestable/issues/done/074-x-browser-package.md`（含配置四件套、导入/会话语义与真机穿刺证据）
 - 本地 package / worktree 加载边界：`codestable/notes/005-pi-local-package-loading.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
 - 已删除的 pi-ask-user 历史：`codestable/issues/043-x-ff-ask-user-question.md`、`codestable/issues/047-x-ff-remove-pi-ask-user.md`
