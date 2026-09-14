@@ -6,7 +6,7 @@
 
 目标可以是副本，也可以是用户日常的**真实 profile**（选择与导入已解耦）；但 M0 实测活档案直连不稳定且会写用户数据，所以**默认与受支持的路径始空副本**，真实 profile 是需逐次知情同意的可选项（缘起与数据：`epics/005-o-browser-direct-profile-target/`）。
 
-Peer：`@earendil-works/pi-coding-agent >=0.80.4`、`@earendil-works/pi-tui >=0.84.3`（只读面板组件）。npm `latest`：0.1.1（当前未发版的改动：菜单重组、Target 解耦、带边框面板、Manual sign-in——见 issues/080、081 与 Epic 005 / issue 002）。
+Peer：`@earendil-works/pi-coding-agent >=0.80.4`、`@earendil-works/pi-tui >=0.84.3`（只读面板组件）。npm `latest`：0.2.0（tag `pi-browser-v0.2.0`，CI 发布 + Trusted Publisher/provenance）。
 
 ## 当前表面
 
@@ -106,4 +106,4 @@ npm --workspace @bytetrue/pi-browser pack --dry-run
 - /browser 二级菜单重组 + Browser 切换入口 + 只读 Status 面板：`codestable/issues/080-x-ff-browser-menu-regroup.md`
 - Manual sign-in 窗口入口 + Status 面板加边框：`codestable/issues/081-x-ff-browser-manual-signin-and-bordered-panel.md`
 - 目标模型重构（选择与导入解耦、真实 profile 降为需同意的可选项、三条硬闸）与全部实测数据：`codestable/epics/005-o-browser-direct-profile-target/`（`spec.md` + `issues/001-x-m0-real-profile-pierce.md` + `issues/002-x-target-decouple-and-gates.md`）、`codestable/talks/006-browser-direct-profile-target.md`
-- 发布：`.github/workflows/release.yml`（tag `pi-browser-v*`）；Trusted Publisher 已配置，0.1.1 已发布
+- 发布：`.github/workflows/release.yml`（tag `pi-browser-v*`）；Trusted Publisher 已配置，0.1.1 / 0.2.0 已经 CI 发布（带 provenance）
