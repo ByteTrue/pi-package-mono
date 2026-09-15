@@ -1,4 +1,4 @@
-import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works/pi-ai";
 // ponytail: "@earendil-works/pi-ai/compat" is documented as temporary ("deleted with the
 // coding-agent ModelManager migration"), but it is what pi's own examples/extensions/summarize.ts
 // uses and the only entry exposing complete(). Swap for the successor API when it lands.
@@ -58,6 +58,23 @@ function safeUpstreamMessage(raw: string | undefined, auth: VisionAuth): string 
   return raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
 }
 
+/** Ordered thinking levels; a model's thinkingLevelMap maps each to a vendor name or null (= unsupported). */
+const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+type ReasoningEffort = (typeof THINKING_LEVELS)[number];
+
+/**
+ * Lowest thinking level the model's thinkingLevelMap admits (null = unsupported),
+ * or undefined when it declares no map. Always-thinking models reject "thinking
+ * disabled", which is what pi-ai sends for zai-style APIs when no effort is
+ * given — so defer to the map, the single source of truth the catalog maintains.
+ */
+function lowestAdmittedEffort(model: Model<Api>): ReasoningEffort | undefined {
+  for (const level of THINKING_LEVELS) {
+    if (typeof model.thinkingLevelMap?.[level] === "string") return level;
+  }
+  return undefined;
+}
+
 function answerText(message: AssistantMessage): string {
   return message.content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -99,6 +116,12 @@ export async function analyzeImages(
         env: resolved.auth.env,
         signal,
         cacheRetention: "none",
+        // pi-ai's zai/qwen thinking formats send "thinking disabled" when no effort is
+        // given, which always-thinking models (e.g. glm-5.3-flash: "该模型始终思考, 不支持
+        // 关闭思考") reject. Single rule: pass the lowest level the model's
+        // thinkingLevelMap admits; models without a map get none, and pi-ai only
+        // consumes the option in its thinking branches anyway.
+        reasoningEffort: lowestAdmittedEffort(resolved.model),
       },
     );
   } catch (error) {

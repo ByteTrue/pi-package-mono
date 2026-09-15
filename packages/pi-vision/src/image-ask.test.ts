@@ -239,4 +239,61 @@ describe("runImageAsk", () => {
     );
     expect(complete).not.toHaveBeenCalled();
   });
+
+  it("requests the lowest mapped level for always-thinking models (glm-5.3-flash)", async () => {
+    const { cwd } = makeSettingsSandbox({ model: "vendor/glm-5.3-flash" });
+    writeFileSync(join(cwd, "shot.png"), PNG);
+    const alwaysThinking = {
+      ...makeModel("vendor", "glm-5.3-flash"),
+      reasoning: true,
+      thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" },
+    };
+    const ctx = makeCtx({ cwd, models: [alwaysThinking], auth: { ok: true, apiKey: "sk-test-abcdef123456" } });
+    const complete = vi.fn().mockResolvedValue(reply("ok")) as unknown as CompleteFn;
+
+    await runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    const [, , options] = vi.mocked(complete).mock.calls[0]!;
+    expect(options?.reasoningEffort).toBe("low");
+  });
+
+  it("picks the lowest admitted level from thinkingLevelMap", async () => {
+    const { cwd } = makeSettingsSandbox({ model: "vendor/picky" });
+    writeFileSync(join(cwd, "shot.png"), PNG);
+    const alwaysThinking = {
+      ...makeModel("vendor", "picky"),
+      reasoning: true,
+      thinkingLevelMap: { off: null, minimal: null, low: null, medium: null, high: "high", max: "max" },
+    };
+    const ctx = makeCtx({ cwd, models: [alwaysThinking], auth: { ok: true, apiKey: "sk-test-abcdef123456" } });
+    const complete = vi.fn().mockResolvedValue(reply("ok")) as unknown as CompleteFn;
+
+    await runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    const [, , options] = vi.mocked(complete).mock.calls[0]!;
+    expect(options?.reasoningEffort).toBe("high");
+  });
+
+  it("passes no effort when the model declares no thinkingLevelMap", async () => {
+    const { cwd } = makeSettingsSandbox({ model: "vendor/unmapped" });
+    writeFileSync(join(cwd, "shot.png"), PNG);
+    const unmapped = { ...makeModel("vendor", "unmapped"), reasoning: true };
+    const ctx = makeCtx({ cwd, models: [unmapped], auth: { ok: true, apiKey: "sk-test-abcdef123456" } });
+    const complete = vi.fn().mockResolvedValue(reply("ok")) as unknown as CompleteFn;
+
+    await runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    const [, , options] = vi.mocked(complete).mock.calls[0]!;
+    expect(options?.reasoningEffort).toBeUndefined();
+  });
+
+  it("does not set reasoningEffort for non-reasoning models", async () => {
+    const { ctx } = scenario();
+    const complete = vi.fn().mockResolvedValue(reply("ok")) as unknown as CompleteFn;
+
+    await runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    const [, , options] = vi.mocked(complete).mock.calls[0]!;
+    expect(options?.reasoningEffort).toBeUndefined();
+  });
 });
