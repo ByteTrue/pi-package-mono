@@ -15,6 +15,7 @@ import {
   subagentManager,
   type RunState,
   type JsonObject,
+  type SubagentTaskItem,
   type SubagentTaskRecord,
 } from "./index.js";
 import {
@@ -119,15 +120,15 @@ describe("pi-subagent unit tests", () => {
     expect(state.finishedAt).toBeDefined();
   });
 
-  it("resolves run config with thinking and model overrides", () => {
+  it("resolves user-configured agent model and thinking", () => {
     const cfg = resolveRunCfg(
-      { model: "openai/gpt-4o:low", tools: ["read", "grep"] },
-      { model: "claude-3-5-sonnet", thinking: "high" },
+      { tools: ["read", "grep"] },
+      { model: "openai/gpt-4o", thinking: "high" },
       "medium",
       "inherited-model",
     );
-    expect(cfg.model).toBe("openai/gpt-4o:low");
-    expect(cfg.thinking).toBe("low");
+    expect(cfg.model).toBe("openai/gpt-4o:high");
+    expect(cfg.thinking).toBe("high");
     expect(cfg.tools).toEqual(["read", "grep"]);
 
     const args = buildPiArgs(cfg);
@@ -135,7 +136,7 @@ describe("pi-subagent unit tests", () => {
     expect(args).toContain("json");
     expect(args).toContain("-p");
     expect(args).toContain("--model");
-    expect(args).toContain("openai/gpt-4o:low");
+    expect(args).toContain("openai/gpt-4o:high");
     expect(args).toContain("--tools");
     expect(args).toContain("read,grep");
   });
@@ -203,16 +204,15 @@ describe("pi-subagent unit tests", () => {
     expect(inheritCfg.model).toBe("parent-model:low");
     expect(inheritCfg.thinking).toBe("low");
 
-    // 4. Direct tool call parameter takes highest precedence
-    const directCfg = resolveRunCfg(
-      { agent: "researcher", model: "custom-model:low", thinking: "off" },
-      {},
-      "high",
-      "parent-model",
-      settings,
-    );
-    expect(directCfg.model).toBe("custom-model");
-    expect(directCfg.thinking).toBe("off");
+    // 4. Stale/forged tool-call fields cannot override user-controlled settings
+    const forgedTask = {
+      agent: "researcher",
+      model: "openrouter/unauthorized-model:low",
+      thinking: "off",
+    } as unknown as Parameters<typeof resolveRunCfg>[0];
+    const directCfg = resolveRunCfg(forgedTask, {}, "high", "parent-model", settings);
+    expect(directCfg.model).toBe("bytetrueapi/gemini-3.7-flash:high");
+    expect(directCfg.thinking).toBe("high");
   });
 
   it("loads and updates subagent settings correctly in project scope", () => {
@@ -316,14 +316,20 @@ You are an expert researcher. Read references carefully.
       async: true,
       tasks: [
         { task: "step 1", agent: "scout" },
-        { task: "step 2", agent: "reviewer", model: "gpt-5" },
+        {
+          task: "step 2",
+          agent: "reviewer",
+          model: "gpt-5",
+          thinking: "off",
+        } as unknown as SubagentTaskItem,
       ],
     });
     expect(chain.isChain).toBe(true);
     expect(chain.isAsync).toBe(true);
     expect(chain.tasks.length).toBe(2);
     expect(chain.tasks[0]?.agent).toBe("scout");
-    expect(chain.tasks[1]?.model).toBe("gpt-5");
+    expect(chain.tasks[1]).not.toHaveProperty("model");
+    expect(chain.tasks[1]).not.toHaveProperty("thinking");
 
     // 3. String array fallback
     const stringArray = normalizeTasks({
@@ -413,6 +419,29 @@ You are an expert researcher. Read references carefully.
     // pi core's structuredClone(messages) before every LLM call.
     expect(() => structuredClone(details)).not.toThrow();
     expect(() => structuredClone([task])).toThrow(); // the bug we just fixed
+  });
+
+  it("does not expose model or thinking controls in the Agent tool schema", () => {
+    let registered: JsonObject | undefined;
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    try {
+      subagentExtension({
+        registerTool: (tool: JsonObject) => {
+          registered = tool;
+        },
+      });
+    } finally {
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+    }
+
+    const parameters = registered?.parameters as JsonObject;
+    const tasks = (parameters.properties as JsonObject).tasks as JsonObject;
+    const items = tasks.items as JsonObject;
+    const taskProperties = items.properties as JsonObject;
+    expect(taskProperties).not.toHaveProperty("model");
+    expect(taskProperties).not.toHaveProperty("thinking");
+    expect(taskProperties).toHaveProperty("agent");
   });
 
   it("sends exit messages with clone-safe details through the manager wiring", async () => {

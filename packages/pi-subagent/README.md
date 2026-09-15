@@ -54,8 +54,6 @@ Execute tasks in isolated child agent sessions. Multiple tasks run concurrently 
 | `tasks` | `Array<TaskItem>` | **Yes** | List of tasks to execute. |
 | `tasks[i].task` | `string` | **Yes** | The task instruction / prompt. |
 | `tasks[i].agent` | `string` | No | Optional agent role (loads prompt/defaults from `.pi/agents/<name>.md`). |
-| `tasks[i].model` | `string` | No | Optional model override (e.g. `gemini-3.7-flash`, `gpt-5:low`). |
-| `tasks[i].thinking` | `string` | No | Optional thinking level (`off`, `low`, `medium`, `high`, `max`). |
 | `tasks[i].tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `tasks[i].cwd` | `string` | No | Optional working directory for the task. |
 | `chain` | `boolean` | No | Set to `true` to pipe output from step N to step N+1. Default: `false` (concurrent). |
@@ -70,12 +68,12 @@ Execute tasks in isolated child agent sessions. Multiple tasks run concurrently 
 }
 ```
 
-**2. Parallel fanout (multiple heterogeneous roles/models):**
+**2. Parallel fanout (multiple roles):**
 ```json
 {
   "tasks": [
     { "agent": "frontend-dev", "task": "Check UI components" },
-    { "agent": "backend-dev", "task": "Verify API contracts", "model": "gpt-5:high" }
+    { "agent": "backend-dev", "task": "Verify API contracts" }
   ]
 }
 ```
@@ -99,18 +97,21 @@ Execute tasks in isolated child agent sessions. Multiple tasks run concurrently 
 }
 ```
 
-#### Model Resolution
+#### Model and Thinking Resolution
 
-When no model is specified, subagents **inherit the parent session's current model**. The full priority chain:
+The Agent-facing tool deliberately does not expose model or thinking overrides. These execution-policy choices remain under user control through `/subagent`, settings, and agent templates.
 
-1. `tasks[i].model` — per-task override
-2. `subagent.agents[role].model` — per-role binding (settings)
-3. `.pi/agents/<name>.md` frontmatter `model`
-4. `subagent.defaultModel` — explicit subagent default (settings)
-5. Parent session's current model (inherited)
-6. The child `pi` process's own default
+The model priority chain is:
 
-Note: root-level pi settings `defaultProvider`/`defaultModel` are deliberately **not** consulted — unset means "inherit", and the child process falls back to its own default by itself.
+1. `subagent.agents[role].model` — per-role binding (settings)
+2. `.pi/agents/<name>.md` frontmatter `model`
+3. `subagent.defaultModel` — explicit subagent default (settings)
+4. Parent session's current fully qualified provider/model (inherited)
+5. The child `pi` process's own default
+
+Thinking follows the same user-controlled chain: role settings, agent-template frontmatter, subagent default, then the parent session. Built-in roles provide their documented thinking defaults.
+
+Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
 
 ## License
 

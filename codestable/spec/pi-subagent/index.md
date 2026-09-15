@@ -9,7 +9,8 @@
 ## 当前表面
 
 - `subagent(params)`：
-  - `tasks`（必填）：任务对象数组 `Array<{ task, agent?, model?, thinking?, tools?, cwd?, resume?, id?, timeoutMs?, maxTurns? }>`。
+  - `tasks`（必填）：任务对象数组 `Array<{ task, agent?, tools?, cwd?, resume?, id?, timeoutMs?, maxTurns? }>`。
+  - Agent 工具不暴露 `model` 或 `thinking`：模型与思考强度只由用户通过 `/subagent`、settings 或 agent 模板控制；旧调用即使伪造这两个字段也会在规范化与执行时被忽略。
   - `chain`（可选，默认 `false`）：设置为 `true` 时按顺序流水线执行（前序输出自动作为后序输入）；默认 `false` 为并发执行。
   - `async`（可选，默认 `false`）：设置为 `true` 时在后台脱机执行，不阻塞当前会话；完成后通过 `followUp + triggerTurn` 自动唤醒主模型。
   - `timeoutMs`（可选，默认 `1200000` 即 20 分钟）：任务超时限制。
@@ -39,7 +40,7 @@
    - `/subagent` 采用栈式导航，任何子层级按 `Esc` 或选 Back 均返回上一层，根菜单按 `Esc` 退出。
    - 模型选择器支持输入文本实时模糊匹配（Fuzzy search），且支持上下循环滚动（在第一项按向上箭头直接循环到最后一项，反之亦然）。
    - 提供 `View Active Subagents` 面板，支持查看当前会话中每个任务的状态、已运行时长、输出，并可确认终止运行中的任务。
-5. **模型解析优先级**：`task.model > subagent.agents[x].model > agent .md frontmatter model > subagent.defaultModel > 继承父会话当前模型（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`——不传 `--model` 时子进程自己回退到自己的默认。`defaultThinking` 同链对称（不再读根层 `defaultThinkingLevel`）。
+5. **用户控制的执行策略**：模型优先级为 `subagent.agents[x].model > agent .md frontmatter model > subagent.defaultModel > 继承父会话当前完整 provider/model（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`；思考强度同链对称（角色设置 > agent 模板 > subagent 默认 > 父会话），内置角色提供其文档化默认值。Agent 的单次 tool call 无权覆盖二者。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`。
 6. **实时 TUI 差分渲染**：
    - 流式解析子进程 stdout 输出的 JSON 事件，实时更新 Spinner、耗时、思考意图、活跃工具调用与 Token/费用统计。
    - 快捷键 `Alt+O` 随时展开/收起卡片详情。

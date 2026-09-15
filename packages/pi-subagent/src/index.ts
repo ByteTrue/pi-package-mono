@@ -40,8 +40,6 @@ export interface PiExtensionContext {
 export interface SubagentTaskItem {
   task: string;
   agent?: string;
-  model?: string;
-  thinking?: string;
   tools?: string[];
   cwd?: string;
   resume?: string;
@@ -63,8 +61,6 @@ export interface SubagentInput {
   mode?: string;
   prompts?: string[];
   agent?: string;
-  model?: string;
-  thinking?: string;
   tools?: string[];
   cwd?: string;
 }
@@ -749,21 +745,17 @@ export function resolveRunCfg(
 
   const roleSettings = item.agent ? subagentSettings?.agents?.[item.agent] : undefined;
 
-  const inputModel = str(item.model);
   const roleModel = str(roleSettings?.model);
   const agentModel = str(agentCfg.model);
   const defaultModel = str(subagentSettings?.defaultModel);
-  const rawModel = inputModel ?? roleModel ?? agentModel ?? defaultModel ?? str(inheritedModel);
+  const rawModel = roleModel ?? agentModel ?? defaultModel ?? str(inheritedModel);
 
-  const inputSuffixThinking = normalize(inputModel?.match(suffixRe)?.[1]);
   const roleSuffixThinking = normalize(roleModel?.match(suffixRe)?.[1]);
   const agentSuffixThinking = normalize(agentModel?.match(suffixRe)?.[1]);
   const defaultSuffixThinking = normalize(defaultModel?.match(suffixRe)?.[1]);
 
   const baseModel = rawModel?.replace(suffixRe, "");
   const thinking =
-    normalize(item.thinking) ??
-    inputSuffixThinking ??
     normalize(roleSettings?.thinking) ??
     roleSuffixThinking ??
     normalize(agentCfg.thinking) ??
@@ -1204,8 +1196,6 @@ export function normalizeTasks(input: SubagentInput): {
           items.push({
             task: trimmed,
             agent: input.agent,
-            model: input.model,
-            thinking: input.thinking,
             tools: input.tools,
             cwd: input.cwd,
             resume: input.resume,
@@ -1219,8 +1209,6 @@ export function normalizeTasks(input: SubagentInput): {
           items.push({
             task: t,
             agent: item.agent ?? input.agent,
-            model: item.model ?? input.model,
-            thinking: item.thinking ?? input.thinking,
             tools: item.tools ?? input.tools,
             cwd: item.cwd ?? input.cwd,
             resume: item.resume ?? input.resume,
@@ -1240,8 +1228,6 @@ export function normalizeTasks(input: SubagentInput): {
       items.push({
         task: single,
         agent: input.agent,
-        model: input.model,
-        thinking: input.thinking,
         tools: input.tools,
         cwd: input.cwd,
         resume: input.resume,
@@ -1260,7 +1246,6 @@ export interface SubagentTaskRecord {
   parentSessionId: string;
   description: string;
   agent?: string;
-  model?: string;
   mode: "foreground" | "background";
   status: "running" | "succeeded" | "failed" | "cancelled" | "paused";
   output: string;
@@ -1682,15 +1667,6 @@ export default function subagentExtension(pi: {
                 description:
                   "Optional agent role (e.g. 'scout', 'researcher', 'reviewer', or custom name).",
               },
-              model: {
-                type: "string",
-                description: "Optional model override (e.g. 'gemini-3.7-flash', 'gpt-5:low').",
-              },
-              thinking: {
-                type: "string",
-                enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-                description: "Optional thinking level.",
-              },
               tools: {
                 type: "array",
                 items: { type: "string" },
@@ -1773,7 +1749,6 @@ export default function subagentExtension(pi: {
           parentSessionId: sessionId,
           description: desc,
           agent: tasks[0]?.agent,
-          model: tasks[0]?.model,
           mode: "background",
           status: "running",
           output: "",
@@ -1835,7 +1810,6 @@ export default function subagentExtension(pi: {
         parentSessionId: sessionId,
         description: desc,
         agent: tasks[0]?.agent,
-        model: tasks[0]?.model,
         mode: "foreground",
         status: "running",
         output: "",
