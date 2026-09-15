@@ -70,3 +70,6 @@ Windows 穿刺已确认 agent-browser 0.37.1：显式 Profile 路径会成为独
 ## 发布记录（2026-09-15）
 
 - 版本：`0.2.0` → `0.3.0`（核心引擎替换，用户可见行为变更，minor）。
+- 提交：`8fa6fdc`（feat(pi-browser)!）；tag `pi-browser-v0.3.0` 触发 release.yml（Trusted Publishing OIDC）。
+- registry 确认：`npm view @bytetrue/pi-browser dist-tags.latest` = `0.3.0`。
+- 全仓 typecheck 与 543 项测试（含本 issue 31 项）在发布前全绿；GitHub run 页面因本机网络代理拦截 api.github.com 未逐条核对，以 registry 为准。
