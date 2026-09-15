@@ -75,19 +75,27 @@ describe("background_run tool", () => {
   });
 
   it("prepends the agent bin dir to PATH like the built-in tool's getShellEnv", async () => {
-    const { homedir: home } = await import("node:os");
+    const { homedir: home, tmpdir } = await import("node:os");
+    const probeFile = join(tmpdir(), "bt-path-check.txt");
+    // The spawned shell is POSIX-flavored even on Windows; give it a path it can redirect to.
+    const shellProbe = probeFile.replaceAll("\\", "/");
     const bin = join(home(), ".pi", "agent", "bin");
     const origPath = process.env.PATH;
-    process.env.PATH = (origPath ?? "").split(":").filter((entry) => entry !== bin).join(":");
+    const pathSep = process.platform === "win32" ? ";" : ":";
+    process.env.PATH = (origPath ?? "")
+      .split(pathSep)
+      .filter((entry) => entry !== bin)
+      .join(pathSep);
     try {
       const result = await call(tool(), {
         command:
-          "node -e 'const p=require(\"path\"),h=require(\"os\").homedir();console.log(process.env.PATH.split(p.delimiter).includes(p.join(h,\".pi\",\"agent\",\"bin\")))' > /tmp/bt-path-check.txt",
+          "node -e 'const p=require(\"path\"),h=require(\"os\").homedir();console.log(process.env.PATH.split(p.delimiter).includes(p.join(h,\".pi\",\"agent\",\"bin\")))' > " +
+          shellProbe,
       }, SESSION);
       const id = result.content[0]?.text.match(/(bg_[0-9a-f]+)/)?.[1];
       await vi.waitFor(() => expect(manager.get(id!, SESSION)?.status).not.toBe("running"), { timeout: 8000 });
       const { readFileSync } = await import("node:fs");
-      expect(readFileSync("/tmp/bt-path-check.txt", "utf8").trim()).toBe("true");
+      expect(readFileSync(probeFile, "utf8").trim()).toBe("true");
     } finally {
       process.env.PATH = origPath;
     }
