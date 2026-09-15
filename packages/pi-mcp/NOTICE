@@ -1,0 +1,35 @@
+# NOTICE
+
+This package contains source ported from [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter)
+by Nico Bailon, licensed under the MIT License:
+
+- `src/npx-resolver.ts` — ported verbatim (import paths and cache-path helper
+  adapted; cache file `mcp-npx-cache.json` v2 format is shared-compatible
+  with upstream so a warm cache carries over on migration).
+- `src/mcp-output-guard.ts` — ported verbatim (import paths adapted).
+- `src/search-ranking.ts` — ported with the state adapter in
+  `src/failure-backoff.ts` (upstream's `McpExtensionState` reduced to the
+  search-facing `SearchState`).
+- `src/prompts.ts` — ported with `PromptRuntime` replacing upstream's
+  `McpExtensionState`, and `manager.clientFor()` replacing
+  `lazyConnect`/`manager.getPrompt`.
+- `src/ts-shape.ts` — ported verbatim.
+- `src/tool-naming.ts` — naming/prefix/pattern helpers ported verbatim from
+  upstream `types.ts`.
+- `src/metadata-cache.ts` — cache load/save/hash/validation and metadata
+  reconstruction ported from upstream; UI-resource and selector-index surfaces
+  removed.
+- `src/server-manager.ts` — connection lifecycle follows upstream semantics
+  (lazy connect with coalescing, idle disconnect, Streamable HTTP → SSE
+  fallback on 404/405/406/415, full tools/prompts pagination, npx resolution
+  wiring); OAuth/CA/trace surfaces removed.
+- `src/abort.ts` — ported verbatim from upstream.
+- Config layering (`src/config.ts`) follows upstream's source order and
+  on-disk layout (`.mcp.json`, `~/.config/mcp/mcp.json`, `~/.agents/mcp.json`,
+  `<agent dir>/mcp.json`, `.pi/mcp.json`) and reads the same
+  `mcp-cache.json` metadata cache format (v1).
+
+The upstream project's design of context management — one proxy tool,
+disk-cached tool metadata, lazy connections, output guarding — is the core of
+this package. Upstream MIT license text:
+https://github.com/nicobailon/pi-mcp-adapter/blob/main/LICENSE
