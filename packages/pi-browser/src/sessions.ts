@@ -1,134 +1,213 @@
 import type { ExecFn } from "./env.js";
 
-export type CliSession = {
+export type AgentBrowserSession = {
   name: string;
-  status: string;
-  browserType?: string;
-  userDataDir?: string;
-  headed?: boolean;
-  attached?: boolean;
-  workspace?: string;
+  active: boolean;
+  pid?: number;
+  pageCount?: number;
+  engine?: string;
+  version?: string;
 };
 
-export type ListSessionsResult = { ok: true; sessions: CliSession[] } | { ok: false; error: string };
-export type CloseSessionsResult = { ok: true; output: string } | { ok: false; error: string };
+export type SessionResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export type CommandResult = { ok: true; output: string } | { ok: false; error: string };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+type RecordValue = Record<string, unknown>;
+
+function isRecord(value: unknown): value is RecordValue {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function message(error: unknown): string {
+function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** `playwright-cli list --all --json` → browsers[]; tolerate anything unexpected. */
-export function parseSessionList(value: unknown): CliSession[] {
-  if (!isRecord(value) || !Array.isArray(value.browsers)) return [];
-  const sessions: CliSession[] = [];
-  for (const entry of value.browsers) {
-    if (!isRecord(entry) || typeof entry.name !== "string" || entry.name.length === 0) continue;
-    sessions.push({
-      name: entry.name,
-      status: typeof entry.status === "string" ? entry.status : "unknown",
-      ...(typeof entry.browserType === "string" ? { browserType: entry.browserType } : {}),
-      ...(typeof entry.userDataDir === "string" ? { userDataDir: entry.userDataDir } : {}),
-      ...(typeof entry.headed === "boolean" ? { headed: entry.headed } : {}),
-      ...(typeof entry.attached === "boolean" ? { attached: entry.attached } : {}),
-      ...(typeof entry.workspace === "string" ? { workspace: entry.workspace } : {}),
-    });
+function outputOf(result: { stdout: string; stderr: string }): string {
+  return `${result.stdout}\n${result.stderr}`.trim();
+}
+
+function envelopeError(value: unknown): string | undefined {
+  if (!isRecord(value) || value.success !== false) return undefined;
+  if (typeof value.error === "string" && value.error) return value.error;
+  if (isRecord(value.error) && typeof value.error.message === "string") return value.error.message;
+  return "agent-browser reported a failure";
+}
+
+export function parseSessionNames(value: unknown): string[] {
+  if (!isRecord(value) || !isRecord(value.data) || !Array.isArray(value.data.sessions)) return [];
+  const names: string[] = [];
+  for (const entry of value.data.sessions) {
+    const name =
+      typeof entry === "string"
+        ? entry
+        : isRecord(entry) && typeof entry.name === "string"
+          ? entry.name
+          : undefined;
+    if (name && !names.includes(name)) names.push(name);
   }
-  return sessions;
+  return names;
 }
 
-export function describeSession(session: CliSession): string {
-  const bits = [session.name, session.status];
-  if (session.browserType) bits.push(session.browserType + (session.attached ? " (attached)" : ""));
-  if (session.headed) bits.push("headed");
-  return bits.join(" — ");
-}
-
-export async function listCliSessions(
-  exec: ExecFn,
-  options: { all?: boolean } = {},
-): Promise<ListSessionsResult> {
-  const args = options.all === false ? ["list", "--json"] : ["list", "--all", "--json"];
-  let result;
-  try {
-    result = await exec("playwright-cli", args, { timeout: 20_000 });
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-  if (result.code !== 0) {
-    const output = (result.stdout + "\n" + result.stderr).trim();
-    return { ok: false, error: output || "exit code " + String(result.code) };
-  }
-  try {
-    return { ok: true, sessions: parseSessionList(JSON.parse(result.stdout)) };
-  } catch (error) {
-    return { ok: false, error: "could not parse playwright-cli list output: " + message(error) };
-  }
-}
-
-async function runSessionCommand(exec: ExecFn, args: string[]): Promise<CloseSessionsResult> {
-  let result;
-  try {
-    result = await exec("playwright-cli", args, { timeout: 60_000 });
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-  const output = (result.stdout + "\n" + result.stderr).trim();
-  return result.code === 0 ? { ok: true, output } : { ok: false, error: output || "exit code " + String(result.code) };
-}
-
-export function closeCliSessions(exec: ExecFn): Promise<CloseSessionsResult> {
-  return runSessionCommand(exec, ["close-all"]);
-}
-
-/** Force-stops sessions in every workspace (the CLI's own escape hatch for stale browsers). */
-export function killAllCliSessions(exec: ExecFn): Promise<CloseSessionsResult> {
-  return runSessionCommand(exec, ["kill-all"]);
-}
-
-export type SessionView = CliSession & { local: boolean };
-
-/**
- * Sessions as shown in the menu. `close` only reaches the current workspace, so mark
- * sessions from other workspaces and let the caller offer kill-all for those.
- */
-export async function collectSessionViews(
-  exec: ExecFn,
-): Promise<{ ok: true; views: SessionView[] } | { ok: false; error: string }> {
-  const all = await listCliSessions(exec);
-  if (!all.ok) return all;
-  const local = await listCliSessions(exec, { all: false });
-  const localWorkspaces = new Set(
-    (local.ok ? local.sessions : []).map((session) => session.workspace).filter((workspace): workspace is string => !!workspace),
-  );
+export function parseSessionInfo(value: unknown, fallbackName: string): AgentBrowserSession {
+  const data = isRecord(value) && isRecord(value.data) ? value.data : {};
+  const runtime = isRecord(data.runtime) ? data.runtime : undefined;
+  const effectiveLaunch = runtime && isRecord(runtime.effectiveLaunch) ? runtime.effectiveLaunch : undefined;
   return {
-    ok: true,
-    views: all.sessions.map((session) => ({
-      ...session,
-      local: localWorkspaces.size > 0 && !!session.workspace && localWorkspaces.has(session.workspace),
-    })),
+    name: typeof data.session === "string" ? data.session : fallbackName,
+    active: data.active === true,
+    ...(typeof data.pid === "number" ? { pid: data.pid } : {}),
+    ...(runtime && typeof runtime.pageCount === "number" ? { pageCount: runtime.pageCount } : {}),
+    ...(effectiveLaunch && typeof effectiveLaunch.engine === "string"
+      ? { engine: effectiveLaunch.engine }
+      : {}),
+    ...(typeof data.version === "string" ? { version: data.version } : {}),
   };
 }
 
-/** Attached sessions detach; launched sessions close. */
-export function closeCliSession(exec: ExecFn, session: CliSession): Promise<CloseSessionsResult> {
-  return runSessionCommand(exec, ["-s=" + session.name, session.attached ? "detach" : "close"]);
+async function runJson(
+  exec: ExecFn,
+  args: string[],
+  timeout: number = 20_000,
+): Promise<SessionResult<unknown>> {
+  let result;
+  try {
+    result = await exec("agent-browser", args, { timeout });
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+  const output = outputOf(result);
+  if (result.code !== 0) return { ok: false, error: output || `exit code ${String(result.code)}` };
+  try {
+    const parsed: unknown = JSON.parse(result.stdout);
+    const failure = envelopeError(parsed);
+    return failure ? { ok: false, error: failure } : { ok: true, value: parsed };
+  } catch (error) {
+    return { ok: false, error: `could not parse agent-browser JSON: ${errorMessage(error)}` };
+  }
 }
 
-/** Startup heads-up only: never closes anything on its own. */
+function baseArgs(configPath: string): string[] {
+  return ["--config", configPath];
+}
+
+export async function listAgentBrowserSessions(
+  exec: ExecFn,
+  configPath: string,
+): Promise<SessionResult<string[]>> {
+  const result = await runJson(exec, [...baseArgs(configPath), "session", "list", "--json"]);
+  return result.ok ? { ok: true, value: parseSessionNames(result.value) } : result;
+}
+
+export async function getAgentBrowserSession(
+  exec: ExecFn,
+  configPath: string,
+  name: string,
+): Promise<SessionResult<AgentBrowserSession>> {
+  const result = await runJson(exec, [
+    ...baseArgs(configPath),
+    "--session",
+    name,
+    "session",
+    "info",
+    "--json",
+  ]);
+  return result.ok
+    ? { ok: true, value: parseSessionInfo(result.value, name) }
+    : result;
+}
+
+export async function collectAgentBrowserSessions(
+  exec: ExecFn,
+  configPath: string,
+): Promise<SessionResult<AgentBrowserSession[]>> {
+  const listed = await listAgentBrowserSessions(exec, configPath);
+  if (!listed.ok) return listed;
+  const sessions: AgentBrowserSession[] = [];
+  for (const name of listed.value) {
+    const info = await getAgentBrowserSession(exec, configPath, name);
+    sessions.push(info.ok ? info.value : { name, active: true });
+  }
+  return { ok: true, value: sessions };
+}
+
+export function describeSession(session: AgentBrowserSession): string {
+  const details = [session.name, session.active ? "running" : "stale"];
+  if (session.pageCount !== undefined) details.push(`${session.pageCount} page(s)`);
+  if (session.pid !== undefined) details.push(`pid ${session.pid}`);
+  return details.join(" — ");
+}
+
+async function runCommand(
+  exec: ExecFn,
+  args: string[],
+  timeout: number = 60_000,
+): Promise<CommandResult> {
+  let result;
+  try {
+    result = await exec("agent-browser", args, { timeout });
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+  const output = outputOf(result);
+  if (result.code !== 0) return { ok: false, error: output || `exit code ${String(result.code)}` };
+  if (result.stdout.trim().startsWith("{")) {
+    try {
+      const parsed: unknown = JSON.parse(result.stdout);
+      const failure = envelopeError(parsed);
+      if (failure) return { ok: false, error: failure };
+    } catch {
+      // A successful close may emit human-readable text in older compatible versions.
+    }
+  }
+  return { ok: true, output };
+}
+
+export function closeAgentBrowserSession(
+  exec: ExecFn,
+  configPath: string,
+  name: string,
+): Promise<CommandResult> {
+  return runCommand(exec, [
+    ...baseArgs(configPath),
+    "--session",
+    name,
+    "close",
+    "--json",
+  ]);
+}
+
+/** Closes every session in the namespace selected by the managed config. */
+export function closeAllAgentBrowserSessions(
+  exec: ExecFn,
+  configPath: string,
+): Promise<CommandResult> {
+  return runCommand(exec, [...baseArgs(configPath), "close", "--all", "--json"]);
+}
+
+/** Official non-destructive stale pid/socket cleanup; never installs or repairs browser files. */
+export function cleanStaleAgentBrowserState(
+  exec: ExecFn,
+  configPath: string,
+): Promise<CommandResult> {
+  return runCommand(
+    exec,
+    [...baseArgs(configPath), "doctor", "--offline", "--quick", "--json"],
+    60_000,
+  );
+}
+
+/** Startup heads-up only. Explicit idleTimeout remains the automatic cleanup mechanism. */
 export async function notifyLeftoverSessions(
   exec: ExecFn,
+  configPath: string,
   notify: (message: string, level: "info" | "warning" | "error") => void,
 ): Promise<void> {
-  const listed = await listCliSessions(exec);
-  if (!listed.ok || listed.sessions.length === 0) return;
-  const names = listed.sessions.slice(0, 3).map((session) => session.name).join(", ");
-  const more = listed.sessions.length > 3 ? ", …" : "";
+  const listed = await listAgentBrowserSessions(exec, configPath);
+  if (!listed.ok || listed.value.length === 0) return;
+  const names = listed.value.slice(0, 3).join(", ");
+  const more = listed.value.length > 3 ? ", …" : "";
   notify(
-    listed.sessions.length + " playwright-cli session(s) are still open (" + names + more + "). Use /browser → Sessions to inspect or close them.",
+    `${listed.value.length} agent-browser session(s) are still running (${names}${more}). They will close after the configured idle timeout; use /browser → Sessions to close them now.`,
     "warning",
   );
 }

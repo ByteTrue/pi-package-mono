@@ -1,7 +1,8 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-/** Pi's agent config dir; same resolution order as pi-image-gen. */
+/** Pi's active agent config dir; same resolution order as other ByteTrue packages. */
 export function activeConfigDir(): string {
   return resolve(
     process.env.PI_CODING_AGENT_DIR?.trim() ||
@@ -10,7 +11,7 @@ export function activeConfigDir(): string {
   );
 }
 
-/** Everything this package owns lives under this dir. */
+/** Everything pi-browser owns lives below this directory. */
 export function packageDir(): string {
   return join(activeConfigDir(), "pi-browser");
 }
@@ -19,41 +20,52 @@ export function profilesDir(): string {
   return join(packageDir(), "profiles");
 }
 
-export const DEFAULT_PROFILE_NAME = "default";
+/** Deliberately different from the old Playwright/Edge copy profile. */
+export const MANAGED_PROFILE_NAME = "agent-browser";
 
-export function profileDir(name: string = DEFAULT_PROFILE_NAME): string {
-  return join(profilesDir(), name);
+export function profileDir(): string {
+  return join(profilesDir(), MANAGED_PROFILE_NAME);
+}
+
+/** Kept only so status can explain that v0.2 data was not silently reused or deleted. */
+export function legacyPlaywrightProfileDir(): string {
+  return join(profilesDir(), "default");
 }
 
 export function artifactsDir(): string {
   return join(packageDir(), "artifacts");
 }
 
-/** Scratch configs we own: the smoke test and the sign-in window never reuse the live one. */
-export function smokeConfigPath(): string {
-  return join(packageDir(), "smoke.config.json");
+export function agentBrowserHomeDir(): string {
+  return join(homedir(), ".agent-browser");
 }
 
-export function signInConfigPath(): string {
-  return join(packageDir(), "sign-in.config.json");
+export function agentBrowserBrowsersDir(): string {
+  return join(agentBrowserHomeDir(), "browsers");
 }
 
-export function statePath(): string {
-  return join(packageDir(), "state.json");
-}
-
-/** Global playwright-cli config. PLAYWRIGHT_MCP_CONFIG overrides the default location. */
-export function playwrightConfigPath(): string {
+/** Explicit config env wins because agent-browser itself follows the same rule. */
+export function agentBrowserConfigPath(): string {
   return resolve(
-    process.env.PLAYWRIGHT_MCP_CONFIG?.trim() || join(homedir(), ".playwright", "cli.config.json"),
+    process.env.AGENT_BROWSER_CONFIG?.trim() || join(agentBrowserHomeDir(), "config.json"),
   );
 }
 
-/** Where `playwright-cli install --skills=agents -g` puts the official skill (Pi reads this dir). */
-export function agentsSkillsDir(): string {
-  return join(homedir(), ".agents", "skills");
+export function projectAgentBrowserConfigPath(cwd: string = process.cwd()): string {
+  return resolve(cwd, "agent-browser.json");
 }
 
+/** `skills add ... -a pi -g` installs here for the active Pi agent directory. */
 export function officialSkillDir(): string {
-  return join(agentsSkillsDir(), "playwright-cli");
+  return join(activeConfigDir(), "skills", "agent-browser");
+}
+
+/** Tolerate the generic global agent-skills location used by older skills releases. */
+export function officialSkillCandidates(): string[] {
+  const candidates = [officialSkillDir(), join(homedir(), ".agents", "skills", "agent-browser")];
+  return candidates.filter((candidate, index) => candidates.indexOf(candidate) === index);
+}
+
+export function existingOfficialSkillDir(): string | undefined {
+  return officialSkillCandidates().find((candidate) => existsSync(join(candidate, "SKILL.md")));
 }

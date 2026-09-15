@@ -1,40 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { MIN_CLI_VERSION, isVersionAtLeast, parseVersion, probePlaywrightCli, type ExecFn } from "./env.js";
+import {
+  INSTALL_SKILL_COMMAND,
+  MIN_AGENT_BROWSER_VERSION,
+  installedAgentBrowserSkillDir,
+  isVersionAtLeast,
+  parseVersion,
+  probeAgentBrowser,
+  type ExecFn,
+} from "./env.js";
 
-describe("parseVersion", () => {
-  it("reads the first semver in noisy output", () => {
-    expect(parseVersion("0.1.19")).toBe("0.1.19");
-    expect(parseVersion("playwright-cli 0.1.19\nsomething else")).toBe("0.1.19");
-    expect(parseVersion("no version here")).toBeUndefined();
-  });
-});
-
-describe("isVersionAtLeast", () => {
-  it("compares numerically, not lexically", () => {
-    expect(isVersionAtLeast("0.1.19", MIN_CLI_VERSION)).toBe(true);
-    expect(isVersionAtLeast("0.1.18", MIN_CLI_VERSION)).toBe(false);
-    expect(isVersionAtLeast("0.1.9", MIN_CLI_VERSION)).toBe(false);
-    expect(isVersionAtLeast("0.2.0", MIN_CLI_VERSION)).toBe(true);
-    expect(isVersionAtLeast("1.0.0", MIN_CLI_VERSION)).toBe(true);
-  });
-});
-
-describe("probePlaywrightCli", () => {
-  const ok = (stdout: string, code: number | null = 0): ExecFn => async () => ({ stdout, stderr: "", code });
-
-  it("reports ready for a sufficient version", async () => {
-    await expect(probePlaywrightCli(ok("0.1.19"))).resolves.toMatchObject({ state: "ready", version: "0.1.19" });
+describe("agent-browser environment", () => {
+  it("uses the confirmed Pi skill command", () => {
+    expect(INSTALL_SKILL_COMMAND).toBe("npx skills add vercel-labs/agent-browser -a pi -y -g");
   });
 
-  it("reports outdated below the minimum", async () => {
-    await expect(probePlaywrightCli(ok("0.1.2"))).resolves.toMatchObject({ state: "outdated", version: "0.1.2" });
+  it("parses and compares versions numerically", () => {
+    expect(parseVersion("agent-browser 0.37.1")).toBe("0.37.1");
+    expect(parseVersion("none")).toBeUndefined();
+    expect(isVersionAtLeast("0.37.1", MIN_AGENT_BROWSER_VERSION)).toBe(true);
+    expect(isVersionAtLeast("0.37.0", MIN_AGENT_BROWSER_VERSION)).toBe(false);
+    expect(isVersionAtLeast("1.0.0", MIN_AGENT_BROWSER_VERSION)).toBe(true);
   });
 
-  it("reports missing when the binary fails or cannot run", async () => {
-    await expect(probePlaywrightCli(ok("command not found", 127))).resolves.toMatchObject({ state: "missing" });
+  it("reports ready, outdated and missing CLI states", async () => {
+    const result = (stdout: string, code: number | null = 0): ExecFn => async () => ({
+      stdout,
+      stderr: "",
+      code,
+    });
+    await expect(probeAgentBrowser(result("agent-browser 0.37.1"))).resolves.toMatchObject({ state: "ready" });
+    await expect(probeAgentBrowser(result("agent-browser 0.36.0"))).resolves.toMatchObject({ state: "outdated" });
+    await expect(probeAgentBrowser(result("not found", 127))).resolves.toMatchObject({ state: "missing" });
     const throwing: ExecFn = async () => {
       throw new Error("spawn ENOENT");
     };
-    await expect(probePlaywrightCli(throwing)).resolves.toMatchObject({ state: "missing" });
+    await expect(probeAgentBrowser(throwing)).resolves.toMatchObject({ state: "missing" });
+  });
+
+  it("finds the first candidate containing SKILL.md", () => {
+    expect(installedAgentBrowserSkillDir(["/definitely/missing/a", "/definitely/missing/b"])).toBeUndefined();
   });
 });

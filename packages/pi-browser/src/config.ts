@@ -1,26 +1,36 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type JsonObject = Record<string, unknown>;
+export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+export type WriteResult =
+  | { ok: true; changed: boolean; backupPath?: string }
+  | { ok: false; error: string };
 
-/** The four knobs are load-bearing and verified; see codestable/issues/068-o-browser-package.md. */
-export const MANAGED_BROWSER_NAME = "chromium";
-export const MOCK_KEYCHAIN_FLAG = "--use-mock-keychain";
-export const BASE_LAUNCH_ARGS = ["--no-first-run", "--no-default-browser-check"] as const;
+export const MANAGED_SESSION = "pi-browser";
+export const MANAGED_NAMESPACE = "pi-browser";
+export const DEFAULT_IDLE_TIMEOUT = "10m";
+export const DEFAULT_HEADED = false;
 
-export type ManagedBrowserConfig = {
-  /** Playwright channel matching the profile's browser family, e.g. "msedge". */
-  channel: string;
-  userDataDir: string;
-  /** Profile inside userDataDir; anything but "Default" adds --profile-directory. */
-  profileDirectory?: string;
-  headless: boolean;
-  outputDir: string;
+export type ManagedAgentBrowserConfig = {
+  profile: string;
+  screenshotDir: string;
+  headed: boolean;
+  idleTimeout: string | number;
+  executablePath?: string;
 };
 
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
-export type WriteResult = { ok: true; changed: boolean; backupPath?: string } | { ok: false; error: string };
+export type AgentBrowserConfigSummary = {
+  profile?: string;
+  session?: string;
+  namespace?: string;
+  engine?: string;
+  headed?: boolean;
+  idleTimeout?: string | number;
+  screenshotDir?: string;
+  executablePath?: string;
+};
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -30,16 +40,7 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function mergeStringArray(current: unknown, required: readonly string[]): string[] {
-  const base = Array.isArray(current)
-    ? current.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  const merged = new Set(base);
-  for (const entry of required) merged.add(entry);
-  return [...merged];
-}
-
-export function readPlaywrightConfig(path: string): Result<JsonObject | undefined> {
+export function readAgentBrowserConfig(path: string): Result<JsonObject | undefined> {
   if (!existsSync(path)) return { ok: true, value: undefined };
   let parsed: unknown;
   try {
@@ -47,101 +48,62 @@ export function readPlaywrightConfig(path: string): Result<JsonObject | undefine
   } catch (error) {
     return {
       ok: false,
-      error: `${path} is not valid JSON (${message(error)}). Fix or remove it first; refusing to touch it.`,
+      error: `${path} is not valid JSON (${message(error)}). Fix or remove it first; refusing to overwrite it.`,
     };
   }
-  if (!isObject(parsed)) return { ok: false, error: `${path} must contain a JSON object.` };
-  return { ok: true, value: parsed };
+  return isObject(parsed)
+    ? { ok: true, value: parsed }
+    : { ok: false, error: `${path} must contain a JSON object.` };
 }
 
-/** Merge our managed fields into an existing doc, preserving everything we do not own. */
-export function mergePlaywrightConfig(
+/** Merge only the defaults pi-browser assists with; unrelated agent-browser settings survive. */
+export function mergeAgentBrowserConfig(
   existing: JsonObject | undefined,
-  managed: ManagedBrowserConfig,
-): Result<JsonObject> {
+  managed: ManagedAgentBrowserConfig,
+): JsonObject {
   const next: JsonObject = { ...(existing ?? {}) };
-
-  if (next.browser !== undefined && !isObject(next.browser)) {
-    return { ok: false, error: '"browser" in the playwright config is not an object; refusing to overwrite it.' };
-  }
-  const browser: JsonObject = isObject(next.browser) ? { ...next.browser } : {};
-
-  if (browser.launchOptions !== undefined && !isObject(browser.launchOptions)) {
-    return { ok: false, error: '"browser.launchOptions" in the playwright config is not an object; refusing to overwrite it.' };
-  }
-  const launchOptions: JsonObject = isObject(browser.launchOptions) ? { ...browser.launchOptions } : {};
-
-  browser.browserName = MANAGED_BROWSER_NAME;
-  browser.userDataDir = managed.userDataDir;
-  launchOptions.channel = managed.channel;
-  launchOptions.headless = managed.headless;
-  launchOptions.args = mergeStringArray(launchOptions.args, [
-    ...BASE_LAUNCH_ARGS,
-    ...(managed.profileDirectory && managed.profileDirectory !== "Default"
-      ? ["--profile-directory=" + managed.profileDirectory]
-      : []),
-  ]);
-  // true means "ignore every Playwright default", which already drops --use-mock-keychain.
-  if (launchOptions.ignoreDefaultArgs !== true) {
-    launchOptions.ignoreDefaultArgs = mergeStringArray(launchOptions.ignoreDefaultArgs, [MOCK_KEYCHAIN_FLAG]);
-  }
-  browser.launchOptions = launchOptions;
-
-  next.browser = browser;
-  next.outputDir = managed.outputDir;
-  return { ok: true, value: next };
+  next.profile = managed.profile;
+  next.session = MANAGED_SESSION;
+  next.namespace = MANAGED_NAMESPACE;
+  next.engine = "chrome";
+  next.headed = managed.headed;
+  next.idleTimeout = managed.idleTimeout;
+  next.screenshotDir = managed.screenshotDir;
+  if (managed.executablePath) next.executablePath = managed.executablePath;
+  return next;
 }
 
-/** Flip only headless; every other key, including foreign ones, stays untouched. */
-export function setHeadless(config: JsonObject, headless: boolean): Result<JsonObject> {
-  if (config.browser !== undefined && !isObject(config.browser)) {
-    return { ok: false, error: '"browser" in the playwright config is not an object; refusing to overwrite it.' };
-  }
-  const browser: JsonObject = isObject(config.browser) ? { ...config.browser } : {};
-  if (browser.launchOptions !== undefined && !isObject(browser.launchOptions)) {
-    return { ok: false, error: '"browser.launchOptions" in the playwright config is not an object; refusing to overwrite it.' };
-  }
-  const launchOptions: JsonObject = isObject(browser.launchOptions) ? { ...browser.launchOptions } : {};
-  launchOptions.headless = headless;
-  browser.launchOptions = launchOptions;
-  return { ok: true, value: { ...config, browser } };
+export function setHeaded(config: JsonObject, headed: boolean): JsonObject {
+  return { ...config, headed };
 }
 
-/** Our own `--profile-directory` arg (not a caller-supplied one), if any. */
-function managedProfileDirectory(launchOptions: JsonObject | undefined): string | undefined {
-  const args = Array.isArray(launchOptions?.args) ? (launchOptions!.args as unknown[]) : [];
-  for (const arg of args) {
-    if (typeof arg !== "string") continue;
-    const match = /^--profile-directory=(.+)$/.exec(arg);
-    if (match?.[1]) return match[1];
-  }
-  return undefined;
+export function setIdleTimeout(config: JsonObject, idleTimeout: string | number): JsonObject {
+  return { ...config, idleTimeout };
 }
 
-/** What the browser config would look like right now, for status display. */
-export function managedBrowserSummary(config: JsonObject | undefined): {
-  channel?: string;
-  userDataDir?: string;
-  profileDirectory?: string;
-  headless?: boolean;
-  mockKeychainDisabled: boolean;
-} {
-  const browser = config && isObject(config.browser) ? config.browser : undefined;
-  const launchOptions = browser && isObject(browser.launchOptions) ? browser.launchOptions : undefined;
-  const ignoreDefaultArgs = launchOptions?.ignoreDefaultArgs;
-  const mockKeychainDisabled =
-    ignoreDefaultArgs === true ||
-    (Array.isArray(ignoreDefaultArgs) && ignoreDefaultArgs.includes(MOCK_KEYCHAIN_FLAG));
+export function agentBrowserConfigSummary(
+  config: JsonObject | undefined,
+): AgentBrowserConfigSummary {
+  if (!config) return {};
+  const string = (value: unknown): string | undefined =>
+    typeof value === "string" && value.length > 0 ? value : undefined;
+  const idleTimeout =
+    typeof config.idleTimeout === "string" || typeof config.idleTimeout === "number"
+      ? config.idleTimeout
+      : undefined;
   return {
-    channel: typeof launchOptions?.channel === "string" ? launchOptions.channel : undefined,
-    userDataDir: typeof browser?.userDataDir === "string" ? browser.userDataDir : undefined,
-    profileDirectory: managedProfileDirectory(launchOptions),
-    headless: typeof launchOptions?.headless === "boolean" ? launchOptions.headless : undefined,
-    mockKeychainDisabled,
+    ...(string(config.profile) ? { profile: string(config.profile) } : {}),
+    ...(string(config.session) ? { session: string(config.session) } : {}),
+    ...(string(config.namespace) ? { namespace: string(config.namespace) } : {}),
+    ...(string(config.engine) ? { engine: string(config.engine) } : {}),
+    ...(typeof config.headed === "boolean" ? { headed: config.headed } : {}),
+    ...(idleTimeout !== undefined ? { idleTimeout } : {}),
+    ...(string(config.screenshotDir) ? { screenshotDir: string(config.screenshotDir) } : {}),
+    ...(string(config.executablePath) ? { executablePath: string(config.executablePath) } : {}),
   };
 }
 
-export function writePlaywrightConfig(path: string, value: JsonObject): WriteResult {
+export function writeAgentBrowserConfig(path: string, value: JsonObject): WriteResult {
   const serialized = `${stableStringify(value)}\n`;
   const original = existsSync(path) ? readFileSync(path, "utf8") : undefined;
   if (original === serialized) return { ok: true, changed: false };
@@ -153,9 +115,9 @@ export function writePlaywrightConfig(path: string, value: JsonObject): WriteRes
       backupPath = `${path}.pi-browser-bak-${timestamp()}`;
       writeFileSync(backupPath, original, { mode: 0o600 });
     }
-    const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(temp, serialized, { mode: 0o600 });
-    renameSync(temp, path);
+    const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+    writeFileSync(temporary, serialized, { mode: 0o600 });
+    renameSync(temporary, path);
   } catch (error) {
     return { ok: false, error: message(error) };
   }
@@ -166,7 +128,7 @@ function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-/** Sort keys recursively so "did this change?" is a string comparison. */
+/** Deterministic output keeps no-op writes and backups honest. */
 export function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   if (isObject(value)) {

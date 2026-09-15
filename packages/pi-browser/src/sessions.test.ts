@@ -1,124 +1,131 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExecFn } from "./env.js";
 import {
-  closeCliSession,
-  collectSessionViews,
-  killAllCliSessions,
-  closeCliSessions,
+  cleanStaleAgentBrowserState,
+  closeAgentBrowserSession,
+  closeAllAgentBrowserSessions,
+  collectAgentBrowserSessions,
   describeSession,
-  listCliSessions,
+  listAgentBrowserSessions,
   notifyLeftoverSessions,
-  parseSessionList,
+  parseSessionInfo,
+  parseSessionNames,
 } from "./sessions.js";
 
-const payload = {
-  browsers: [
-    { name: "default", workspace: "abc", status: "open", browserType: "msedge", userDataDir: "/tmp/profile", headed: false, attached: false },
-    { name: "handoff", status: "open", browserType: "chrome", attached: true },
-  ],
-};
+const configPath = "/tmp/agent-browser-config.json";
+const json = (value: unknown): { stdout: string; stderr: string; code: number } => ({
+  stdout: JSON.stringify(value),
+  stderr: "",
+  code: 0,
+});
 
-describe("parseSessionList", () => {
-  it("reads playwright-cli list --json output", () => {
-    expect(parseSessionList(payload)).toEqual([
-      { name: "default", status: "open", browserType: "msedge", userDataDir: "/tmp/profile", headed: false, attached: false, workspace: "abc" },
-      { name: "handoff", status: "open", browserType: "chrome", attached: true },
+describe("session JSON parsing", () => {
+  it("reads current and forward-compatible session list shapes", () => {
+    expect(parseSessionNames({ success: true, data: { sessions: ["pi-browser", "other"] } })).toEqual([
+      "pi-browser",
+      "other",
     ]);
+    expect(parseSessionNames({ data: { sessions: [{ name: "one" }, {}, "one"] } })).toEqual(["one"]);
+    expect(parseSessionNames(null)).toEqual([]);
   });
 
-  it("tolerates junk", () => {
-    expect(parseSessionList(null)).toEqual([]);
-    expect(parseSessionList({ browsers: [{}, { name: "" }, 42] })).toEqual([]);
+  it("reads useful runtime details", () => {
+    expect(
+      parseSessionInfo(
+        {
+          success: true,
+          data: {
+            active: true,
+            session: "pi-browser",
+            pid: 123,
+            version: "0.37.1",
+            runtime: { pageCount: 2, effectiveLaunch: { engine: "chrome" } },
+          },
+        },
+        "fallback",
+      ),
+    ).toEqual({
+      name: "pi-browser",
+      active: true,
+      pid: 123,
+      pageCount: 2,
+      engine: "chrome",
+      version: "0.37.1",
+    });
   });
 });
 
-describe("describeSession", () => {
-  it("summarises a session", () => {
-    expect(describeSession({ name: "default", status: "open", browserType: "msedge", attached: false })).toBe("default — open — msedge");
-    expect(describeSession({ name: "x", status: "open", browserType: "msedge", attached: true, headed: true })).toBe("x — open — msedge (attached) — headed");
-  });
-});
-
-describe("session listing and closing", () => {
-  it("parses a successful list", async () => {
-    const exec: ExecFn = async () => ({ stdout: JSON.stringify(payload), stderr: "", code: 0 });
-    const result = await listCliSessions(exec);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.sessions).toHaveLength(2);
-  });
-
-  it("reports failures instead of throwing", async () => {
-    const failing: ExecFn = async () => ({ stdout: "", stderr: "boom", code: 1 });
-    expect(await listCliSessions(failing)).toEqual({ ok: false, error: "boom" });
-    const junk: ExecFn = async () => ({ stdout: "not json", stderr: "", code: 0 });
-    const parsed = await listCliSessions(junk);
-    expect(parsed.ok).toBe(false);
+describe("session management", () => {
+  it("lists the managed namespace and collects per-session info", async () => {
+    const exec: ExecFn = async (_command, args) => {
+      if (args.includes("list")) return json({ success: true, data: { sessions: ["pi-browser"] } });
+      return json({ success: true, data: { active: true, session: "pi-browser", pid: 42 } });
+    };
+    await expect(listAgentBrowserSessions(exec, configPath)).resolves.toEqual({
+      ok: true,
+      value: ["pi-browser"],
+    });
+    await expect(collectAgentBrowserSessions(exec, configPath)).resolves.toEqual({
+      ok: true,
+      value: [{ name: "pi-browser", active: true, pid: 42 }],
+    });
   });
 
-  it("detaches attached sessions and closes launched ones", async () => {
+  it("uses the explicit managed config for close and stale cleanup", async () => {
     const calls: string[][] = [];
     const exec: ExecFn = async (_command, args) => {
       calls.push(args);
-      return { stdout: "done", stderr: "", code: 0 };
+      return json({ success: true, data: {} });
     };
-    await closeCliSession(exec, { name: "a", status: "open" });
-    await closeCliSession(exec, { name: "b", status: "open", attached: true });
-    await closeCliSessions(exec);
-    expect(calls).toEqual([["-s=a", "close"], ["-s=b", "detach"], ["close-all"]]);
-  });
-});
-
-describe("collectSessionViews / kill all", () => {
-  it("marks sessions from other workspaces", async () => {
-    const exec: ExecFn = async (_command, args) => {
-      const payload = args.includes("--all")
-        ? {
-            browsers: [
-              { name: "mine", status: "open", workspace: "w1" },
-              { name: "theirs", status: "open", workspace: "w2" },
-            ],
-          }
-        : { browsers: [{ name: "mine", status: "open", workspace: "w1" }] };
-      return { stdout: JSON.stringify(payload), stderr: "", code: 0 };
-    };
-    const result = await collectSessionViews(exec);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.views.map((view) => [view.name, view.local])).toEqual([
-      ["mine", true],
-      ["theirs", false],
+    expect((await closeAgentBrowserSession(exec, configPath, "one")).ok).toBe(true);
+    expect((await closeAllAgentBrowserSessions(exec, configPath)).ok).toBe(true);
+    expect((await cleanStaleAgentBrowserState(exec, configPath)).ok).toBe(true);
+    expect(calls).toEqual([
+      ["--config", configPath, "--session", "one", "close", "--json"],
+      ["--config", configPath, "close", "--all", "--json"],
+      ["--config", configPath, "doctor", "--offline", "--quick", "--json"],
     ]);
   });
 
-  it("force-kills every session", async () => {
-    const calls: string[][] = [];
-    const exec: ExecFn = async (_command, args) => {
-      calls.push(args);
-      return { stdout: "killed", stderr: "", code: 0 };
-    };
-    const result = await killAllCliSessions(exec);
-    expect(result.ok).toBe(true);
-    expect(calls).toEqual([["kill-all"]]);
-  });
-});
-
-describe("notifyLeftoverSessions", () => {
-  it("warns about sessions it finds", async () => {
-    const exec: ExecFn = async () => ({ stdout: JSON.stringify(payload), stderr: "", code: 0 });
-    const notify = vi.fn();
-    await notifyLeftoverSessions(exec, notify);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("2 playwright-cli session(s)"), "warning");
+  it("reports command, JSON and envelope failures", async () => {
+    const commandFailure: ExecFn = async () => ({ stdout: "", stderr: "boom", code: 1 });
+    await expect(listAgentBrowserSessions(commandFailure, configPath)).resolves.toEqual({
+      ok: false,
+      error: "boom",
+    });
+    const junk: ExecFn = async () => ({ stdout: "not-json", stderr: "", code: 0 });
+    expect((await listAgentBrowserSessions(junk, configPath)).ok).toBe(false);
+    const envelopeFailure: ExecFn = async () => json({ success: false, error: "bad config" });
+    await expect(listAgentBrowserSessions(envelopeFailure, configPath)).resolves.toEqual({
+      ok: false,
+      error: "bad config",
+    });
   });
 
-  it("stays quiet when there is nothing to report", async () => {
-    const empty: ExecFn = async () => ({ stdout: JSON.stringify({ browsers: [] }), stderr: "", code: 0 });
+  it("describes and warns about forgotten sessions", async () => {
+    expect(describeSession({ name: "pi-browser", active: true, pid: 42, pageCount: 1 })).toBe(
+      "pi-browser — running — 1 page(s) — pid 42",
+    );
+    const exec: ExecFn = async () => json({ success: true, data: { sessions: ["one", "two"] } });
     const notify = vi.fn();
-    await notifyLeftoverSessions(empty, notify);
-    const failing: ExecFn = async () => {
-      throw new Error("no cli");
-    };
-    await notifyLeftoverSessions(failing, notify);
+    await notifyLeftoverSessions(exec, configPath, notify);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("2 agent-browser session(s)"), "warning");
+  });
+
+  it("stays quiet when there are no sessions or the CLI is unavailable", async () => {
+    const notify = vi.fn();
+    await notifyLeftoverSessions(
+      async () => json({ success: true, data: { sessions: [] } }),
+      configPath,
+      notify,
+    );
+    await notifyLeftoverSessions(
+      async () => {
+        throw new Error("missing");
+      },
+      configPath,
+      notify,
+    );
     expect(notify).not.toHaveBeenCalled();
   });
 });
