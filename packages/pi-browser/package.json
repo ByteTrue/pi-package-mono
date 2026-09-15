@@ -1,11 +1,12 @@
 {
   "name": "@bytetrue/pi-browser",
-  "version": "0.3.2",
-  "description": "Pi extension: configure one persistent agent-browser profile and clean up leftover browser sessions.",
+  "version": "0.4.0",
+  "description": "Pi extension: dedicated manager for agent-browser — configure browsers, manage login credentials, monitor sessions, and observe live activity.",
   "keywords": [
     "pi-package",
     "pi-extension",
     "agent-browser",
+    "browser-manager",
     "browser",
     "automation"
   ],

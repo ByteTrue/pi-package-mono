@@ -8,7 +8,13 @@ import {
   probeAgentBrowser,
   type ExecFn,
 } from "./env.js";
-import { agentBrowserCandidates, agentBrowserNativeExeName, resolveAgentBrowserCommand, setAgentBrowserCliOverride } from "./cli.js";
+import {
+  agentBrowserCandidates,
+  agentBrowserNativeExeName,
+  resetAgentBrowserCliCache,
+  resolveAgentBrowserCommand,
+  setAgentBrowserCliOverride,
+} from "./cli.js";
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,8 +26,14 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...actual, homedir: () => fakeHome };
 });
 
-beforeEach(() => setAgentBrowserCliOverride({ command: "agent-browser" }));
-afterEach(() => setAgentBrowserCliOverride(undefined));
+beforeEach(() => {
+  resetAgentBrowserCliCache();
+  setAgentBrowserCliOverride({ command: "agent-browser" });
+});
+afterEach(() => {
+  resetAgentBrowserCliCache();
+  setAgentBrowserCliOverride(undefined);
+});
 
 describe("agent-browser environment", () => {
   it("uses the confirmed Pi skill command", () => {
@@ -80,6 +92,7 @@ describe("agent-browser environment", () => {
       // A native binary in the package wins over the JS entry.
       const nativeName = agentBrowserNativeExeName();
       writeFileSync(join(binDir, nativeName), "");
+      resetAgentBrowserCliCache();
       const nativeResolved = resolveAgentBrowserCommand();
       expect(nativeResolved.command).toBe(join(binDir, nativeName));
       expect(nativeResolved.args).toBeUndefined();

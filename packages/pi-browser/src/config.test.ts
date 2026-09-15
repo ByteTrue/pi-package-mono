@@ -4,8 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_IDLE_TIMEOUT,
-  MANAGED_NAMESPACE,
-  MANAGED_SESSION,
   agentBrowserConfigSummary,
   mergeAgentBrowserConfig,
   readAgentBrowserConfig,
@@ -32,18 +30,18 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 const configPath = (): string => join(dir, "config.json");
 
 describe("agent-browser config", () => {
-  it("writes one persistent profile, session, namespace and explicit idle cleanup", () => {
+  it("writes namespace and explicit idle cleanup without global profile or session lock", () => {
     const value = mergeAgentBrowserConfig(undefined, managed);
     expect(value).toMatchObject({
-      profile: "/tmp/pi-profile",
-      session: MANAGED_SESSION,
-      namespace: MANAGED_NAMESPACE,
       engine: "chrome",
       headed: false,
       idleTimeout: "10m",
       screenshotDir: "/tmp/artifacts",
       executablePath: "/tmp/chrome-for-testing",
     });
+    expect(value.profile).toBeUndefined();
+    expect(value.session).toBeUndefined();
+    expect(value.namespace).toBeUndefined();
   });
 
   it("preserves settings it does not manage", () => {
@@ -70,9 +68,6 @@ describe("agent-browser config", () => {
 
   it("summarises only valid supported shapes", () => {
     expect(agentBrowserConfigSummary(mergeAgentBrowserConfig(undefined, managed))).toEqual({
-      profile: "/tmp/pi-profile",
-      session: MANAGED_SESSION,
-      namespace: MANAGED_NAMESPACE,
       engine: "chrome",
       headed: false,
       idleTimeout: "10m",

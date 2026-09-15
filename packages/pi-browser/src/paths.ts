@@ -36,8 +36,25 @@ export function artifactsDir(): string {
   return join(packageDir(), "artifacts");
 }
 
+/** Directory where user-managed login state files (cookies + localStorage) are stored. */
+export function authDir(): string {
+  return join(packageDir(), "auth");
+}
+
 export function agentBrowserHomeDir(): string {
   return join(homedir(), ".agent-browser");
+}
+
+export function agentBrowserNamespaceDir(namespace?: string): string {
+  return namespace && namespace !== "default"
+    ? join(agentBrowserHomeDir(), "namespaces", namespace)
+    : agentBrowserHomeDir();
+}
+
+export function agentBrowserNamespaceRunDir(namespace?: string): string {
+  return namespace && namespace !== "default"
+    ? join(agentBrowserNamespaceDir(namespace), "run")
+    : agentBrowserHomeDir();
 }
 
 export function agentBrowserBrowsersDir(): string {

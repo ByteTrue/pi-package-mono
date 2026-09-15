@@ -1,35 +1,53 @@
-# pi-browser
+# pi-browser: agent-browser manager
 
 ## 定位
 
-`@bytetrue/pi-browser` 是 `agent-browser` 的 Pi 配置与会话清理助手。它不自研浏览器引擎、不注册 agent 工具、不拦截 shell 或 CLI 参数，也不替用户执行安装；Agent 按官方 skill 直接调用 `agent-browser`。
+`@bytetrue/pi-browser` 是 `agent-browser` 的专职运维与管理扩展（agent-browser manager）。它不自研浏览器引擎、不注册 agent 工具、不拦截 shell 或 CLI 参数，也不替用户执行安装；Agent 按官方 skill 直接调用 `agent-browser`。
 
-本包只负责三件事：
+本包专注负责：
 
-1. 把 Chrome for Testing 指向一个 Pi 专用、长期复用的持久 Profile；
-2. 修改用户级 agent-browser 配置（窗口模式、闲置自动关闭等）；
-3. 查看、关闭遗留会话，并清理陈旧 pid/socket 记录。
+1. **浏览器选型与配置管理**：默认 Auto 自动发现，用户可在 Settings 中自由点选已安装的 Microsoft Edge、Google Chrome、Chrome for Testing 或自定义路径；管理窗口模式与闲置自动关闭；
+2. **登录凭证（Logins）管理**：一等公民的增删改查 UI，开窗登录并保存 Cookie+LocalStorage 到独立状态文件（`<agent dir>/pi-browser/auth/*.json`），各任务按需挂载，彻底摆脱 Profile 进程锁，天然支持多任务并行；
+3. **实时观测大屏（Dashboard）**：管理 agent-browser 内置的 4848 端口 WebUI，一键启动、停止、并在系统浏览器中直达实时操作画面流与指令流；
+4. **会话监控与清扫（Sessions）**：查看运行中会话，一键清扫后台已死的残留记录文件。
 
-核心模型是**一套独立测试浏览器 + 一个独立 user-data-dir**，不是 Edge/Chrome 同一 user-data-dir 下的 `Default` / `Profile 1`。后者仍共享总进程锁，不能提供用户要的隔离。
-
-已验证最低 CLI：`agent-browser >= 0.37.1`。该版本在 Windows 上的持久 Profile、session JSON、显式 idle timeout 与 Job Object 进程树收尾均有实测依据。
+已验证最低 CLI：`agent-browser >= 0.37.1`。
 
 ## `/browser` 当前表面
 
-主菜单固定为：**Status / Configure recommended defaults / Settings / Sessions / Setup commands / Close**。
+主菜单固定为：**Status / Logins / Dashboard / Configure recommended defaults / Settings / Sessions / Setup commands / Close**。
 
 ### Status
 
 只读边框面板展示：
 
-- Pi 专用 Profile 路径及是否已创建；
-- `agent-browser install` 下载的 Chrome for Testing 精确路径，未找到时明确提示；
+- 已保存的登录态（Logins）数量与目录路径；
+- 当前生效的浏览器选择（Auto 自动发现 / Microsoft Edge / Google Chrome 等）；
+- 观测大屏状态（运行在 4848 端口 / 已停止）；
 - agent-browser CLI 版本与 `>= 0.37.1` 闸；
 - 官方 skill 是否存在及路径；
-- 当前用户 config 的 `profile/session/namespace/engine/headed/idleTimeout/executablePath`；
-- 受管 namespace 中的活跃会话数；
-- 当前项目是否存在会覆盖用户默认值的 `agent-browser.json`；
-- 旧 Playwright Profile 是否仍留在磁盘（只告知，不复用或删除）。
+- 当前用户 config 的 `engine/headed/idleTimeout/executablePath`（若残留旧 `profile`/`namespace` 则标记 legacy）；
+- 活跃会话数与项目配置覆盖提醒。
+
+### Logins（登录态管理）
+
+第一类菜单，支持登录数据的完整增删改查：
+
+- **列表展示**：列出 `<Pi agent dir>/pi-browser/auth/` 下所有 `.json` 状态文件，展示名称、包含域名、Cookie 数量及文件大小；
+- **+ Add new login**：输入名称（支持英文、数字、汉字、连字符、下划线），自动拉起有头测试浏览器供用户在页面上登录，确认后通过 `agent-browser state save` 保存到独立 JSON 文件，并自动关闭临时登录窗口；
+- **Sign in / Update**：对已有登录态重新打开有头浏览器并加载现有凭证，供用户刷新登录或追加新站点，确认后重新保存；
+- **View details**：查看该登录态涉及的完整域名、Cookie 数量、精确路径，以及复制直接调用命令（`--state` 或 `AGENT_BROWSER_STATE`）；
+- **Rename**：就地重命名状态文件，自动防重名碰撞；
+- **Delete**：确认后永久删除该登录文件。
+
+### Dashboard（实时观测大屏）
+
+管理本地 4848 端口的 Web 观测控制台：
+
+- 查看当前状态：Running / Stopped；
+- **Start dashboard**：后台启动并自动在默认浏览器中打开大屏；
+- **Stop dashboard**：停止大屏服务；
+- **Open in browser**：大屏已运行时快速在浏览器打开 `http://localhost:4848`。
 
 ### Configure recommended defaults
 
@@ -40,14 +58,13 @@
 ```json
 {
   "engine": "chrome",
-  "profile": "<agent dir>/pi-browser/profiles/agent-browser",
-  "session": "pi-browser",
-  "namespace": "pi-browser",
   "headed": false,
   "idleTimeout": "10m",
   "screenshotDir": "<agent dir>/pi-browser/artifacts"
 }
 ```
+
+**不写 `profile`、`session`、`namespace`。** 浏览器路径默认留空（Auto），让 agent-browser 自动探测系统浏览器，或由用户在 Settings 里自由指定 Edge/Chrome。
 
 - 旧 config 已有 `headed` / `idleTimeout` 时保留用户选择；首次缺省为 headless + 10 分钟。
 - 若发现 `~/.agent-browser/browsers/` 下由 agent-browser 下载的 Chrome for Testing，则写入其最新版本的 `executablePath`。
@@ -72,7 +89,7 @@
 - `close --all --json`：关闭受管 namespace 的所有会话；
 - `doctor --offline --quick --json`：只做离线快速诊断并自动清陈旧 pid/socket/version sidecar，不带 `--fix`，因此不会安装或重装浏览器。
 
-Pi `session_start` 只提示仍存活的受管会话；`/reload` 与无 UI 场景跳过。不会启动时擅自关闭，因为同一固定 session 可供后续任务继续复用，10 分钟 idle timeout 才是自动关闭边界。
+Pi `session_start` 只提示仍存活的会话；`/reload` 与无 UI 场景跳过。不会启动时擅自关闭：任务会话可能属于其它进行中的任务，10 分钟 idle timeout 才是自动关闭边界。
 
 ### CLI 解析（Windows 必须）
 
@@ -118,7 +135,7 @@ agent-browser 自身优先级从低到高为：
 - 不承诺项目配置或 Agent 显式参数不能覆盖用户默认值；
 - 不替用户安装 CLI、Chrome for Testing 或 skill。
 
-稳定的默认体验来自配置中的持久 `profile` 与固定 session/namespace；若调用者主动覆盖，agent-browser 按自己的正常优先级工作。
+稳定的默认体验来自配置中的持久 `profile` 与 namespace；session 由任务自取，若调用者主动覆盖 profile/namespace，agent-browser 按自己的正常优先级工作。
 
 ## 路径
 
@@ -155,7 +172,7 @@ npm --workspace @bytetrue/pi-browser pack --dry-run
 git diff --check
 ```
 
-真实 CLI 回归应确认：生成 config 后 `session info --json` 显示固定 session/namespace；Chrome argv 使用 `profiles/agent-browser`；关闭再打开后 localStorage 仍在；后台 daemon 收到显式 `10m` timeout；单个 close、close all、doctor quick 均只处理受管 namespace；Setup 页面只显示三条准确命令且不会执行任何安装。
+真实 CLI 回归应确认：生成 config 后无 `session` 键；Chrome argv 使用 `profiles/agent-browser`；关闭再打开后 localStorage 仍在；后台 daemon 收到显式 `10m` timeout；单个 close、close all、doctor quick 均只处理该 namespace；Setup 页面只显示三条准确命令且不会执行任何安装。
 
 ## 证据
 

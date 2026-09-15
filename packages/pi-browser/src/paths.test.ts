@@ -3,6 +3,8 @@ import {
   MANAGED_PROFILE_NAME,
   activeConfigDir,
   agentBrowserConfigPath,
+  agentBrowserNamespaceDir,
+  agentBrowserNamespaceRunDir,
   artifactsDir,
   legacyPlaywrightProfileDir,
   officialSkillDir,
@@ -43,5 +45,10 @@ describe("paths", () => {
 
   it("resolves project overrides from the supplied cwd", () => {
     expect(projectAgentBrowserConfigPath("/tmp/example")).toContain("agent-browser.json");
+  });
+
+  it("resolves namespace run directories", () => {
+    expect(agentBrowserNamespaceDir("custom")).toContain(`namespaces${process.platform === "win32" ? "\\" : "/"}custom`);
+    expect(agentBrowserNamespaceRunDir("custom")).toContain(`run`);
   });
 });

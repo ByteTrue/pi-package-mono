@@ -61,20 +61,34 @@ export function agentBrowserCandidates(): ResolvedCli[] {
 }
 
 let override: ResolvedCli | undefined;
+let cached: ResolvedCli | undefined;
 
 /** Pin the CLI resolution (used by tests; a power user could also set it). */
 export function setAgentBrowserCliOverride(value: ResolvedCli | undefined): void {
   override = value;
+  cached = undefined;
+}
+
+/** Forget the cached resolution (test isolation; not needed in production). */
+export function resetAgentBrowserCliCache(): void {
+  cached = undefined;
 }
 
 /**
  * First existing, directly spawnable CLI target. Throws when agent-browser is
  * not installed in any known location, with the honest install hint.
+ *
+ * The result is cached for the process lifetime: installs do not change while
+ * Pi runs, and re-scanning on every menu render wastes hundreds of ms.
  */
 export function resolveAgentBrowserCommand(): ResolvedCli {
   if (override) return override;
+  if (cached) return cached;
   for (const candidate of agentBrowserCandidates()) {
-    if (candidateExists(candidate)) return candidate;
+    if (candidateExists(candidate)) {
+      cached = candidate;
+      return cached;
+    }
   }
   throw new Error(
     'agent-browser not found; install it with "npm install -g agent-browser" (and run "agent-browser install" for the test browser)',

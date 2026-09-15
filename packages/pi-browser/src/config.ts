@@ -9,12 +9,11 @@ export type WriteResult =
   | { ok: false; error: string };
 
 export const MANAGED_SESSION = "pi-browser";
-export const MANAGED_NAMESPACE = "pi-browser";
 export const DEFAULT_IDLE_TIMEOUT = "10m";
 export const DEFAULT_HEADED = false;
 
 export type ManagedAgentBrowserConfig = {
-  profile: string;
+  profile?: string;
   screenshotDir: string;
   headed: boolean;
   idleTimeout: string | number;
@@ -62,14 +61,18 @@ export function mergeAgentBrowserConfig(
   managed: ManagedAgentBrowserConfig,
 ): JsonObject {
   const next: JsonObject = { ...(existing ?? {}) };
-  next.profile = managed.profile;
-  next.session = MANAGED_SESSION;
-  next.namespace = MANAGED_NAMESPACE;
   next.engine = "chrome";
   next.headed = managed.headed;
   next.idleTimeout = managed.idleTimeout;
   next.screenshotDir = managed.screenshotDir;
   if (managed.executablePath) next.executablePath = managed.executablePath;
+  // Official agent-browser posture: sessions run in isolated/ephemeral instances
+  // so parallel tasks never fight for a single Chrome user-data-dir lock (exit 21).
+  // Login state is saved & injected as portable state files under ~/.pi/agent/pi-browser/auth/.
+  // No namespace or profile lock in global config: all tools use official defaults.
+  delete next.profile;
+  delete next.session;
+  delete next.namespace;
   return next;
 }
 
@@ -79,6 +82,13 @@ export function setHeaded(config: JsonObject, headed: boolean): JsonObject {
 
 export function setIdleTimeout(config: JsonObject, idleTimeout: string | number): JsonObject {
   return { ...config, idleTimeout };
+}
+
+export function setExecutablePath(config: JsonObject, executablePath: string | undefined): JsonObject {
+  const next = { ...config };
+  if (executablePath) next.executablePath = executablePath;
+  else delete next.executablePath;
+  return next;
 }
 
 export function agentBrowserConfigSummary(

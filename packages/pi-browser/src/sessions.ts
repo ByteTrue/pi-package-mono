@@ -1,5 +1,8 @@
+import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import type { ExecFn } from "./env.js";
 import { resolveAgentBrowserCommand } from "./cli.js";
+import { agentBrowserNamespaceRunDir } from "./paths.js";
 
 
 export type AgentBrowserSession = {
@@ -69,7 +72,7 @@ export function parseSessionInfo(value: unknown, fallbackName: string): AgentBro
 async function runJson(
   exec: ExecFn,
   args: string[],
-  timeout: number = 20_000,
+  timeout: number = 8_000,
 ): Promise<SessionResult<unknown>> {
   let result;
   try {
@@ -105,15 +108,13 @@ export async function getAgentBrowserSession(
   exec: ExecFn,
   configPath: string,
   name: string,
+  timeout: number = 2_000,
 ): Promise<SessionResult<AgentBrowserSession>> {
-  const result = await runJson(exec, [
-    ...baseArgs(configPath),
-    "--session",
-    name,
-    "session",
-    "info",
-    "--json",
-  ]);
+  const result = await runJson(
+    exec,
+    [...baseArgs(configPath), "--session", name, "session", "info", "--json"],
+    timeout,
+  );
   return result.ok
     ? { ok: true, value: parseSessionInfo(result.value, name) }
     : result;
@@ -125,12 +126,15 @@ export async function collectAgentBrowserSessions(
 ): Promise<SessionResult<AgentBrowserSession[]>> {
   const listed = await listAgentBrowserSessions(exec, configPath);
   if (!listed.ok) return listed;
-  const sessions: AgentBrowserSession[] = [];
-  for (const name of listed.value) {
-    const info = await getAgentBrowserSession(exec, configPath, name);
-    sessions.push(info.ok ? info.value : { name, active: true });
-  }
-  return { ok: true, value: sessions };
+  // Per-session info queries are independent; fan them out in parallel.
+  // Timeout per session is 1500ms so a wedged daemon cannot stall the menu.
+  const infos = await Promise.all(
+    listed.value.map(async (name) => {
+      const info = await getAgentBrowserSession(exec, configPath, name, 1_500);
+      return info.ok ? info.value : { name, active: true };
+    }),
+  );
+  return { ok: true, value: infos };
 }
 
 export function describeSession(session: AgentBrowserSession): string {
@@ -143,7 +147,7 @@ export function describeSession(session: AgentBrowserSession): string {
 async function runCommand(
   exec: ExecFn,
   args: string[],
-  timeout: number = 60_000,
+  timeout: number = 30_000,
 ): Promise<CommandResult> {
   let result;
   try {
@@ -166,18 +170,90 @@ async function runCommand(
   return { ok: true, output };
 }
 
-export function closeAgentBrowserSession(
+/**
+ * Safely purge ghost session records from the namespace run directory.
+ * A session record is considered stale if its daemon PID is absent or dead.
+ * Live sessions (whose daemon process is currently running) are never touched.
+ */
+export function purgeStaleNamespaceSessionFiles(
+  runDir: string = agentBrowserNamespaceRunDir(),
+  targetSession?: string,
+): string[] {
+  if (!existsSync(runDir)) return [];
+  let entries: string[];
+  try {
+    entries = readdirSync(runDir);
+  } catch {
+    return [];
+  }
+
+  const sessionNames = new Set<string>();
+  for (const file of entries) {
+    const dot = file.indexOf(".");
+    if (dot > 0) {
+      const name = file.slice(0, dot);
+      if (!targetSession || name === targetSession) {
+        sessionNames.add(name);
+      }
+    }
+  }
+
+  const purged: string[] = [];
+  for (const name of sessionNames) {
+    const pidFile = join(runDir, `${name}.pid`);
+    let isAlive = false;
+    if (existsSync(pidFile)) {
+      try {
+        const rawPid = readFileSync(pidFile, "utf8").trim();
+        const pid = Number.parseInt(rawPid, 10);
+        if (Number.isInteger(pid) && pid > 0) {
+          process.kill(pid, 0);
+          isAlive = true;
+        }
+      } catch {
+        isAlive = false;
+      }
+    }
+
+    if (isAlive) continue;
+
+    const relatedFiles = entries.filter((f) => f.startsWith(`${name}.`));
+    for (const f of relatedFiles) {
+      try {
+        unlinkSync(join(runDir, f));
+      } catch {
+        // ignore
+      }
+    }
+    purged.push(name);
+  }
+
+  return purged;
+}
+
+export async function closeAgentBrowserSession(
   exec: ExecFn,
   configPath: string,
   name: string,
 ): Promise<CommandResult> {
-  return runCommand(exec, [
+  const result = await runCommand(exec, [
     ...baseArgs(configPath),
     "--session",
     name,
     "close",
     "--json",
   ]);
+  if (result.ok) return result;
+
+  // Fallback: If CLI close fails (e.g. exit 21 profile lock contention or
+  // daemon crash), check if the daemon is dead or missing. If so, purge its
+  // stale socket/target files directly so the ghost session disappears.
+  const purged = purgeStaleNamespaceSessionFiles(undefined, name);
+  if (purged.includes(name)) {
+    return { ok: true, output: `Removed stale records for ${name}` };
+  }
+
+  return result;
 }
 
 /** Closes every session in the namespace selected by the managed config. */
@@ -188,16 +264,25 @@ export function closeAllAgentBrowserSessions(
   return runCommand(exec, [...baseArgs(configPath), "close", "--all", "--json"]);
 }
 
-/** Official non-destructive stale pid/socket cleanup; never installs or repairs browser files. */
-export function cleanStaleAgentBrowserState(
+/** Official non-destructive stale pid/socket cleanup, plus purging orphaned session files. */
+export async function cleanStaleAgentBrowserState(
   exec: ExecFn,
   configPath: string,
 ): Promise<CommandResult> {
-  return runCommand(
+  const docResult = await runCommand(
     exec,
     [...baseArgs(configPath), "doctor", "--offline", "--quick", "--json"],
-    60_000,
+    30_000,
   );
+  const purged = purgeStaleNamespaceSessionFiles();
+  if (purged.length > 0) {
+    const note = `Cleaned ${purged.length} stale session record(s): ${purged.join(", ")}`;
+    return {
+      ok: true,
+      output: docResult.ok ? `${docResult.output}\n${note}` : note,
+    };
+  }
+  return docResult;
 }
 
 /** Startup heads-up only. Explicit idleTimeout remains the automatic cleanup mechanism. */

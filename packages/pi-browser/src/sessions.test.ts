@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { ExecFn } from "./env.js";
 import { setAgentBrowserCliOverride } from "./cli.js";
@@ -14,6 +17,7 @@ import {
   notifyLeftoverSessions,
   parseSessionInfo,
   parseSessionNames,
+  purgeStaleNamespaceSessionFiles,
 } from "./sessions.js";
 
 const configPath = "/tmp/agent-browser-config.json";
@@ -131,5 +135,61 @@ describe("session management", () => {
       notify,
     );
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("purges dead session files while preserving alive daemon sessions", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "pi-browser-purge-"));
+    try {
+      // 1. Alive session: PID is current process
+      writeFileSync(join(fixture, "alive.pid"), String(process.pid));
+      writeFileSync(join(fixture, "alive.config"), "cfg");
+
+      // 2. Dead session: PID does not exist
+      writeFileSync(join(fixture, "dead.pid"), "999999");
+      writeFileSync(join(fixture, "dead.config"), "cfg");
+      writeFileSync(join(fixture, "dead.target"), "tgt");
+
+      // 3. Orphan session: no .pid file at all
+      writeFileSync(join(fixture, "orphan.target"), "tgt");
+
+      const purged = purgeStaleNamespaceSessionFiles(fixture);
+      expect(purged.sort()).toEqual(["dead", "orphan"]);
+
+      // Alive session files must survive
+      expect(existsSync(join(fixture, "alive.pid"))).toBe(true);
+      expect(existsSync(join(fixture, "alive.config"))).toBe(true);
+
+      // Dead & orphan session files must be gone
+      expect(existsSync(join(fixture, "dead.pid"))).toBe(false);
+      expect(existsSync(join(fixture, "dead.config"))).toBe(false);
+      expect(existsSync(join(fixture, "dead.target"))).toBe(false);
+      expect(existsSync(join(fixture, "orphan.target"))).toBe(false);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to purging stale files when CLI close fails due to profile contention", async () => {
+    const fixture = mkdtempSync(join(tmpdir(), "pi-browser-close-fallback-"));
+    const paths = await import("./paths.js");
+    const spy = vi.spyOn(paths, "agentBrowserNamespaceRunDir").mockReturnValue(fixture);
+    try {
+      // Seed a dead session file that causes agent-browser to fail with exit 21
+      writeFileSync(join(fixture, "stuck.target"), "tgt");
+
+      const execFailing: ExecFn = async () => ({
+        stdout: "",
+        stderr: "Chrome exited early (exit code: 21): Lock file can not be created",
+        code: 21,
+      });
+
+      const res = await closeAgentBrowserSession(execFailing, configPath, "stuck");
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.output).toContain("Removed stale records for stuck");
+      expect(existsSync(join(fixture, "stuck.target"))).toBe(false);
+    } finally {
+      spy.mockRestore();
+      rmSync(fixture, { recursive: true, force: true });
+    }
   });
 });
