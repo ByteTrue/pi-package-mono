@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { ExecFn } from "./env.js";
+import { setAgentBrowserCliOverride } from "./cli.js";
+
+beforeEach(() => setAgentBrowserCliOverride({ command: "agent-browser" }));
+afterEach(() => setAgentBrowserCliOverride(undefined));
 import {
   cleanStaleAgentBrowserState,
   closeAgentBrowserSession,

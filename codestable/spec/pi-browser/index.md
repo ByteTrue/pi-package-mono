@@ -74,6 +74,10 @@
 
 Pi `session_start` 只提示仍存活的受管会话；`/reload` 与无 UI 场景跳过。不会启动时擅自关闭，因为同一固定 session 可供后续任务继续复用，10 分钟 idle timeout 才是自动关闭边界。
 
+### CLI 解析（Windows 必须）
+
+`pi.exec` 以 `shell: false` spawn。Windows 上 npm 全局安装的 `agent-browser` 实际是 `.cmd` 垫片，不经 shell 无法拉起，裸调用必然失败（exit 1、无输出，0.3.0 曾因此误报 not found）。所有版本探测与 session 命令统一经 `resolveAgentBrowserCommand()` 解析：按 PATH 可执行文件 → `~/.agent-browser` 独立布局 → npm 全局根的顺序取**原生平台二进制**（`bin/agent-browser-<platform>-<arch>.exe`），其次经当前 node 运行包内 `bin/agent-browser.js`；仅返回 existsSync 命中且可直接 spawn 的目标，Windows 上永不返回无扩展名 sh 垫片。全部找不到时诚实报缺失并提示安装命令。
+
 Windows 上，agent-browser 0.37.1 把自有 Chrome 进程放入 Job Object；daemon 退出或被杀时整棵 Chrome 进程树跟随结束。外部 attach 的浏览器不归它所有，也不在本包清理承诺内。
 
 ### Setup commands

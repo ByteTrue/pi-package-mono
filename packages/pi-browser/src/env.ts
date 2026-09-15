@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { officialSkillCandidates } from "./paths.js";
+import { resolveAgentBrowserCommand } from "./cli.js";
 
 export type ExecResult = { stdout: string; stderr: string; code: number | null | undefined };
 export type ExecFn = (command: string, args: string[], options?: { timeout?: number }) => Promise<ExecResult>;
@@ -38,7 +39,10 @@ export function isVersionAtLeast(version: string, minimum: string): boolean {
 export async function probeAgentBrowser(exec: ExecFn): Promise<CliProbe> {
   let result: ExecResult;
   try {
-    result = await exec("agent-browser", ["--version"], { timeout: 15_000 });
+    // pi.exec spawns without a shell, so a bare "agent-browser" cannot launch
+    // the npm .cmd shim on Windows; resolve a directly runnable command first.
+    const resolved = resolveAgentBrowserCommand();
+    result = await exec(resolved.command, [...(resolved.args ?? []), "--version"], { timeout: 15_000 });
   } catch (error) {
     return { state: "missing", detail: error instanceof Error ? error.message : String(error) };
   }

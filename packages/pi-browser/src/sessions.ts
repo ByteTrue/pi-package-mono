@@ -1,4 +1,6 @@
 import type { ExecFn } from "./env.js";
+import { resolveAgentBrowserCommand } from "./cli.js";
+
 
 export type AgentBrowserSession = {
   name: string;
@@ -71,7 +73,8 @@ async function runJson(
 ): Promise<SessionResult<unknown>> {
   let result;
   try {
-    result = await exec("agent-browser", args, { timeout });
+    const resolved = resolveAgentBrowserCommand();
+    result = await exec(resolved.command, [...(resolved.args ?? []), ...args], { timeout });
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
@@ -144,7 +147,8 @@ async function runCommand(
 ): Promise<CommandResult> {
   let result;
   try {
-    result = await exec("agent-browser", args, { timeout });
+    const resolved = resolveAgentBrowserCommand();
+    result = await exec(resolved.command, [...(resolved.args ?? []), ...args], { timeout });
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
