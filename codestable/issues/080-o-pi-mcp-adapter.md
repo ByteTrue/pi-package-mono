@@ -163,6 +163,7 @@ packages/pi-mcp/
 - `release.yml` 增加 `pi-mcp-v*` tag 触发与 case 分支；`.pi/settings.json` 挂本地 `../packages/pi-mcp` 并屏蔽全局 pi-mcp-adapter / pi-magic-context（实测解决了 `mcp` 工具名冲突）。
 - 验证：`pi -p` 工具面 = 内建 + 本地 8 包，本地 `mcp` proxy status 正常。
 - 下一步：提交后打 tag `pi-mcp-v0.1.1` 推 CI 验证 OIDC 发布链路。
+- **CI/CD 验证通过**（run 35003834127，publish job 1m25s）：release.yml 触发 `pi-mcp-v0.1.1` → typecheck/test（含 pi-mcp 网络测试）→ OIDC Trusted Publishing 无 token 发布成功，`latest` 指向 0.1.1。遗留 4 已完成。
 
 **遗留（关闭前需用户验收或授权）**：
 
