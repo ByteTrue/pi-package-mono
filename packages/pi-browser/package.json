@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-browser",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Pi extension: configure one persistent agent-browser profile and clean up leftover browser sessions.",
   "keywords": [
     "pi-package",

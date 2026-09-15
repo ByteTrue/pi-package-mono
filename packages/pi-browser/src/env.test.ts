@@ -8,7 +8,7 @@ import {
   probeAgentBrowser,
   type ExecFn,
 } from "./env.js";
-import { agentBrowserCandidates, agentBrowserNativeExeName, resolveAgentBrowserCommand } from "./cli.js";
+import { agentBrowserCandidates, agentBrowserNativeExeName, resolveAgentBrowserCommand, setAgentBrowserCliOverride } from "./cli.js";
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,9 @@ vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: () => fakeHome };
 });
+
+beforeEach(() => setAgentBrowserCliOverride({ command: "agent-browser" }));
+afterEach(() => setAgentBrowserCliOverride(undefined));
 
 describe("agent-browser environment", () => {
   it("uses the confirmed Pi skill command", () => {
@@ -34,6 +37,8 @@ describe("agent-browser environment", () => {
   });
 
   it("reports ready, outdated and missing CLI states", async () => {
+    // The CLI override is seeded file-wide, so probeAgentBrowser reaches the
+    // mock exec instead of failing resolution on machines without agent-browser.
     const result = (stdout: string, code: number | null = 0): ExecFn => async () => ({
       stdout,
       stderr: "",
@@ -53,6 +58,7 @@ describe("agent-browser environment", () => {
   });
 
   it("resolves the agent-browser CLI from seeded env locations", async () => {
+    setAgentBrowserCliOverride(undefined); // exercise real resolution below
     const fixture = mkdtempSync(join(tmpdir(), "pi-browser-cli-"));
     // APPDATA=fixture makes the npm global root fixture\npm.
     const binDir = join(fixture, "npm", "node_modules", "agent-browser", "bin");
@@ -92,6 +98,7 @@ describe("agent-browser environment", () => {
     // Regression for the released 0.3.0 Status bug: pi.exec cannot launch the
     // npm .cmd shim on Windows, so the probe must use the resolved native
     // binary. Only meaningful where the npm-global native binary exists.
+    setAgentBrowserCliOverride(undefined); // resolve for real, not the file-wide mock
     const appdata = process.env.APPDATA;
     const native = appdata
       ? join(appdata, "npm", "node_modules", "agent-browser", "bin", agentBrowserNativeExeName())
@@ -141,6 +148,7 @@ describe("agent-browser environment", () => {
       process.env.PATH = "C:\\definitely-missing-pi-browser-dir";
       delete process.env.APPDATA;
       delete process.env.NODE_PREFIX;
+      setAgentBrowserCliOverride(undefined); // resolution must really fail here
       const probe = await probeAgentBrowser(async () => ({ stdout: "", stderr: "", code: 0 }));
       expect(probe.state).toBe("missing");
       if (probe.state === "missing") expect(probe.detail).toContain("npm install -g agent-browser");
