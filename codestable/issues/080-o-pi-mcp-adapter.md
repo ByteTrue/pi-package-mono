@@ -215,3 +215,9 @@ packages/pi-mcp/
 保留的有意偏离（080 砍掉面，非遗漏）：OAuth/auth/install 字段、mcpScript、approveTools、resources、socket、bearer、caFile、requestHeadersCommand、strictDirectToolArguments、renderCall/renderResult、lifecycle keep-alive 变体、type local/remote 别名。
 
 验证：85/85 测试绿（+6：selector 三态、effectiveIdleMinutes 三分支）、tsc 干净、真机全链路（connect/list/search/describe/instructions + excludeTools + trace 落盘）。
+
+### 2026-09-16：v0.4.0 发布（CI OIDC 验证通过）
+
+- commit be05e88（P1+P2+审计对齐一次性合入），tag `pi-mcp-v0.4.0` → Release run 35091669396,publish job 1m24s,`latest` → 0.4.0（`npm view` 确认）。
+- 全局 `pi update --extensions` 升至 0.4.0;mono 外目录真机验证：五态 status（`MCP: 0/2 servers, 54 tools`）、工具面正常。
+- 遗留 1/2（TUI 交互真机验收）已由用户在 P2 迭代中实测驱动（面板打开、残影反馈、ctrl+r 语义反馈均来自真实 TUI）;`/mcp__server__prompt` 斜杠命令仍待用户顺手验证。080 关闭待用户最终确认。
