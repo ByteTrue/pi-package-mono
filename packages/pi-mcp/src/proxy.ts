@@ -16,11 +16,25 @@ export interface ProxyArgs {
   limit?: number;
   offset?: number;
   regex?: boolean;
+  includeSchemas?: boolean;
   describe?: string;
   tool?: string;
   args?: Record<string, unknown>;
   instructions?: string;
   connect?: string;
+}
+
+const MAX_REGEX_SEARCH_QUERY_LENGTH = 256;
+
+/** Upstream truncateAtWord (utils.ts): break at the last space past 60%. */
+function truncateAtWord(text: string, target: number): string {
+  if (!text || text.length <= target) return text;
+  const truncated = text.slice(0, target);
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > target * 0.6) {
+    return truncated.slice(0, lastSpace) + "...";
+  }
+  return truncated + "...";
 }
 
 export interface ProxyResult {
@@ -39,6 +53,7 @@ export function createProxyHandler(options: {
   const searchState = (): SearchState => {
     const toolMetadata = new Map<string, ToolMetadata[]>();
     for (const name of Object.keys(config)) {
+      if (config[name]?.disabled === true) continue;
       const meta = manager.metadataFor(name);
       if (meta) toolMetadata.set(name, meta.tools);
     }
@@ -69,6 +84,9 @@ export function createProxyHandler(options: {
     return { suggestions: rankSuggestions(state, name, 5) };
   };
 
+  const disabledResult = (what: string, serverName: string): ProxyResult =>
+    text(`Server "${serverName}" is disabled. Run /mcp enable ${serverName} and /reload to enable it, or edit mcp.json directly.`);
+
   const toolLine = (m: { server: string; tool: ToolMetadata }) => {
     const desc = m.tool.description ? ` — ${m.tool.description.split("\n")[0] ?? ""}` : "";
     return `${m.tool.name} [${m.server}]${desc}`;
@@ -79,111 +97,165 @@ export function createProxyHandler(options: {
 
     // ── status ──
     if (!args.server && !args.search && !args.describe && !args.tool && !args.instructions && !args.connect) {
-      const lines = manager.status().map((s) => {
-        const state = s.connected ? "connected" : manager.metadataFor(s.name) ? "cached (offline)" : "not connected";
-        const err = s.lastError ? ` — last error: ${s.lastError}` : "";
-        return `${s.name}: ${state}, ${s.toolCount} tools${err}`;
+      // Upstream executeStatus semantics: five states, honest tool counts.
+      const rows = manager.status();
+      const enabled = rows.filter((s) => !s.disabled);
+      const connectedCount = enabled.filter((s) => s.connected).length;
+      const totalTools = enabled.reduce((sum, s) => sum + s.toolCount, 0);
+      const disabledCount = rows.length - enabled.length;
+      const lines = rows.map((s) => {
+        if (s.disabled) return `⊘ ${s.name} (disabled)`;
+        if (s.connected) return `✓ ${s.name} (${s.toolCount} tools, connected)`;
+        if (s.failed) return `✗ ${s.name} (failed ${s.failedAgeSeconds ?? 0}s ago${s.lastError ? `: ${s.lastError}` : ""})`;
+        if (s.cached) return `○ ${s.name} (${s.toolCount} tools, cached; not connected)`;
+        return `○ ${s.name} (not connected)`;
       });
-      if (lines.length === 0) {
+      if (rows.length === 0) {
         return text("No MCP servers configured. Add servers to ~/.pi/agent/mcp.json, ~/.config/mcp/mcp.json, or .mcp.json (mcpServers: { name: { command, args } | { url } }).");
       }
-      return text(["MCP servers:", ...lines.map((l) => `- ${l}`)].join("\n"));
+      const header = `MCP: ${connectedCount}/${enabled.length} servers, ${totalTools} tools${disabledCount > 0 ? ` (${disabledCount} disabled)` : ""}`;
+      return text([header, "", ...lines, "", `mcp({ server: "name" }) to list tools, mcp({ search: "..." }) to search`].join("\n"));
     }
 
     // ── connect / reconnect ──
     if (args.connect) {
+      if (config[args.connect]?.disabled === true) return disabledResult("connect", args.connect);
       const state = await manager.connect(args.connect, signal);
       return text(`Connected ${args.connect}: ${state.tools.length} tools, ${state.prompts.length} prompts.`);
     }
 
-    // ── list server ──
+    // ── list server (upstream executeList; search/call branch above when combined) ──
     if (args.server) {
-      if (!config[args.server]) {
-        throw new Error(`Unknown server: ${args.server}. Available: ${Object.keys(config).join(", ") || "(none)"}`);
+      const listed = config[args.server];
+      if (!listed) {
+        throw new Error(`Server "${args.server}" not found. Use mcp({}) to see available servers.`);
       }
-      // Connect if we have nothing cached for it; otherwise list from cache.
-      let meta = manager.metadataFor(args.server);
-      if (!meta) {
-        const state = await manager.connect(args.server, signal);
-        meta = { tools: state.tools, prompts: state.prompts, instructions: state.instructions };
+      if (listed.disabled === true) return disabledResult("server", args.server);
+      // Cache-first (upstream executeList): never spawn a server from a
+      // discovery operation; tell the caller how to connect instead.
+      const meta = manager.metadataFor(args.server);
+      const connected = manager.isConnected(args.server);
+      if (!meta || meta.tools.length === 0) {
+        if (connected) return text(`Server "${args.server}" has no tools.`);
+        if (meta) return text(`Server "${args.server}" has no cached tools (not connected).`);
+        return text(`Server "${args.server}" is configured but not connected. Use mcp({ connect: "${args.server}" }) or /mcp reconnect ${args.server} to retry.`);
       }
-      const lines = meta.tools.map((t) => `  ${t.name} — ${(t.description ?? "").split("\n")[0] ?? ""}`);
+      const cachedNote = connected ? "" : " (lazy: tools from cache, not connected yet — mcp({ connect: \"name\" }) to connect)";
+      const toolLines = meta.tools.map((t) => {
+        const desc = truncateAtWord(t.description, 50);
+        return `- ${t.name}${desc ? ` - ${desc}` : ""}`;
+      });
       const promptLines = meta.prompts.map((p) => `  /${p.commandName} — ${(p.description ?? "").split("\n")[0] ?? ""}`);
-      const instrPreview = meta.instructions ? `\nInstructions: ${meta.instructions.split("\n")[0] ?? ""}` : "";
+      let instructionsText = "";
+      if (meta.instructions) {
+        const preview = truncateAtWord(meta.instructions, 300);
+        instructionsText = `\n\nServer instructions:\n${preview}`;
+        if (preview !== meta.instructions) {
+          instructionsText += `\nUse mcp({ instructions: "${args.server}" }) for the full text.`;
+        }
+      }
       return text(
         [
-          `${args.server}: ${meta.tools.length} tools${promptLines.length ? `, ${meta.prompts.length} prompts` : ""}${instrPreview}`,
-          "Tools:",
-          ...lines,
-          ...(promptLines.length ? ["Prompts:", ...promptLines] : []),
-        ].join("\n"),
+          `${args.server} (${meta.tools.length} tools${cachedNote}):`,
+          "",
+          ...toolLines,
+          ...(promptLines.length ? ["", "Prompts:", ...promptLines] : []),
+          instructionsText,
+        ].join("\n").trim(),
       );
     }
 
-    // ── instructions ──
+    // ── instructions (cache-first; discovery must not spawn servers) ──
     if (args.instructions) {
-      if (!config[args.instructions]) throw new Error(`Unknown server: ${args.instructions}`);
-      let meta = manager.metadataFor(args.instructions);
-      if (!meta) {
-        const state = await manager.connect(args.instructions, signal);
-        meta = { tools: state.tools, prompts: state.prompts, instructions: state.instructions };
+      const target = config[args.instructions];
+      if (!target) throw new Error(`Server "${args.instructions}" not found. Use mcp({}) to see available servers.`);
+      if (target.disabled === true) return disabledResult("instructions", args.instructions);
+      const meta = manager.metadataFor(args.instructions);
+      if (meta?.instructions) {
+        return text(`${args.instructions} instructions:\n\n${meta.instructions}`);
       }
-      if (!meta.instructions) throw new Error(`Server ${args.instructions} provides no instructions.`);
-      return text(meta.instructions);
+      if (manager.isConnected(args.instructions)) {
+        return text(`Server "${args.instructions}" does not provide instructions.`);
+      }
+      return text(`No instructions cached for "${args.instructions}". Use mcp({ connect: "${args.instructions}" }) to connect and refresh.`);
     }
 
-    // ── search ──
-    if (args.search !== undefined && args.search !== "") {
+    // ── search (upstream executeSearch output contract) ──
+    if (args.search !== undefined) {
+      if (args.search.trim().length === 0) {
+        throw new Error("Search query cannot be empty");
+      }
+      const serverFilter = args.server;
+      if (serverFilter && !config[serverFilter]) {
+        throw new Error(`Server "${serverFilter}" not found. Use mcp({}) to see available servers.`);
+      }
+      if (serverFilter && config[serverFilter]?.disabled === true) return disabledResult("search", serverFilter);
+      const showSchemas = args.includeSchemas !== false;
+      let matches: Array<{ server: string; tool: ToolMetadata; score: number }>;
       if (args.regex) {
-        // Regex mode: literal substring/regex over cached tool names+descriptions, paginated without ranking.
+        if (args.search.length > MAX_REGEX_SEARCH_QUERY_LENGTH) {
+          throw new Error(`Regex query is too long; maximum length is ${MAX_REGEX_SEARCH_QUERY_LENGTH} characters.`);
+        }
         let re: RegExp;
         try {
           re = new RegExp(args.search, "i");
-        } catch (error) {
-          throw new Error(`Invalid regex: ${error instanceof Error ? error.message : String(error)}`);
+        } catch {
+          throw new Error(`Invalid regex: ${args.search}`);
         }
         const state = searchState();
-        const hits: Array<{ server: string; tool: ToolMetadata }> = [];
+        matches = [];
         for (const [serverName, tools] of state.toolMetadata.entries()) {
+          if (serverFilter && serverName !== serverFilter) continue;
           for (const tool of tools) {
-            if (re.test(tool.name) || re.test(tool.description)) hits.push({ server: serverName, tool });
+            if (re.test(tool.name) || re.test(tool.description)) matches.push({ server: serverName, tool, score: 0 });
           }
         }
-        const page = paginate(hits, args.offset ?? 0, args.limit ?? 12);
-        return text(
-          [
-            `MCP tools matching /${args.search}/ (${page.items.length} of ${page.total}, offset ${args.offset ?? 0}):`,
-            ...page.items.map((h) => `- ${toolLine(h)}`),
-            ...(page.nextOffset !== null ? [`(more available — use offset: ${page.nextOffset})`] : []),
-          ].join("\n"),
-        );
+      } else {
+        matches = rankToolMatches(searchState(), args.search, serverFilter);
       }
-      const matches = rankToolMatches(searchState(), args.search);
       const page = paginate(matches, args.offset ?? 0, args.limit ?? 12);
-      if (page.items.length === 0) {
-        return text(`No MCP tools match "${args.search}". Try fewer or different words, or regex: true.`);
+      if (page.total === 0) {
+        const msg = serverFilter ? `No tools matching "${args.search}" in "${serverFilter}"` : `No tools matching "${args.search}"`;
+        return text(`${msg} Try fewer or different words, or regex: true.`);
       }
-      return text(
-        [
-          `MCP tools matching "${args.search}" (${page.items.length} of ${page.total}, offset ${args.offset ?? 0}):`,
-          ...page.items.map((m) => `- ${toolLine(m)}`),
-          ...(page.nextOffset !== null ? [`(more available — use offset: ${page.nextOffset})`] : []),
-        ].join("\n"),
-      );
+      const lines: string[] = [`Found ${page.total} tool${page.total === 1 ? "" : "s"} matching "${args.search}":`, ""];
+      for (const match of page.items) {
+        if (showSchemas) {
+          lines.push(match.tool.name);
+          lines.push(`  ${match.tool.description || "(no description)"}`);
+          const shape = renderTsShape(match.tool.inputSchema);
+          lines.push(shape === null
+            ? `  Parameters: ${JSON.stringify(match.tool.inputSchema ?? { type: "object" })}`
+            : `  Shape:\n${shape.split("\n").map((l) => `    ${l}`).join("\n")}`);
+          lines.push("");
+        } else {
+          const desc = truncateAtWord(match.tool.description, 50);
+          lines.push(`- ${match.tool.name}${desc ? ` - ${desc}` : ""}`);
+        }
+      }
+      if (page.nextOffset !== null) {
+        lines.push(`${page.items.length} of ${page.total} — offset: ${page.nextOffset} for more`);
+      }
+      return text(lines.join("\n").trim());
     }
 
-    // ── describe ──
+    // ── describe (upstream output format) ──
     if (args.describe) {
       const resolved = resolveTool(args.describe);
       if ("server" in resolved) {
-        const shape = renderTsShape(resolved.tool.inputSchema);
-        const params = shape ?? JSON.stringify(resolved.tool.inputSchema ?? { type: "object" });
-        return text(`${resolved.tool.name} [${resolved.server}]\n${resolved.tool.description}\n\nParameters: ${params}`);
+        let body = `Tool: ${resolved.tool.name}\nServer: ${resolved.server}\n\n${resolved.tool.description || "(no description)"}\n`;
+        if (resolved.tool.inputSchema) {
+          const shape = renderTsShape(resolved.tool.inputSchema);
+          body += shape === null
+            ? `\nParameters:\n${JSON.stringify(resolved.tool.inputSchema)}`
+            : `\nShape:\n${shape}`;
+        } else {
+          body += `\nNo parameters defined.`;
+        }
+        return text(body);
       }
-      const suggest = resolved.suggestions.length
-        ? resolved.suggestions.map((s) => `- ${s}`).join("\n")
-        : "(no suggestions)";
-      throw new Error(`Tool not found: ${args.describe}. Did you mean:\n${suggest}`);
+      const suggest = resolved.suggestions.length ? ` Did you mean: ${resolved.suggestions.join(", ")}` : "";
+      throw new Error(`Tool "${args.describe}" not found. Use mcp({ search: "..." }) to search.${suggest}`);
     }
 
     // ── call ──

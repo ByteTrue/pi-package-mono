@@ -40,13 +40,13 @@ Same-name servers in higher layers override lower ones; `disabled: true` in a hi
     }
   },
   "settings": {
-    "idleTimeout": 600,
+    "idleTimeout": 10,
     "outputGuard": { "maxBytes": 51200, "maxLines": 2000, "detailsMaxBytes": 16384 }
   }
 }
 ```
 
-Server fields: `command`/`args`/`env`/`cwd` (stdio, `npx` commands are resolved to direct binaries — cached, with fallback to plain npx), `url` + `headers` (HTTP; Streamable HTTP with automatic SSE fallback on 404/405/406/415), `type`, `disabled`, `lifecycle` (`lazy` default | `eager`), `idleTimeout` (seconds; default 600, 0 disables), `directTools` (`true` | `["tool_a"]`), `includeTools`/`excludeTools` (glob-capable), `searchKeywords`, `toolPrefix`.
+Server fields: `command`/`args`/`env`/`cwd` (stdio, `npx` commands are resolved to direct binaries — cached, with fallback to plain npx), `url` + `headers` (HTTP; Streamable HTTP with automatic SSE fallback on 404/405/406/415), `type`, `disabled`, `lifecycle` (`lazy` default | `eager`), `idleTimeout` (minutes; default 10, 0 disables — eager servers never idle-disconnect), `directTools` (`true` | `["tool_a"]`), `includeTools`/`excludeTools` (glob-capable), `searchKeywords`, `toolPrefix`.
 
 ## Usage
 
@@ -63,13 +63,34 @@ The extension registers one `mcp` tool (~200 tokens of schema):
 | Server instructions | `mcp({ instructions: "name" })` |
 | Connect/reconnect | `mcp({ connect: "name" })` |
 
+`mcp({})` reports five honest states per server — `✓ connected` / `✗ failed (Ns ago, reason)` / `○ cached; not connected` / `○ not connected` / `⊘ disabled` — instead of one blurred "offline" line.
+
+## Managing servers
+
+**`/mcp` command** (Tab-completion for subcommands and server names):
+
+| Command | Effect |
+|---------|--------|
+| `/mcp` (or `/mcp status`) | Five-state server listing |
+| `/mcp reconnect [server]` | Reconnect one server or all enabled servers |
+| `/mcp tools` | All tools across enabled servers (cache-backed) |
+| `/mcp prompts` | All discovered prompts, grouped by server |
+| `/mcp disable <server>` | Persist a `disabled: true` project override (`.pi/mcp.json`), then `/reload` |
+| `/mcp enable <server>` | Remove the marker (or write `disabled: false` when a lower layer disables), then `/reload` |
+
+(Panel `ctrl+r` matches: reconnects all enabled servers.)
+
+**Management panel**: `/mcp` with no arguments in the TUI opens a floating panel (fuzzy-filterable, fixed-height frame so terminal diffs never leave ghost rows) listing servers and their cached tools — `space` toggles a tool's `directTools` registration, `ctrl+d` toggles a server's disabled flag, `ctrl+r` reconnects **all** enabled servers (with live status per server), `ctrl+y` copies the selected server's last failure, `ctrl+s` (or keep-on-exit) writes the selections to `.pi/mcp.json` and prompts for `/reload`.
+
+**Footer status bar**: the TUI footer shows a live `mcp` slot, e.g. `2 servers enabled (1 connected) (1 disabled)`; `"compact"` renders `mcp:1/2`. Configure with `settings.mcpFooterStatus: "full" (default) | "compact" | "off"`. Disabled servers stay visible in status instead of vanishing from config, and are skipped by connect/search/direct-tools.
+
+**Protocol tracing (opt-in)**: set `settings.trace: { enabled, file?, maxBytes?, maxEvents? }` (or `trace: true` per server) to record metadata-only JSONL protocol traces — direction, method, bytes, duration, secrets redacted — under `.pi/mcp-traces/` by default. Writers self-disable on any failure so tracing never changes MCP behavior.
+
 Tool names match fuzzily across `-`/`_`; a miss returns ranked suggestions. Search ranks across name, server, description, and configured keywords, paginated via `offset`/`nextOffset`.
 
 **Direct tools**: configure `directTools` per server (or `"directTools": true` in `settings`) to register chosen tools as real Pi tools with real schemas, skipping the search→describe hop. Each costs ~150–300 tokens in the system prompt, so it fits targeted sets of 5–20 tools; use include/exclude filters to trim noisy servers. Direct tools register statically from the disk metadata cache at load; on the first session after adding them, connect the server once (`mcp({ connect: "name" })`) to populate the cache, then `/reload`.
 
 **Prompts**: servers advertising prompt templates become slash commands — `/mcp__<server>__<prompt>` — with positional and `key=value` arguments (bash-style quoting supported). Command definitions come from the metadata cache and refresh on reconnect.
-
-**`/mcp` command**: shows server status (connected / cached-offline / last error, tool counts). `/mcp reconnect [server]` reconnects one or all servers.
 
 ## How it works
 

@@ -168,3 +168,50 @@ packages/pi-mcp/
 **遗留（关闭前需用户验收或授权）**：
 
 1. 真机 `/mcp` 与 `/mcp__server__prompt` 斜杠命令（TUI 交互，`-p` 模式不可达；handler 逻辑已单测覆盖）。2. `/reload` 后 globalThis pin 的真机验证。3. 全局 pi-mcp-adapter 的卸载时机（项目层已屏蔽，全局卸载待用户决定）。4. v0.1.1 CI OIDC 发布验证结果回写。
+
+## 2026-09-16 范围扩充：全量管理面（用户拍板）
+
+用户验收后认为 v0.1.1 抄得不够：上游「查看所有工具 / 切换连接状态 / 状态栏」等管理能力没带过来。拍板把**管理面全量抄齐**（对照上游 2.34.0 源码盘点），OAuth 仍留 v2（连接/认证能力而非管理能力；~3600 行 + keychain/回调服务器实测）。分三批交付：
+
+- **P1 管理基座（0.2.0）**：① 底部状态栏 `ctx.ui.setStatus("mcp", ...)`，`mcpFooterStatus: full|compact|off`（默认 full）；② `/mcp` 子命令全量：`status`（默认）/ `reconnect [server]` / `tools` / `prompts` / `enable|disable <server>`（写 `.pi/mcp.json` 项目覆盖，提示 /reload），子命令与 server 名 Tab 补全；③ 状态保真度：connected / failed(Ns 前+原因) / cached / not connected / disabled 五态，替换现在「0 tools 也称 cached/offline」的糊写；④ 前置改造：config 合并层保留 disabled server（不再过滤），manager 与 proxy/direct-tools/prompts 跳过它们；⑤ enable 写覆盖沿用上游语义（低层仍 disabled 时写 `disabled: false`，与低层一致时不写冗余）；⑥ mcp-trace 移植（opt-in：server 级 `trace` / `settings.mcpTrace`，JSONL 落 `.pi/mcp-traces/`，脱敏+字节/条数上限+失败自禁用）。
+- **P2 管理面板（0.3.0）**：移植 mcp-panel + panel-keys + mcp-panel-theme 三件套（TUI overlay：server 列表、每 server 动作 reconnect/查看工具/prompts、fuzzy 过滤），`ctx.mode === "tui"` 守卫；authenticate 动作灰显提示 OAuth 未实现。
+- **P3 setup 面板（0.4.0）**：移植 mcp-setup-panel（宿主配置发现/采纳、known server 预设、写入预览）。是否做看 P2 后实际需要。
+- 砍掉不变：OAuth、mcpScript、resources 物化、elicitation/sampling、兼容性导入、状态快照事件总线。
+
+### P1 执行记录
+
+**2026-09-16：P1 完成，待用户验收（0.2.0）**
+
+- **改动**：`config.ts`（合并改为逐字段 spread + 同名 server 换目标时丢弃旧 headers 的 url-binding 守卫；bare `disabled` marker 合法化；`loadMcpConfig` 不再过滤 disabled；解析 `mcpFooterStatus`/`mcpTrace`）；`types.ts`（`McpTraceSettings`、`mcpFooterStatus`、server 级 `trace`）；`server-manager.ts`（disabled 跳过连接、五态 `status()`、`onStateChange` 回调、trace 接线、Client 版本 0.2.0）；`proxy.ts`（上游 executeStatus 五态文案 + disabled 守卫）；`commands.ts` 新建（状态文案/tools/prompts/footer 文案/覆盖写入/Tab 补全，移植上游 commands.ts + config.ts 相应语义）；`direct-tools.ts`/`index.ts`（disabled 守卫、/mcp 全子命令、footer 生命周期、trace 注入）；`mcp-trace.ts` 原样移植（去 socket）。
+- **验证**：单测 72/72 绿（新增 17：五态渲染、footer full/compact/off、补全、enable/disable 覆盖写入含 0600、marker merge、url-binding 守卫、settings 解析）；`tsc --noEmit` 干净；真机（`pi -p --mode json --tools mcp -ne -e` + 真实 server-everything）：五态 status 含 ⊘/cached 文案、connect 13 tools/4 prompts、disabled server 拒连文案、缓存回填后 `○ everything (13 tools, cached; not connected)`、trace JSONL 落盘（initialize 往返/bytes/durationMs）；RPC 模式 footer 实测 `3 servers enabled (1 disabled)`。
+- **已知竞态**：并行 connect 与 search 同发时，search 只见磁盘缓存（connect 完成后回填）——与上游一致，非本次引入。
+- **偏离说明**：写覆盖新建文件 0600（上游未限定；mcp.json 可能含 headers 凭据，对齐 note 002 约定）。
+- **遗留**：TUI 交互面（`/mcp` 子命令的 ui.notify 渲染、Tab 补全体验、`/reload` 后 footer 刷新）与 080 遗留 1/2 同批待真机 TUI 验收；P2 面板移植待开工。
+
+### P2 执行记录
+
+**2026-09-16：P2 完成，待用户验收（0.3.0）**
+
+- **移植**：`mcp-panel.ts`（上游 1099 行简化至 ~640：砍 OAuth/authOnly、import provenance、resources 物化、uiVisibility、search-activated directTools；状态源收窄为 ServerManager + 共享磁盘缓存；save 语义改为回调式——`applyDisabledChange`/`applyDirectToolsChange` 由入口层接 `writeProjectServerDisabledOverride`/新 `writeProjectServerDirectToolsOverride`，配置写仍集中在扩展入口）；`panel-keys.ts`/`mcp-panel-theme.ts` 原样；新增 `writeProjectServerDirectToolsOverride`（selection true/list 写字段、false 移除字段还原低层值）。
+- **接线**：TUI 下 `/mcp`（无参）经 `ctx.ui.custom` 以 overlay(anchor:center,width:72) 打开；print/json 模式仍打五态文案。McpPanel 实现 Component 契约（render/invalidate 委托 view）。
+- **验证**：单测 78/78 绿（面板新增 6：状态映射、name query 过滤、toggle+ctrl+s 落盘、ctrl+d 落盘、discard keep、Component render 契约；注意 handleInput 必须逐键事件灌入，与真实 TUI 一致）；`tsc --noEmit` 干净；真机 TUI（expect 伪终端，等 footer 就绪后发 `/mcp`）：面板帧捕获到 `MCP Servers`/`search...`/`everything (not cached)`/hints 行；footer 状态栏再次验证。
+- **经验教训**：初次真机验证面板未渲染——openMcpPanelForSession 最初没走 `ctx.ui.custom`（假 tui 对象空转）；且 McpPanel 未实现 Component 接口。修正后打通。测试的 cache configHash 必须用真实 `computeServerHash`。
+- **遗留**：面板宽 72 固定值（上游 92），真机体验待用户调；`?` desc search 在真机未逐键验证（单测覆盖）。P3 setup 面板待用户看 P2 实际体验后决定是否做。
+- **追加修复（同日，用户真机报错）**：mono 工作目录全局 0.1.1 + 本地 0.3.0 双副本共存时，两副本共用 `Symbol.for("pi-mcp.server-manager")` globalThis 键，旧副本先载入 pin 了无 `onStateChange` 的旧 manager，新副本复用后崩溃。修复：复用前探测 `managerVersion === 3` + `onStateChange` feature-detect，不兼容整体换新。验证：mono `pi -p` 正常。0.3.0 发布后全局升级即消除双副本版本差；探测逻辑长期护栏。
+- **追加修复 2（同日，用户真机截图反馈）**：① 面板残影——根因非面板自身高度，而是：(a) 自创的顶部动态 notice 行（上游无此设计，上游 notice 全部走列表底部 authNotice 槽位）与固定高度空槽填充导致帧间高度剧烈变化；(b) 面板关闭时 finish() 的 ctx.ui.notify 打到底屏。修复：view 渲染逐行对齐上游 mcp-panel.ts（动态高度、紧凑列表、notice 走底部槽位、去掉高度钳制），关闭时不再 notify，overlay 宽度对齐上游 92。教训：上游 MIT 面板的布局/渲染结构本身是设计的一部分，"自创固定高度 + 裸空行填充"反而破坏 pi-tui overlay diff 的合成前提。② ctrl+r 改为重连全部启用 server（原为光标所在单个），并行重连 + 逐 server 状态刷新 + 汇总 notice（面板内显示）。验证：79/79 测试绿（面板 7 测试含固定高度断言改为结构断言 + reconnect all），tsc 干净，真机面板单帧无残影，/mcp reconnect 重连链路正常。
+
+### 审计对齐（2026-09-16，用户拍板"没必要自创的就别自创"，0.4.0）
+
+逐模块对照上游 2.34.0 全面审计，7 项判定为无必要自创并全部修正：
+
+1. **idleTimeout 单位秒→分钟**（上游 units，默认 10 分钟）：语义变更防迁移错 60 倍；新增 `effectiveIdleMinutes`（上游 getEffectiveIdleTimeoutMinutes 语义：eager 永不 idle、per-server 覆盖、全局默认）。
+2. **include/exclude 过滤器接入 metadata 层**：移植上游 `isToolAllowed` 函数族 + glob matcher index 到 tool-naming.ts；server-manager `metadataFor` 单点过滤（跨 server 候选防碰撞），search/list/describe/direct-tools/panel 全部自然继承。真机验证：excludeTools 滤掉 echo（13 连接→12 列出）。
+3. **search 输出契约对齐**：`Found N tools matching "..."` 文案、includeSchemas（Shape 渲染 vs 简行）、regex 长度上限 256、空 query 报错、server 过滤参数。
+4. **describe 输出对齐**：`Tool:/Server:` 头 + `Shape:`（ts-shape 失败回退 JSON）+ `No parameters defined.`。
+5. **instructions 改缓存优先**：discovery 操作不再自动拉起 server（未连接返回 connect 引导，与"只有 call/connect 触碰 live server"边界一致）。
+6. **list 改缓存优先**：不再无缓存就 connect；未连接返回引导 + lazy 缓存注记（上游 cachedNote 语义）。
+7. **settings.mcpTrace 更名 settings.trace**（上游字段名一致，减少迁移面）。
+
+保留的有意偏离（080 砍掉面，非遗漏）：OAuth/auth/install 字段、mcpScript、approveTools、resources、socket、bearer、caFile、requestHeadersCommand、strictDirectToolArguments、renderCall/renderResult、lifecycle keep-alive 变体、type local/remote 别名。
+
+验证：85/85 测试绿（+6：selector 三态、effectiveIdleMinutes 三分支）、tsc 干净、真机全链路（connect/list/search/describe/instructions + excludeTools + trace 落盘）。

@@ -8,11 +8,22 @@ import { ServerManager, setGlobalManager, getGlobalManager } from "./server-mana
 import { createProxyHandler, type ProxyArgs } from "./proxy.js";
 import { collectDirectTools, makeDirectToolExecute, jsonSchemaToParameters } from "./direct-tools.js";
 import { resolveCachedPrompts, createPromptCommand, type PromptRuntime } from "./prompts.js";
+import {
+  allPromptsText,
+  allToolsText,
+  footerStatusText,
+  mcpArgumentCompletions,
+  serverStatusLines,
+  writeProjectServerDisabledOverride,
+  writeProjectServerDirectToolsOverride,
+} from "./commands.js";
+import { openMcpPanel } from "./mcp-panel.js";
+import { isServerCacheValid, loadMetadataCache } from "./metadata-cache.js";
 
 const PROXY_TOOL_DESCRIPTION = `MCP gateway. Discover and call tools from configured MCP servers.
 - Status: {}
 - List server tools: { server: "name" }
-- Search tools: { search: "words", limit?: 12, offset?: 0, regex?: false }
+- Search tools: { search: "words", limit?: 12, offset?: 0, regex?: false, includeSchemas?: true }
 - Describe a tool: { describe: "server_tool" }
 - Call a tool: { tool: "server_tool", args: { ... } }
 - Server instructions: { instructions: "name" }
@@ -25,20 +36,25 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
 
   // Reuse a live manager across /reload when the merged config is identical;
   // otherwise spin up a fresh one (old one's idle timers die with its servers).
+  // A manager pinned by an older copy of this extension (e.g. a stale global
+  // npm install loading before the local one — both share the globalThis
+  // symbol) lacks newer methods and must be replaced wholesale.
   const prev = getGlobalManager();
+  const prevUsable = !!prev && typeof prev.onStateChange === "function" && prev.managerVersion === 3;
   const configChanged =
-    !prev ||
-    prev.servers.size !== Object.keys(config.mcpServers).length ||
-    [...prev.servers.values()].some(
+    !prevUsable ||
+    prev!.servers.size !== Object.keys(config.mcpServers).length ||
+    [...prev!.servers.values()].some(
       (s) => JSON.stringify(s.entry) !== JSON.stringify(config.mcpServers[s.name]),
     );
   const manager =
-    !configChanged && prev
-      ? prev
+    prevUsable && !configChanged
+      ? prev!
       : new ServerManager({
           config: config.mcpServers,
-          defaultIdleTimeoutSec: config.settings?.idleTimeout,
+          defaultIdleTimeoutMin: config.settings?.idleTimeout,
           globalPrefix: config.settings?.toolPrefix,
+          traceSettings: config.settings?.trace,
         });
   setGlobalManager(manager);
 
@@ -47,6 +63,19 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
     config,
     promptMetadataLive: new Set(),
   };
+
+  // ── footer status bar (mcpFooterStatus) ──
+  let footerCtx: ExtensionContext | null = null;
+  const applyFooter = (): void => {
+    if (!footerCtx?.ui) return;
+    const text = footerStatusText(manager, config.settings?.mcpFooterStatus ?? "full");
+    try {
+      footerCtx.ui.setStatus("mcp", text);
+    } catch {
+      // Status UI must never affect connection behavior.
+    }
+  };
+  manager.onStateChange(applyFooter);
 
   // ── the single proxy tool ──
   const proxy = createProxyHandler({
@@ -65,11 +94,12 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
       type: "object",
       properties: {
         server: { type: "string", description: "List tools of one server" },
-        search: { type: "string", description: "Ranked tool search (space-separated words)" },
-        limit: { type: "number", description: "Search page size (default 12)" },
-        offset: { type: "number", description: "Search page offset (default 0)" },
-        regex: { type: "boolean", description: "Treat search as a regex" },
-        describe: { type: "string", description: "Show one tool's description and parameters" },
+        search: { type: "string", description: "Search tools by name/description" },
+        limit: { type: "number", description: "Maximum search results to return (default: 12)" },
+        offset: { type: "number", description: "Search result offset (default: 0)" },
+        regex: { type: "boolean", description: "Treat search as regex (default: substring match)" },
+        includeSchemas: { type: "boolean", description: "Include parameter schemas in search results (default: true)" },
+        describe: { type: "string", description: "Tool name to describe (shows parameters)" },
         tool: { type: "string", description: "Call this tool (server-prefixed name)" },
         args: { type: "object", description: "Arguments for the tool call" },
         instructions: { type: "string", description: "Get a server's usage instructions" },
@@ -112,33 +142,147 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
     );
   }
 
-  // ── /mcp status command ──
+  // ── /mcp command: status / reconnect / tools / prompts / enable / disable ──
   pi.registerCommand("mcp", {
-    description: "MCP server status; reconnect with /mcp reconnect [server]",
+    description: "MCP servers: status, reconnect, tools, prompts, enable/disable",
+    getArgumentCompletions: (prefix: string) => mcpArgumentCompletions(prefix, config.mcpServers),
     handler: async (args: string, ctx: ExtensionContext) => {
-      const [sub, server] = args.trim().split(/\s+/);
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      const [sub, server] = parts;
+      const rest = parts.slice(1).join(" ");
+      const notify = (message: string, level: "info" | "error" = "info") => {
+        if (ctx.ui) ctx.ui.notify(message, level);
+      };
+
       if (sub === "reconnect") {
         if (server) {
-          const state = await manager.reconnect(server);
-          const message = `Reconnected ${server}: ${state.tools.length} tools.`;
-          if (ctx.ui) ctx.ui.notify(message, "info");
+          if (!config.mcpServers[server]) {
+            notify(`Server "${server}" not found in effective config`, "error");
+            return;
+          }
+          if (config.mcpServers[server].disabled === true) {
+            notify(`Server "${server}" is disabled (run /mcp enable ${server}, then /reload)`, "error");
+            return;
+          }
+          try {
+            const state = await manager.reconnect(server);
+            notify(`Reconnected ${server}: ${state.tools.length} tools.`);
+          } catch (error) {
+            notify(`Failed to reconnect ${server}: ${error instanceof Error ? error.message : String(error)}`, "error");
+          }
         } else {
-          await Promise.allSettled([...manager.servers.keys()].map((n) => manager.reconnect(n)));
-          if (ctx.ui) ctx.ui.notify("Reconnected all servers.", "info");
+          const results = await Promise.allSettled(
+            [...manager.servers.values()].filter((s) => s.entry.disabled !== true).map((s) => manager.reconnect(s.name)),
+          );
+          const failed = results.filter((r) => r.status === "rejected").length;
+          notify(failed > 0 ? `Reconnected all servers (${failed} failed).` : "Reconnected all servers.");
+        }
+        applyFooter();
+        return;
+      }
+
+      if (sub === "tools") {
+        notify(allToolsText(manager, config.mcpServers));
+        return;
+      }
+
+      if (sub === "prompts") {
+        notify(allPromptsText(manager, config.mcpServers));
+        return;
+      }
+
+      if (sub === "enable" || sub === "disable") {
+        const serverName = rest;
+        if (!serverName) {
+          notify(`Usage: /mcp ${sub} <server>`, "error");
+          return;
+        }
+        if (!config.mcpServers[serverName]) {
+          notify(`Server "${serverName}" not found in effective config`, "error");
+          return;
+        }
+        try {
+          const result = writeProjectServerDisabledOverride(process.cwd(), serverName, sub === "disable", config);
+          notify(
+            result.changed
+              ? `${sub === "disable" ? "Disabled" : "Enabled"} server "${serverName}" in ${result.path} — run /reload to apply`
+              : `Server "${serverName}" is already ${sub === "disable" ? "disabled" : "enabled"}`,
+          );
+        } catch (error) {
+          notify(error instanceof Error ? error.message : String(error), "error");
         }
         return;
       }
-      const lines = manager.status().map((s) => {
-        const state = s.connected ? "● connected" : s.lastError ? `✗ ${s.lastError}` : "○ cached/offline";
-        return `  ${s.name}: ${state} (${s.toolCount} tools)`;
-      });
-      const message = ["MCP servers:", ...(lines.length ? lines : ["  (none configured)"])].join("\n");
-      if (ctx.ui) ctx.ui.notify(message, "info");
+
+      // default (and explicit "status"): TUI gets the interactive panel;
+      // print/json modes get the five-state text.
+      if (ctx.hasUI && ctx.mode === "tui") {
+        await openMcpPanelForSession(pi, ctx);
+        return;
+      }
+      const message = ["MCP servers:", ...(serverStatusLines(manager).map((l) => `  ${l}`))].join("\n");
+      if (!manager.servers.size) notify("MCP servers: (none configured)");
+      else notify(message);
     },
   });
 
+  /** Open the management panel wired to this session's manager/config. */
+  async function openMcpPanelForSession(
+    _pi: ExtensionAPI,
+    ctx: ExtensionContext,
+  ): Promise<void> {
+    if (!ctx.ui || ctx.mode !== "tui") return;
+    await new Promise<void>((resolve) => {
+      void ctx.ui.custom(
+        (tui, theme, keybindings, done) => {
+          const panel = openMcpPanel(
+            { config, cache: loadMetadataCache() },
+            {
+              reconnect: async (name) => {
+                try {
+                  await manager.reconnect(name);
+                  applyFooter();
+                  return true;
+                } catch {
+                  return false;
+                }
+              },
+              getConnectionStatus: (name) => {
+                const row = manager.status().find((s) => s.name === name);
+                if (!row) return "idle";
+                if (row.disabled) return "disabled";
+                if (row.connected) return "connected";
+                if (row.failed) return "failed";
+                return "idle";
+              },
+              getFailureMessage: (name) => manager.status().find((s) => s.name === name)?.lastError ?? null,
+              refreshCacheAfterReconnect: (name) => {
+                const definition = config.mcpServers[name];
+                const entry = loadMetadataCache()?.servers[name];
+                return definition && entry && isServerCacheValid(entry, definition) ? entry : null;
+              },
+              applyDisabledChange: async (name, disabled) =>
+                writeProjectServerDisabledOverride(process.cwd(), name, disabled, config).changed,
+              applyDirectToolsChange: async (name, selection) =>
+                writeProjectServerDirectToolsOverride(process.cwd(), name, selection).changed,
+            },
+            tui,
+            () => {
+              done(undefined);
+              resolve();
+            },
+            { keybindings, theme },
+          );
+          return panel;
+        },
+        { overlay: true, overlayOptions: { anchor: "center", width: 92 } },
+      );
+    });
+  }
+
   // ── lifecycle ──
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (_event, ctx) => {
+    footerCtx = ctx;
     // Eager servers connect now; lazy servers stay cold until first call.
     // After connecting, prompt commands may need (re)registration — but Pi
     // command registration happens at load; a /mcp reconnect refreshes state.
@@ -147,14 +291,21 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
     for (const s of eager) {
       if (manager.isConnected(s.name)) promptRuntime.promptMetadataLive.add(s.name);
     }
+    applyFooter();
   });
 
-  pi.on("session_shutdown", async (event: { reason?: string }) => {
+  pi.on("session_shutdown", async (event: { reason?: string }, ctx: ExtensionContext) => {
     if (event?.reason === "reload") {
       // Live connections are pinned on globalThis and reused by the re-imported
       // module when config is unchanged — do not kill them here.
       return;
     }
+    try {
+      ctx.ui.setStatus("mcp", undefined);
+    } catch {
+      // best effort
+    }
+    footerCtx = null;
     await manager.disconnectAll();
   });
 }

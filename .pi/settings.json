@@ -9,6 +9,14 @@
     "../packages/pi-browser",
     "../packages/pi-mcp",
     {
+      "source": "npm:@bytetrue/pi-mcp",
+      "autoload": false,
+      "extensions": ["!**"],
+      "skills": ["!**"],
+      "prompts": ["!**"],
+      "themes": ["!**"]
+    },
+    {
       "source": "npm:@bytetrue/pi-web-search",
       "autoload": false,
       "extensions": ["!**"],

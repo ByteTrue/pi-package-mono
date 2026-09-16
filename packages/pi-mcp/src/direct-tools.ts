@@ -23,6 +23,7 @@ export function collectDirectTools(
   const specs: DirectToolSpec[] = [];
   const globalDirect = config.settings?.directTools === true;
   for (const [serverName, entry] of Object.entries(config.mcpServers)) {
+    if (entry.disabled === true) continue;
     const wants = entry.directTools !== undefined ? entry.directTools : globalDirect;
     if (!wants) continue;
     const meta = metadataFor(serverName);

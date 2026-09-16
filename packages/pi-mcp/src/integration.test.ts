@@ -137,7 +137,7 @@ describe("proxy over a live in-memory server", () => {
 
     // describe
     const desc = await proxy({ describe: "fixture_echo" });
-    expect((desc.content[0] as { text: string }).text).toContain("Parameters:");
+    expect((desc.content[0] as { text: string }).text).toContain("No parameters defined.");
     expect((desc.content[0] as { text: string }).text).toContain("text");
 
     // call
@@ -155,7 +155,7 @@ describe("proxy over a live in-memory server", () => {
 
     // instructions
     const instr = await proxy({ instructions: "fixture" });
-    expect((instr.content[0] as { text: string }).text).toBe("Use echo wisely.");
+    expect((instr.content[0] as { text: string }).text).toBe("fixture instructions:\n\nUse echo wisely.");
 
     // list
     const list = await proxy({ server: "fixture" });

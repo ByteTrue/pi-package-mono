@@ -60,7 +60,7 @@ describe("real stdio server regression", () => {
     }
 
     const desc = await proxy({ describe: "everything_echo" });
-    expect(desc.content[0]?.type === "text" && desc.content[0].text).toContain("Parameters:");
+    expect(desc.content[0]?.type === "text" && desc.content[0].text).toContain("Shape:");
 
     const call = await proxy({ tool: "everything_echo", args: { message: "regression hello" } });
     expect(call.content[0]?.type === "text" && call.content[0].text).toContain("regression hello");

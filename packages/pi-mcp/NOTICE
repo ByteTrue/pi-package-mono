@@ -13,9 +13,25 @@ by Nico Bailon, licensed under the MIT License:
 - `src/prompts.ts` — ported with `PromptRuntime` replacing upstream's
   `McpExtensionState`, and `manager.clientFor()` replacing
   `lazyConnect`/`manager.getPrompt`.
+- `src/mcp-panel.ts` — TUI management panel ported from upstream `mcp-panel.ts`
+  (OAuth/auth surfaces, import provenance, resources, uiVisibility, and the
+  "search" directTools mode removed; state source reduced to ServerManager +
+  the shared disk cache). Panel save effects stay behind callbacks so config
+  writes remain in the extension entry.
+- `src/panel-keys.ts`, `src/mcp-panel-theme.ts` — ported verbatim.
+- `src/mcp-trace.ts` — protocol tracing ported verbatim (settings type moved
+  to `types.ts`; socket transports cut).
+- `src/commands.ts` — /mcp status/tools/prompts text and the
+  `writeProjectServerDisabledOverride` semantics ported from upstream
+  `commands.ts`/`config.ts`; the extension entry wires them to `ctx.ui`.
+- `src/proxy.ts` — list/search/describe/instructions output contracts ported
+  from upstream `proxy-modes.ts` (cache-first discovery, Found-N search text
+  with includeSchemas, Tool/Server describe header, truncateAtWord,
+  regex length cap).
 - `src/ts-shape.ts` — ported verbatim.
 - `src/tool-naming.ts` — naming/prefix/pattern helpers ported verbatim from
-  upstream `types.ts`.
+  upstream `types.ts`, including the include/exclude selector functions
+  (`isToolAllowed` family, glob matcher index).
 - `src/metadata-cache.ts` — cache load/save/hash/validation and metadata
   reconstruction ported from upstream; UI-resource and selector-index surfaces
   removed.

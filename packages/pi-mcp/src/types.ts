@@ -21,7 +21,7 @@ export interface ServerEntry {
   disabled?: boolean;
   /** lifecycle: "lazy" (default) connects on first tool call; "eager" connects at load. */
   lifecycle?: "lazy" | "eager";
-  /** Idle disconnect in seconds. Default 600; 0 disables. */
+  /** Idle disconnect in minutes. Overrides settings.idleTimeout. 0 disables. */
   idleTimeout?: number;
   /** Register tools from this server as direct Pi tools: true = all, or a list of original tool names. */
   directTools?: boolean | string[];
@@ -32,6 +32,8 @@ export interface ServerEntry {
   searchKeywords?: Record<string, string[]>;
   /** Per-server tool-name prefix mode. */
   toolPrefix?: ToolPrefix;
+  /** Opt in to protocol tracing for this server (overrides settings.mcpTrace.enabled). */
+  trace?: boolean;
 }
 
 // Output guard tuning (settings.outputGuard object form) — upstream-compatible.
@@ -44,12 +46,28 @@ export interface McpOutputGuardSettings {
   detailsMaxBytes?: number;
 }
 
+/** Protocol trace settings (upstream-compatible shape; tracing is opt-in). */
+export interface McpTraceSettings {
+  /** Enable tracing for all servers unless a server sets trace: false. */
+  enabled?: boolean;
+  /** JSONL destination. Relative paths resolve from the session cwd. */
+  file?: string;
+  /** Maximum bytes retained in the per-session JSONL file. */
+  maxBytes?: number;
+  /** Maximum events retained in the per-session JSONL file. */
+  maxEvents?: number;
+}
+
 export interface McpSettings {
-  idleTimeout?: number; // seconds, default 600, 0 to disable
+  idleTimeout?: number; // minutes, default 10, 0 to disable (upstream-compatible units)
   outputGuard?: McpOutputGuardSettings | boolean;
   toolPrefix?: ToolPrefix;
   /** Global default for direct-tools registration (per-server directTools overrides). */
   directTools?: boolean;
+  /** Footer status verbosity: full details, compact connected/enabled count, or none. Default full. */
+  mcpFooterStatus?: "full" | "compact" | "off";
+  /** Opt-in protocol tracing (JSONL). Per-server `trace: true` also enables. */
+  trace?: McpTraceSettings;
 }
 
 export interface McpConfig {

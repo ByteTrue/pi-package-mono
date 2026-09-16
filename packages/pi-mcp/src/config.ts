@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { McpConfig, ServerEntry } from "./types.js";
+import type { McpConfig, McpSettings, McpTraceSettings, ServerEntry } from "./types.js";
 
 function genericGlobalConfigPath(): string {
   return join(homedir(), ".config", "mcp", "mcp.json");
@@ -78,6 +78,10 @@ function normalizeServerEntry(name: string, raw: unknown): ServerEntry | null {
   const command = str(raw.command);
   const url = str(raw.url);
   if (!command && !url) {
+    // A bare `{"disabled": true|false}` override is legal: it toggles an
+    // inherited same-name server without restating its transport.
+    if (raw.disabled === true) return { disabled: true };
+    if (raw.disabled === false) return { disabled: false };
     console.warn(`[pi-mcp] server "${name}" has neither command nor url; skipped`);
     return null;
   }
@@ -133,6 +137,7 @@ function normalizeServerEntry(name: string, raw: unknown): ServerEntry | null {
     }
     if (Object.keys(keywords).length > 0) entry.searchKeywords = keywords;
   }
+  if (raw.trace === true) entry.trace = true;
   return entry;
 }
 
@@ -164,12 +169,23 @@ function readValidatedConfig(path: string): McpConfig | null {
       settings.toolPrefix = s.toolPrefix;
     }
     if (s.directTools === true) settings.directTools = true;
+    if (s.mcpFooterStatus === "full" || s.mcpFooterStatus === "compact" || s.mcpFooterStatus === "off") {
+      settings.mcpFooterStatus = s.mcpFooterStatus;
+    }
+    if (isRecord(s.trace)) {
+      const trace: NonNullable<McpSettings["trace"]> = {};
+      if (s.trace.enabled === true) trace.enabled = true;
+      if (typeof s.trace.file === "string" && s.trace.file.trim()) trace.file = s.trace.file.trim();
+      if (typeof s.trace.maxBytes === "number" && s.trace.maxBytes > 0) trace.maxBytes = s.trace.maxBytes;
+      if (typeof s.trace.maxEvents === "number" && s.trace.maxEvents > 0) trace.maxEvents = s.trace.maxEvents;
+      if (Object.keys(trace).length > 0) settings.trace = trace;
+    }
     if (Object.keys(settings).length > 0) config.settings = settings;
   }
   return config;
 }
 
-function stripJsonComments(text: string): string {
+export function stripJsonComments(text: string): string {
   let out = "";
   let inString = false;
   let escaped = false;
@@ -205,11 +221,30 @@ function stripJsonComments(text: string): string {
   return out;
 }
 
-/** Merge with later sources overriding same-name servers. A `disabled` entry
- * from a higher layer wins the merge and is then filtered from the final set,
- * so it also disables a same-name entry inherited from a lower layer. */
+/** Merge with later sources overriding same-name servers, per field
+ * (upstream mergeServerMaps semantics): a higher layer may ship a bare
+ * `{"disabled": true}` marker to disable an inherited server, or
+ * `{"disabled": false}` to re-enable one. When a higher layer repoints a
+ * stdio server at a command or an HTTP server at a new url, credential
+ * material bound to the previous target (headers) is NOT inherited. */
 export function mergeConfigs(base: McpConfig, overlay: McpConfig): McpConfig {
-  const mcpServers = { ...base.mcpServers, ...overlay.mcpServers };
+  const mcpServers: Record<string, ServerEntry> = { ...base.mcpServers };
+  for (const [name, next] of Object.entries(overlay.mcpServers)) {
+    const prev = mcpServers[name];
+    if (prev) {
+      const merged: ServerEntry = { ...prev, ...next };
+      // url-bound credential guard: a new target must not inherit old headers.
+      if (next.command !== undefined && prev.url !== undefined) {
+        delete merged.url;
+        delete merged.headers;
+      } else if (next.url !== undefined && next.url !== prev.url) {
+        delete merged.headers;
+      }
+      mcpServers[name] = merged;
+    } else {
+      mcpServers[name] = next;
+    }
+  }
   return { mcpServers, settings: { ...base.settings, ...overlay.settings } };
 }
 
@@ -220,11 +255,9 @@ export function loadMcpConfig(cwd = process.cwd()): McpConfig {
     if (!loaded) continue;
     config = mergeConfigs(config, loaded);
   }
-  // Drop servers whose final merged entry is disabled.
-  const mcpServers = Object.fromEntries(
-    Object.entries(config.mcpServers).filter(([, entry]) => !entry.disabled),
-  );
-  return { mcpServers, settings: config.settings };
+  // Disabled servers stay visible in the merged config (marked disabled) so
+  // /mcp can show ⊘ disabled and re-enable them; connect paths skip them.
+  return config;
 }
 
 export { readValidatedConfig };

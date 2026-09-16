@@ -86,7 +86,7 @@ describe("loadMcpConfig layering", () => {
     });
   });
 
-  it("drops disabled servers from the final set", () => {
+  it("keeps disabled servers marked, not filtered", () => {
     withTempHome((home) => {
       const proj = join(home, "proj");
       mkdirSync(proj, { recursive: true });
@@ -95,7 +95,61 @@ describe("loadMcpConfig layering", () => {
       });
       writeConfig(proj, ".mcp.json", { mcpServers: { drop: { command: "d", disabled: true } } });
       const config = loadMcpConfig(proj);
-      expect(Object.keys(config.mcpServers)).toEqual(["keep"]);
+      expect(Object.keys(config.mcpServers).sort()).toEqual(["drop", "keep"]);
+      expect(config.mcpServers["drop"]?.disabled).toBe(true);
+      expect(config.mcpServers["keep"]?.disabled).toBeUndefined();
+    });
+  });
+
+  it("bare disabled marker from a higher layer disables an inherited server", () => {
+    withTempHome((home) => {
+      const proj = join(home, "proj");
+      mkdirSync(proj, { recursive: true });
+      writeConfig(home, ".config/mcp/mcp.json", { mcpServers: { svc: { command: "k" } } });
+      writeConfig(proj, ".pi/mcp.json", { mcpServers: { svc: { disabled: true } } });
+      const config = loadMcpConfig(proj);
+      expect(config.mcpServers["svc"]?.disabled).toBe(true);
+      expect(config.mcpServers["svc"]?.command).toBe("k");
+    });
+  });
+
+  it("disabled: false in a higher layer re-enables an inherited server", () => {
+    withTempHome((home) => {
+      const proj = join(home, "proj");
+      mkdirSync(proj, { recursive: true });
+      writeConfig(home, ".config/mcp/mcp.json", { mcpServers: { svc: { command: "k", disabled: true } } });
+      writeConfig(proj, ".pi/mcp.json", { mcpServers: { svc: { disabled: false } } });
+      const config = loadMcpConfig(proj);
+      expect(config.mcpServers["svc"]?.disabled).toBe(false);
+      expect(config.mcpServers["svc"]?.command).toBe("k");
+    });
+  });
+
+  it("headers are not inherited when a higher layer repoints a server at a new url", () => {
+    withTempHome((home) => {
+      const proj = join(home, "proj");
+      mkdirSync(proj, { recursive: true });
+      writeConfig(home, ".config/mcp/mcp.json", {
+        mcpServers: { api: { url: "https://old.example.com/mcp", headers: { Authorization: "Bearer old" } } },
+      });
+      writeConfig(proj, ".mcp.json", { mcpServers: { api: { url: "https://new.example.com/mcp" } } });
+      const config = loadMcpConfig(proj);
+      expect(config.mcpServers["api"]?.url).toBe("https://new.example.com/mcp");
+      expect(config.mcpServers["api"]?.headers).toBeUndefined();
+    });
+  });
+
+  it("parses mcpFooterStatus and mcpTrace settings", () => {
+    withTempHome((home) => {
+      const proj = join(home, "proj");
+      mkdirSync(proj, { recursive: true });
+      writeConfig(proj, ".mcp.json", {
+        mcpServers: {},
+        settings: { mcpFooterStatus: "compact", trace: { enabled: true, file: "trace.jsonl", maxBytes: 1024 } },
+      });
+      const config = loadMcpConfig(proj);
+      expect(config.settings?.mcpFooterStatus).toBe("compact");
+      expect(config.settings?.trace).toEqual({ enabled: true, file: "trace.jsonl", maxBytes: 1024 });
     });
   });
 
