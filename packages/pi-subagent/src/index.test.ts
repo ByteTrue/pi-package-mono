@@ -156,7 +156,7 @@ describe("pi-subagent unit tests", () => {
     expect(resumeSessionArgs).toContain("sub_123");
   });
 
-  it("resolves built-in agent presets when no disk file exists", () => {
+  it("resolves built-in roles from the package's agent documents", () => {
     const scout = findAgentDefinition(process.cwd(), "scout");
     expect(scout.found).toBe(true);
     expect(scout.config.tools).toEqual(["read", "grep", "find"]);
@@ -173,6 +173,30 @@ describe("pi-subagent unit tests", () => {
     expect(reviewer.found).toBe(true);
     expect(reviewer.config.tools).toEqual(["read", "grep", "find", "bash"]);
     expect(reviewer.config.thinking).toBe("max");
+  });
+
+  it("lets a user agent document shadow a same-named built-in role", () => {
+    const dir = join(tmpdir(), `pi-subagent-agents-${Date.now()}`);
+    mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
+    writeFileSync(
+      join(dir, ".pi", "agents", "scout.md"),
+      "---\nmodel: cheap/model\nthinking: low\ntools: read, grep\n---\n\nCustom scout prompt.\n",
+    );
+    try {
+      const scout = findAgentDefinition(dir, "scout");
+      expect(scout.found).toBe(true);
+      expect(scout.config.model).toBe("cheap/model");
+      expect(scout.config.thinking).toBe("low");
+      expect(scout.config.tools).toEqual(["read", "grep"]);
+      expect(scout.config.systemPrompt).toBe("Custom scout prompt.");
+
+      // Sibling built-ins stay untouched.
+      const reviewer = findAgentDefinition(dir, "reviewer");
+      expect(reviewer.config.thinking).toBe("max");
+      expect(reviewer.config.tools).toEqual(["read", "grep", "find", "bash"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("inherits the parent session's thinking level, off included", () => {

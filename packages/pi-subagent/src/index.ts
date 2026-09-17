@@ -7,10 +7,10 @@ import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
 import { loadSubagentSettings, type SubagentSettings } from "./settings.js";
 import { runSubagentCommand } from "./command.js";
-import { BUILTIN_AGENTS, type AgentConfig } from "./builtin-agents.js";
+import { BUILTIN_AGENTS_DIR, listBuiltinAgentNames, type AgentConfig } from "./builtin-agents.js";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-export { BUILTIN_AGENTS, type AgentConfig };
+export { BUILTIN_AGENTS_DIR, listBuiltinAgentNames, type AgentConfig };
 
 // ── Types ──────────────────────────────────────────────────────────────
 export type JsonObject = Record<string, unknown>;
@@ -704,17 +704,12 @@ export function findAgentDefinition(cwd: string, agentName?: string): { config: 
     join(cwd, ".pi", "agents", baseName),
     join(agentHome, "agents", baseName),
     join(homedir(), ".pi", "agents", baseName),
+    join(BUILTIN_AGENTS_DIR, baseName),
   ];
   for (const p of candidates) {
     if (exists(p)) {
       return { config: parseAgentFile(p), found: true };
     }
-  }
-
-  // Check built-in agent presets (scout, researcher, reviewer)
-  const cleanKey = sanitized.replace(/\.md$/, "");
-  if (cleanKey in BUILTIN_AGENTS) {
-    return { config: BUILTIN_AGENTS[cleanKey]!, found: true };
   }
 
   return { config: {}, found: false };

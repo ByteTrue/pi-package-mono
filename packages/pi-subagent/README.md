@@ -7,7 +7,7 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 ## Features
 
 - **⚡️ Zero Bloat & Minimal Context**: Single lightweight tool schema (~150 tokens) replaces heavy multi-thousand-token multi-agent frameworks.
-- **🎭 Built-in Golden Roles**:
+- **🎭 Built-in Golden Roles**: `scout`, `researcher`, and `reviewer` ship as ordinary agent documents in `agents/` — copy one into `.pi/agents/` to customise it.
   - `scout`: Fast read-only codebase reconnaissance (`read, grep, find`, lowest thinking level).
   - `researcher`: Autonomous web & technical documentation research (`read, grep, find, web_search, web_fetch`, inherits the parent session's thinking level).
   - `reviewer`: Disciplined adversarial code review and test validation (`read, grep, find, bash`, highest thinking level).
@@ -93,19 +93,35 @@ Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, s
 ```
 
 
+#### Built-in roles
+
+The built-in roles — `scout`, `researcher`, `reviewer` — are ordinary agent documents shipped in the package's `agents/` directory. They are parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy one out to customise it:
+
+```bash
+mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/scout.md .pi/agents/scout.md
+```
+
+```markdown
+---
+model: your-provider/your-model
+---
+```
+
+A document replaces the built-in entirely, so keep the fields you still want — `tools` in particular. Omitting `tools` leaves the child on pi's default set (`read, bash, edit, write`).
+
 #### Model and Thinking Resolution
 
-The Agent-facing tool deliberately does not expose model or thinking overrides. These execution-policy choices remain under user control through `/subagent`, settings, and agent templates.
+The Agent-facing tool deliberately does not expose model or thinking overrides. These execution-policy choices remain under user control through `/subagent`, settings, and agent documents.
 
 The model priority chain is:
 
 1. `subagent.agents[role].model` — per-role binding (settings)
-2. `.pi/agents/<name>.md` frontmatter `model`
+2. An agent document — `.pi/agents/<name>.md`, `<agentDir>/agents/<name>.md`, or the packaged built-in
 3. `subagent.defaultModel` — explicit subagent default (settings)
 4. Parent session's current fully qualified provider/model (inherited)
 5. The child `pi` process's own default
 
-Thinking follows the same user-controlled chain: role settings, agent-template frontmatter, subagent default, then the parent session. scout defaults to the lowest available thinking level and reviewer to the highest; researcher has no built-in level, so it inherits the parent session.
+Thinking follows the same user-controlled chain: role settings, agent document, subagent default, then the parent session. scout asks for the lowest available thinking level and reviewer the highest; researcher sets none, so it inherits the parent session.
 
 Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
 

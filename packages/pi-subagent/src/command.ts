@@ -163,7 +163,7 @@ function showConfig(ctx: ExtensionCommandContext): void {
   }
 
   lines.push("");
-  lines.push("Discovered Agent Templates (built-in + .pi/agents/*.md):");
+  lines.push("Discovered Agent Documents (.pi/agents/*.md + packaged built-ins):");
   if (discoveredRoles.length === 0) {
     lines.push("  (none found)");
   } else {

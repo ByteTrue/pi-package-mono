@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync,
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { BUILTIN_AGENTS } from "./builtin-agents.js";
+import { listBuiltinAgentNames } from "./builtin-agents.js";
 
 export const SETTINGS_KEY = "subagent";
 export const COMMAND_NAME = "subagent";
@@ -191,8 +191,8 @@ export function listDiscoveredAgentNames(cwd: string): string[] {
   scanDir(join(process.env.PI_CODING_AGENT_DIR ?? join(home, ".pi", "agent"), "agents"));
   scanDir(join(home, ".pi", "agents"));
 
-  // Include built-in roles (scout, researcher, reviewer)
-  for (const builtIn of Object.keys(BUILTIN_AGENTS)) {
+  // Include built-in roles, which ship as agent documents in the package.
+  for (const builtIn of listBuiltinAgentNames()) {
     names.add(builtIn);
   }
 
