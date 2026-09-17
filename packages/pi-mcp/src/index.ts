@@ -15,10 +15,8 @@ import {
   mcpArgumentCompletions,
   serverStatusLines,
   writeProjectServerDisabledOverride,
-  writeProjectServerDirectToolsOverride,
 } from "./commands.js";
-import { openMcpPanel } from "./mcp-panel.js";
-import { isServerCacheValid, loadMetadataCache } from "./metadata-cache.js";
+import { runMcpMenu } from "./menu.js";
 
 const PROXY_TOOL_DESCRIPTION = `MCP gateway. Discover and call tools from configured MCP servers.
 - Status: {}
@@ -66,7 +64,6 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
 
   // ── footer status bar (mcpFooterStatus) ──
   let footerCtx: ExtensionContext | null = null;
-  let panelOpen = false;
   const applyFooter = (): void => {
     if (!footerCtx?.ui) return;
     const text = footerStatusText(manager, config.settings?.mcpFooterStatus ?? "full");
@@ -215,10 +212,10 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      // default (and explicit "status"): TUI gets the interactive panel;
+      // default (and explicit "status"): TUI gets the native interactive menu;
       // print/json modes get the five-state text.
       if (ctx.hasUI && ctx.mode === "tui") {
-        await openMcpPanelForSession(pi, ctx);
+        await runMcpMenu(manager, config, ctx);
         return;
       }
       const message = ["MCP servers:", ...(serverStatusLines(manager).map((l) => `  ${l}`))].join("\n");
@@ -226,70 +223,6 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
       else notify(message);
     },
   });
-
-  /** Open the management panel wired to this session's manager/config.
-   * Mounted as a centered overlay exactly like upstream pi-mcp-adapter
-   * (width 82): a focused overlay owns all input (app-level shortcuts like
-   * ctrl+r reach the panel), and with the upstream view structure (no dynamic
-   * height jumps — reconnect progress lives in row status labels, notice slot
-   * fixed) the overlay diff stays stable. */
-  async function openMcpPanelForSession(
-    _pi: ExtensionAPI,
-    ctx: ExtensionContext,
-  ): Promise<void> {
-    if (!ctx.ui || ctx.mode !== "tui" || panelOpen) return;
-    panelOpen = true;
-    try {
-      await new Promise<void>((resolve) => {
-        void ctx.ui.custom(
-          (tui, theme, keybindings, done) => {
-            const panel = openMcpPanel(
-              { config, cache: loadMetadataCache() },
-              {
-                reconnect: async (name) => {
-                  try {
-                    await manager.reconnect(name);
-                    applyFooter();
-                    return true;
-                  } catch {
-                    return false;
-                  }
-                },
-                getConnectionStatus: (name) => {
-                  const row = manager.status().find((s) => s.name === name);
-                  if (!row) return "idle";
-                  if (row.disabled) return "disabled";
-                  if (row.connected) return "connected";
-                  if (row.failed) return "failed";
-                  return "idle";
-                },
-                getFailureMessage: (name) => manager.status().find((s) => s.name === name)?.lastError ?? null,
-                refreshCacheAfterReconnect: (name) => {
-                  const definition = config.mcpServers[name];
-                  const entry = loadMetadataCache()?.servers[name];
-                  return definition && entry && isServerCacheValid(entry, definition) ? entry : null;
-                },
-                applyDisabledChange: async (name, disabled) =>
-                  writeProjectServerDisabledOverride(process.cwd(), name, disabled, config).changed,
-                applyDirectToolsChange: async (name, selection) =>
-                  writeProjectServerDirectToolsOverride(process.cwd(), name, selection).changed,
-              },
-              tui,
-              () => {
-                done(undefined);
-                resolve();
-              },
-              { keybindings, theme },
-            );
-            return panel;
-          },
-          { overlay: true, overlayOptions: { anchor: "center", width: 82 } },
-        );
-      });
-    } finally {
-      panelOpen = false;
-    }
-  }
 
   // ── lifecycle ──
   pi.on("session_start", async (_event, ctx) => {

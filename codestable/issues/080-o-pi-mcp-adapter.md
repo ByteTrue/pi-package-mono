@@ -240,8 +240,16 @@ packages/pi-mcp/
 
 验证：86/86 绿；真机 mono 单帧面板，server 行各一次、零重复。
 
-### 追加修复 5（2026-09-17，0.4.3）：回退全屏挂载，恢复上游 overlay
+### 2026-09-17 重构（用户拍板彻底放弃悬浮 TUI，自研原生 Pi 对话框菜单，0.5.0）
 
-0.4.2 全屏挂载两个问题：① 用户真机仍撕裂（notify 行在面板打开期间插入使 editor 区位移）；② 全屏下 app 级全局快捷键（ctrl+r = app.session.rename）先于面板拦截输入——0.4.0 overlay 时代 ctrl+r 能到面板（focused overlay 独占输入），全屏是输入路由回归。
-
-恢复上游挂载：`{ overlay: true, overlayOptions: { anchor: "center", width: 82 } }`。配合 0.4.2 的干净 view（无动态 notice 行、固定 notice 槽、重连进度走行状态标），渲染结构与上游逐行一致。已知验证局限：expect 伪终端无法向 overlay 送键（真终端可以），键路径靠单测 + 用户真机。
+**彻底终结悬浮 TUI 残影与撕裂**：
+- 删除从上游移植的 `mcp-panel.ts`、`panel-keys.ts`、`mcp-panel-theme.ts`（约 810 行高度脆弱的自定义终端绘制代码，不再依赖 `@earendil-works/pi-tui`）。
+- 采用与 `pi-browser`、`pi-background-terminal`、`pi-image-gen`、`pi-subagent` 一致的 Pi 原生 Dialogs（`ctx.ui.select`、`ctx.ui.editor`、`ctx.ui.input`、`ctx.ui.notify`）编写自研纯净的 `src/menu.ts`。
+- **功能完全保留且交互体验显著更稳**：
+  1. `/mcp` 打开原生选择菜单：清晰展示每个 server 状态（`✓` 已连、`○` 未连/缓存、`✗` 失败、`⊘` 禁用、tool 数、direct 数）；
+  2. 点击 server 选项进入专属操作：重连/连接、启用/禁用（持久化写入 `.pi/mcp.json`）、配置 direct tools（交互式开关列表 `[●]`/`[○]`、全选/全消、保存写 override）、浏览该 server 工具与参数 Schema（调用 `ctx.ui.editor` 独立视窗干净展示）；
+  3. 主菜单一键「🔄 重连所有启用 server」（带进度与汇总 notify）；
+  4. 浏览全部工具（editor 查看）、浏览全部 Prompts（editor 查看）、关键词检索工具；
+  5. 命令行子命令（`/mcp status`、`/mcp reconnect`、`/mcp tools`、`/mcp prompts`、`/mcp enable/disable`）及常驻底部状态栏（`ctx.ui.setStatus`）完全不受影响。
+- **效果**：零外部 TUI 绘制依赖、零悬浮层 diff 错位、零残影、零重复行，底屏输出或通知再也不会破坏菜单。
+- **验证**：85/85 单测绿；真机 expect 模拟真实 pi 启动打开 `/mcp` 菜单、执行全量重连全部顺利通过。

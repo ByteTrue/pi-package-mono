@@ -78,9 +78,7 @@ The extension registers one `mcp` tool (~200 tokens of schema):
 | `/mcp disable <server>` | Persist a `disabled: true` project override (`.pi/mcp.json`), then `/reload` |
 | `/mcp enable <server>` | Remove the marker (or write `disabled: false` when a lower layer disables), then `/reload` |
 
-(Panel `ctrl+r` matches: reconnects all enabled servers.)
-
-**Management panel**: `/mcp` with no arguments in the TUI opens a fullscreen panel (fuzzy-filterable) listing servers and their cached tools. Mounted fullscreen rather than as a floating overlay on purpose: with overlays, base-screen mutations while the panel is open (startup install lines, spinners) make pi-tui's overlay diff misaddress rewritten rows and leave ghost frames; fullscreen mounting removes the base from the render entirely while open — `space` toggles a tool's `directTools` registration, `ctrl+d` toggles a server's disabled flag, `ctrl+r` reconnects **all** enabled servers (with live status per server), `ctrl+y` copies the selected server's last failure, `ctrl+s` (or keep-on-exit) writes the selections to `.pi/mcp.json` and prompts for `/reload`.
+**Interactive menu**: `/mcp` with no arguments in the TUI opens a native Pi dialog menu (`select`, `editor`, `input`, `notify`) — browse servers with live status and direct tool counts, toggle direct tools per server with `[●]`/`[○]`, enable/disable servers, reconnect individual or all servers, search tools, and browse prompts. Zero fragile custom terminal overlay diffing. All changes persist to `.pi/mcp.json` overrides.
 
 **Footer status bar**: the TUI footer shows a live `mcp` slot, e.g. `2 servers enabled (1 connected) (1 disabled)`; `"compact"` renders `mcp:1/2`. Configure with `settings.mcpFooterStatus: "full" (default) | "compact" | "off"`. Disabled servers stay visible in status instead of vanishing from config, and are skipped by connect/search/direct-tools.
 
