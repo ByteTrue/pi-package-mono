@@ -11,14 +11,15 @@ description: >
 
 # Pi Vendor
 
-Manage Pi's `models.json` with normal read/edit tools. The bundled script has exactly two AI-facing queries:
+Manage Pi's `models.json` with normal read/edit tools. The bundled script has exactly three AI-facing read-only queries:
 
 ```sh
 node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<keyword>' ['<limit>']
 node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>'
+node '<absolute-skill-directory>/scripts/vendor.mjs' drift '<provider-key>' ['<official-provider>,...']
 ```
 
-Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value (single quotes), so user text reaches the script literally. There is no AI-facing CRUD, compare, or lint command. `/vendor` remains the human cold-start TUI.
+`drift` compares a provider's configured models against the active Pi installation's built-in official catalog (the same templates `catalog` serves) and reports per-field differences plus a machine-generated drift table; a model counts as up to date when it still matches at least one current official template exactly. Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value (single quotes), so user text reaches the script literally. There is no AI-facing CRUD or lint command. `/vendor` remains the human cold-start TUI.
 
 `set-key` is a separate user-terminal-only helper because it prompts for a secret:
 
@@ -27,6 +28,8 @@ node '<absolute-skill-directory>/scripts/vendor.mjs' set-key '<provider-key>'
 ```
 
 Hand this command to the user to run in their own terminal and wait for them to report completion; the secret stays out of chat entirely.
+
+When a bundled query fails (for example `catalog` printing `Official catalog is unavailable`), make at most one documented recovery attempt — locate the active Pi install prefix and retry once with `PI_VENDOR_PI_ROOT` — then report to the user in one short message what failed and what you tried, and wait for their direction. Diagnose from command output and package paths; `models.json` contents and credential values stay out of the transcript.
 
 ## Boundaries
 
@@ -38,7 +41,8 @@ Hand this command to the user to run in their own terminal and wait for them to 
 - Every pricing, capability, context/token limit, compat field, model ID, and routing value comes from the selected catalog template, `discover` output, or the user; when none of them supplies it, ask.
 - The user decides ambiguous model identity, official source, target provider, overwrite conflicts, and destructive operations.
 - Edit only `models.json`, and in it only the requested provider/model. `auth.json`, OAuth state, Pi settings, and unrelated providers change only on an explicit request.
-- For an exact synchronization, the machine-generated plan JSON is the only mutation authority: show it verbatim and refer to its arrays by name (`add`, `remove`, `after`) rather than retyping IDs.
+- For an exact synchronization, the machine-generated plan JSON is the only mutation authority: show it verbatim and refer to its arrays by name (`add`, `remove`, `after`) rather than retyping IDs. Machine-generated tables are relayed as-is, and user-facing references name each model by its exact ID.
+- `drift` output is evidence for the user to confirm; its updates land only after the user approves them field by field.
 
 ## Exact synchronization templates
 
@@ -46,7 +50,7 @@ These are the only templates for exact synchronization. Keep `sync_dir`, `discov
 
 ### Generate the plan
 
-Run this once after `discover` has returned only `status: "ok"` routes. It writes and prints the one immutable plan JSON; it reads only `providers.<key>.models` internally. Exact synchronization covers `models` only; `modelOverrides` go through workflow 4.
+Run this once after `discover` has returned only `status: "ok"` routes. It writes the immutable plan file and prints the plan JSON followed by a machine-generated summary table; it reads only `providers.<key>.models` internally. Exact synchronization covers `models` only; `modelOverrides` go through workflow 4.
 
 ```sh
 sync_dir="$(mktemp -d "${TMPDIR:-/tmp}/pi-vendor-sync.XXXXXX")"
@@ -72,11 +76,20 @@ const beforeSet = new Set(before);
 const afterSet = new Set(after);
 const plan = { before, add: after.filter((id) => !beforeSet.has(id)), remove: before.filter((id) => !afterSet.has(id)), after };
 writeFileSync(process.env.PI_VENDOR_SYNC_PLAN_FILE, `${JSON.stringify(plan)}\n`, { mode: 0o600 });
-process.stdout.write(JSON.stringify(plan));
+const kept = plan.before.filter((id) => !plan.remove.includes(id));
+let summary = "#### Sync plan summary (machine-generated; the JSON above is the only mutation authority)\n\n";
+if (plan.add.length + plan.remove.length === 0) summary += "No additions or removals: the configured set already equals the verified upstream union.\n";
+else {
+  summary += "| action | model id |\n|---|---|\n";
+  for (const id of plan.add) summary += `| add | ${id} |\n`;
+  for (const id of plan.remove) summary += `| remove | ${id} |\n`;
+}
+summary += `\nkept ${kept.length} of ${plan.before.length} configured models unchanged${kept.length ? `: ${kept.join(", ")}` : ""}\n`;
+process.stdout.write(`${JSON.stringify(plan)}\n\n${summary}`);
 NODE
 ```
 
-Show that exact JSON output verbatim, resolve catalog source for every `add` ID, and obtain confirmation for its exact `remove` and `after` arrays. Every model ID the user sees comes from that JSON block, quoted as-is.
+Show that printed output verbatim: the one-line plan JSON is the mutation authority and the summary table below it is for the user. Resolve catalog source for every `add` ID, present that resolution as a table (model ID, official provider, key metadata, status), and obtain confirmation for the exact `remove` and `after` arrays. Every model ID the user sees comes from that machine output, quoted as-is; prose refers to models by their exact ID.
 
 ### Assert before and after
 
@@ -160,14 +173,16 @@ Each model ID appears once per provider's `models` array; when the ID already ex
 2. Report each returned route by `routeId`, API type, status, and model IDs. The command already deduplicates effective provider/model routes across the four supported API adapters, so this one call is the whole discovery.
 3. A returned ID is positive evidence that route listed it. An error means that route is unverified. Absence alone is not proof that a configured model is unsupported.
 4. For a plain listing, stop here and report the routes and IDs as returned. Configured/unconfigured/unsupported set comparisons belong to exact synchronization only.
-5. Only when the user explicitly requests an exact synchronization and every intended route has `status: "ok"`, use **Generate the plan** from the exact synchronization templates. It emits the sorted `{"before":[],"add":[],"remove":[],"after":[]}` JSON without exposing configuration or credentials.
-6. Treat that generated JSON as immutable. Show it verbatim, run `catalog` for every ID in `add`, resolve every official source, and ask the user to confirm the exact `remove` and `after` arrays. Keep the whole batch read-only until every source and destructive choice is resolved.
-7. If any intended route failed, report the unverified route and offer only additions with positive evidence (workflow 1); removals and exact synchronization wait until every intended route is `ok`.
-8. Immediately before editing, run **Assert before and after**. If it returns `plan_stale`, stop, regenerate the plan, show it verbatim, and obtain fresh confirmation — the old plan is discarded.
-9. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; the gate is the assertion, beyond Pi merely loading the file.
-10. Run the mandatory final verification, then **Assert the final discovery union**. Exact sync is successful only when all three assertion templates pass.
-11. Run the mandatory Model ordering check. If any order deviates, prompt the user before concluding.
-12. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
+5. Only when the user explicitly requests an exact synchronization and every intended route has `status: "ok"`, use **Generate the plan** from the exact synchronization templates. It emits the sorted `{"before":[],"add":[],"remove":[],"after":[]}` JSON plus a machine-generated summary table without exposing configuration or credentials.
+6. Treat that generated JSON as immutable. Show the printed plan JSON and its summary table verbatim, run `catalog` for every ID in `add`, and resolve every official source. Present the resolution as a table (model ID, official provider, key metadata, status), naming each model by its exact ID. Ask the user to confirm the exact `remove` and `after` arrays. Keep the whole batch read-only until every source and destructive choice is resolved.
+7. **Kept-model drift check.** For the models that stay configured (present in both `before` and `after`), run `node '<absolute-skill-directory>/scripts/vendor.mjs' drift '<provider-key>'` and relay its drift table verbatim. A drifted model is a question: its configured copy no longer matches any current official template, and the user decides whether that is intended or stale. Combine this with the plan confirmation into a single confirmation round when both are ready; the update waits for the user's per-field approval.
+8. If any intended route failed, report the unverified route and offer only additions with positive evidence (workflow 1); removals and exact synchronization wait until every intended route is `ok`.
+9. Immediately before editing, run **Assert before and after**. If it returns `plan_stale`, stop, regenerate the plan, show it verbatim, and obtain fresh confirmation — the old plan is discarded.
+10. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; the gate is the assertion, beyond Pi merely loading the file.
+11. After the sync assertions pass, apply the user-approved drift updates as strict in-place patches: change only the approved field values, keep every other field and the original key declaration order 100% unchanged, and leave unapproved fields as they are.
+12. Run the mandatory final verification, then **Assert the final discovery union**. Exact sync is successful only when all three assertion templates pass.
+13. Run the mandatory Model ordering check, fetching `https://models.dev/api.json` for release dates (retry once through the environment's configured proxy if the direct fetch fails). If any order deviates, prompt the user before concluding.
+14. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
 
 ### 3. Add a provider
 
@@ -220,7 +235,7 @@ The agreed order is:
 1. Model series / families in alphabetical order (A-Z) by top-level brand or series name (e.g. `claude` before `deepseek`, `deepseek` before `gemini`, `gemini` before `glm`, `glm` before `gpt`, `gpt` before `kimi`, `kimi` before `qwen`).
 2. Within the same model series, models are ordered strictly by release date (`release_date`), oldest first (e.g. across the entire `claude` series: `claude-haiku-4-5` [2025-10-15] before `claude-fable-5` [2026-06-07] before `claude-sonnet-5` [2026-06-29] before `claude-opus-5` [2026-07-24] before `claude-fable-5-1` [2026-09-01]; fable-5 was released before sonnet-5 and opus-5, so it must precede them).
 
-Release dates come from `https://models.dev/api.json`. Fetch it, match each configured model ID against the providers/models there, and use the matched model's `release_date`. If a model cannot be matched there, keep its relative position and ask the user for its date.
+Release dates come from `https://models.dev/api.json`. Fetch it, and when the direct fetch fails, retry once through the environment's configured proxy; match each configured model ID against the providers/models there and use the matched model's `release_date`. If a model cannot be matched there, keep its relative position and ask the user for its date.
 
 **Enforcement Gate**:
 If any provider's `models` array deviates from the agreed order (such as `claude-fable-5` incorrectly placed after `claude-opus-5`), **explicitly alert the user to the detected disorder** and ask whether to reorganize the entire file before reporting completion.
@@ -241,4 +256,4 @@ It prompts without echo and atomically writes mode `0600`. After the user report
 
 ## Audit
 
-For an audit, run Pi offline validation, use `discover` for configured upstream routes, and use `catalog` only for model metadata questions. Verify routing constraints, especially the Anthropic Messages rule: any model with `api: "anthropic-messages"` under a provider whose `baseUrl` ends in `/v1` must specify a model-level `baseUrl` without `/v1`. Report exact JSON paths, route statuses, routing defects, ambiguity, and remediation without credential values. A clean file gets a clean report and no edit.
+For an audit, run Pi offline validation, use `discover` for configured upstream routes, and use `catalog` only for model metadata questions. Run `drift <provider-key>` against the built-in official catalog and report per-model template drift alongside the Pi version the comparison used. Verify routing constraints, especially the Anthropic Messages rule: any model with `api: "anthropic-messages"` under a provider whose `baseUrl` ends in `/v1` must specify a model-level `baseUrl` without `/v1`. Report exact JSON paths, route statuses, routing defects, ambiguity, and remediation without credential values. A clean file gets a clean report and no edit.

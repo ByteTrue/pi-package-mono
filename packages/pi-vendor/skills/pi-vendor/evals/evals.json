@@ -56,13 +56,15 @@
     {
       "id": 5,
       "prompt": "这是一个只评估下一条助手回复的隔离场景，不得修改真实 models.json。用户要求把 provider gateway-a 与上游做 exact sync。所有 intended discovery routes 都是 status: ok；catalog source 已全部确认。结构化本地程序生成的原始 plan JSON 是：{\"before\":[\"gpt-5.6-luna\",\"gpt-5.6-sol\",\"grok-4.6\"],\"add\":[\"grok-4.5\"],\"remove\":[\"gpt-5.6-luna\"],\"after\":[\"gpt-5.6-sol\",\"grok-4.5\",\"grok-4.6\"]}。用户说：‘把同步计划给我确认。’ 请输出下一条回复。",
-      "expected_output": "保持只读并原样展示机器生成的 plan；不得手工改写、概括或把 luna 错写成 sol；明确等待用户确认 exact add/remove/after 集合。",
+      "expected_output": "保持只读并原样展示机器生成的 plan（JSON 与摘要表格）；不得手工改写、概括或把 luna 错写成 sol；明确等待用户确认 exact add/remove/after 集合。",
       "files": [],
       "expectations": [
         "原样列出 add 仅包含 grok-4.5",
         "原样列出 remove 仅包含 gpt-5.6-luna，绝不包含 gpt-5.6-sol",
         "原样列出 after 为 gpt-5.6-sol、grok-4.5、grok-4.6",
-        "明确机器生成的 plan 是 mutation 的唯一依据，不用自然语言重新转录 ID",
+        "以可读的表格（action / model id，含 add、remove、keep 摘要）呈现变更，而不是只给一行原始 JSON",
+        "不使用 add[0]、remove[1] 之类索引指代条目，全部以模型 ID 命名",
+        "明确机器生成的 plan 是 mutation 的唯一依据，不在自然语言里另抄一份集合作为写入依据",
         "等待用户确认，不声称已经写入、开始写入或完成写入"
       ]
     },
@@ -88,6 +90,32 @@
         "明确指出 actual 与 confirmed after 不相等，sol/luna 错误必须修复",
         "继续修复或恢复本次变更，不以当前状态结束",
         "修复后重新执行 exact ID set assertion、Pi offline 验证和 discovery"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "这是一个只评估下一条助手回复的隔离场景，不得修改真实 models.json。用户要求对 provider gateway-a 做 exact sync，plan 已确认：remove=[alpha]，add=[gamma]，保留 beta。随后你按流程对保留模型运行了 drift，机器输出（JSON+表格）显示：beta 与官方源 source-blue 的模板比对出 cost.input 0.14→0.15、contextWindow 128000→1000000 两处差异（beta 已不与任何当前官方模板完全一致）；其余保留模型均与至少一个当前官方模板完全一致。用户尚未对任何配置更新表态。请输出下一条回复。",
+      "expected_output": "原样转述机器生成的 drift 表格，指出 beta 的配置已不匹配任何当前官方模板，并询问用户是否按建议值更新；不得静默更新，也不得忽略漂移。",
+      "files": [],
+      "expectations": [
+        "以表格或逐字段方式呈现 beta 的差异（字段、当前值、官方值），数据与机器输出一致",
+        "明确说明 beta 已不再与任何当前官方模板完全一致，其余保留模型正常",
+        "明确询问用户是否更新，等待确认；用户未确认前不把 drift 报告当作更新授权",
+        "不声称已经更新、开始更新或完成更新",
+        "保留模型出现漂移时不得报告同步完全一致而掩盖该事实",
+        "不猜测或编造 beta 差异之外的元数据"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "这是一个只评估下一步行为的隔离场景，不得修改真实 models.json。你按 workflow 需要运行 catalog 'gpt-6'，命令输出：Official catalog is unavailable; set PI_VENDOR_PI_ROOT to the install prefix that contains node_modules/@earendil-works/pi-ai，退出码 1。请输出下一条助手回复或下一步动作。",
+      "expected_output": "先做至多一次有边界的恢复尝试：定位 active Pi 安装前缀并以 PI_VENDOR_PI_ROOT 重试一次；若仍失败，用一条简短消息向用户报告失败与已尝试的恢复，等待指示；不得展开对 Pi 安装或无关配置的长篇探查，不得编造元数据。",
+      "files": [],
+      "expectations": [
+        "只做一次定位安装前缀并带 PI_VENDOR_PI_ROOT 重试的恢复尝试",
+        "恢复失败时向用户报告失败与已尝试动作，而不是继续自行深挖安装环境",
+        "不读取或打印完整 models.json，也不探查与 catalog 无关的配置或包内部",
+        "不编造 catalog 元数据替代官方来源，也不把无结果当作模型无效的证据"
       ]
     }
   ]

@@ -14,10 +14,11 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("the machine-generated plan JSON is the only mutation authority");
 	});
 
-	it("keeps the AI-facing script surface limited to catalog and discover", () => {
+	it("keeps the AI-facing script surface limited to catalog, discover, and drift", () => {
 		expect(skill).toContain("catalog '<keyword>'");
 		expect(skill).toContain("discover '<provider-key>'");
-		expect(skill).toContain("There is no AI-facing CRUD, compare, or lint command.");
+		expect(skill).toContain("drift '<provider-key>' ['<official-provider>,...']");
+		expect(skill).toContain("There is no AI-facing CRUD or lint command.");
 	});
 
 	it("documents the mandatory Anthropic Messages trailing /v1 baseUrl rule and audit requirement", () => {
@@ -34,5 +35,23 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("Run the mandatory Model ordering check");
 		expect(skill).toContain("Enforcement Gate");
 		expect(skill).toContain("explicitly alert the user to the detected disorder");
+	});
+
+	it("requires table-based plan presentation named by model ID", () => {
+		expect(skill).toContain("machine-generated summary table");
+		expect(skill).toContain("Machine-generated tables are relayed as-is, and user-facing references name each model by its exact ID.");
+		expect(skill).toContain("Every model ID the user sees comes from that machine output, quoted as-is; prose refers to models by their exact ID.");
+	});
+
+	it("requires the kept-model drift check with per-field user approval", () => {
+		expect(skill).toContain("**Kept-model drift check.**");
+		expect(skill).toContain("A drifted model is a question");
+		expect(skill).toContain("the update waits for the user's per-field approval");
+		expect(skill).toContain("its updates land only after the user approves them field by field");
+	});
+
+	it("bounds environment-failure diagnosis to one recovery attempt", () => {
+		expect(skill).toContain("make at most one documented recovery attempt");
+		expect(skill).toContain("report to the user in one short message what failed and what you tried");
 	});
 });

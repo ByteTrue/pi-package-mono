@@ -2,8 +2,8 @@
 
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { delimiter, dirname, join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { delimiter, basename, dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 
@@ -53,13 +53,55 @@ function packageRoot(entry) {
 	}
 }
 
+function shimRoots(entry) {
+	// mise/aube "bin shims" are small shell scripts whose text references the real package
+	// location (e.g. target=../.mise/@earendil-works+pi-coding-agent@<version>/...).
+	if (!entry || !existsSync(entry)) return [];
+	let stat;
+	try { stat = statSync(entry); } catch { return []; }
+	if (!stat.isFile() || stat.size > 262144) return [];
+	let text;
+	try { text = readFileSync(entry, "utf8"); } catch { return []; }
+	let base;
+	try { base = dirname(realpathSync(entry)); } catch { return []; }
+	const roots = [];
+	const seen = new Set();
+	const tokens = text.match(/[^\s'"`]*node_modules[\\/]@earendil-works[\\/]pi-coding-agent[^\s'"`]*/g) ?? [];
+	for (const token of tokens) {
+		for (const candidate of [token, token.replace(/^\$\{?basedir\}?/, base), token.replace(/^%~dp0/i, base), resolve(base, token)]) {
+			const root = packageRoot(candidate);
+			if (root && !seen.has(root)) { seen.add(root); roots.push(root); }
+		}
+	}
+	return roots;
+}
+
+function miseRoots(entry) {
+	// mise npm installs place the package under <prefix>/node_modules/.mise/@earendil-works+pi-coding-agent@<version>/.
+	if (!entry || !existsSync(entry)) return [];
+	const binDir = dirname(entry);
+	if (basename(binDir) !== ".bin") return [];
+	let names;
+	try { names = readdirSync(join(dirname(binDir), ".mise")); } catch { return []; }
+	const roots = [];
+	for (const name of names) {
+		if (!/^@earendil-works\+pi-coding-agent@/.test(name)) continue;
+		const root = join(dirname(binDir), ".mise", name, "node_modules", "@earendil-works", "pi-coding-agent");
+		if (existsSync(join(root, "package.json"))) roots.push(root);
+	}
+	return roots;
+}
+
 function catalogPaths() {
 	const roots = new Set();
 	if (process.env.PI_VENDOR_PI_ROOT) roots.add(process.env.PI_VENDOR_PI_ROOT);
 	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
 		for (const name of ["pi", "pi.cmd", "pi.exe"]) {
-			const root = packageRoot(join(dir, name));
+			const entry = join(dir, name);
+			const root = packageRoot(entry);
 			if (root) roots.add(root);
+			for (const shimRoot of shimRoots(entry)) roots.add(shimRoot);
+			for (const miseRoot of miseRoots(entry)) roots.add(miseRoot);
 		}
 		// npm's Windows shim lives beside node_modules rather than inside the package.
 		roots.add(join(dir, "node_modules", "@earendil-works", "pi-coding-agent"));
@@ -68,6 +110,8 @@ function catalogPaths() {
 	for (const root of roots) {
 		paths.push(join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
 		paths.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
+		// Hoisted installs keep pi-ai beside the pi-coding-agent package in the same scope.
+		paths.push(join(root, "..", "pi-ai", "dist", "models.generated.js"));
 	}
 	return paths;
 }
@@ -78,19 +122,22 @@ function cleanTemplate(model) {
 	return copy;
 }
 
+async function officialModels() {
+	const path = catalogPaths().find(existsSync);
+	if (!path) fail("Official catalog is unavailable; set PI_VENDOR_PI_ROOT to the install prefix that contains node_modules/@earendil-works/pi-ai");
+	try {
+		return (await import(pathToFileURL(path).href)).MODELS;
+	} catch {
+		fail("Official catalog is unavailable; set PI_VENDOR_PI_ROOT to the install prefix that contains node_modules/@earendil-works/pi-ai");
+	}
+}
+
 async function catalog(query, limitText) {
 	if (!query?.trim()) fail("Usage: vendor.mjs catalog <keyword> [limit]", 2);
 	if (Buffer.byteLength(query) > 512) fail("Query exceeds 512 bytes", 2);
 	const limit = limitText === undefined ? 50 : Number(limitText);
 	if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail("Limit must be an integer from 1 to 100", 2);
-	const path = catalogPaths().find(existsSync);
-	if (!path) fail("Official catalog is unavailable");
-	let models;
-	try {
-		models = (await import(pathToFileURL(path).href)).MODELS;
-	} catch {
-		fail("Official catalog is unavailable");
-	}
+	const models = await officialModels();
 	const needle = query.trim().toLowerCase();
 	const normalizedNeedle = needle.replace(/[\s_-]+/g, "");
 	const tokens = needle.split(/[^\p{L}\p{N}._-]+/u).filter(Boolean);
@@ -273,6 +320,114 @@ async function discover(providerKey) {
 	});
 }
 
+const DRIFT_EXCLUDED_FIELDS = new Set(["id", "provider", "api", "baseUrl", "headers", "apiKey", "authHeader"]);
+
+function leafEntries(value, path = "", out = []) {
+	if (value === undefined || value === null) return out;
+	if (typeof value !== "object" || Array.isArray(value)) { out.push([path, value]); return out; }
+	for (const [key, child] of Object.entries(value)) {
+		if (!path && DRIFT_EXCLUDED_FIELDS.has(key)) continue;
+		leafEntries(child, path ? `${path}.${key}` : key, out);
+	}
+	return out;
+}
+
+function stableStringify(value) {
+	if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
+	if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+	return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+function diffFields(model, template) {
+	const configuredLeaves = leafEntries(model);
+	const officialLeaves = leafEntries(template);
+	const configuredMap = new Map(configuredLeaves);
+	const officialMap = new Map(officialLeaves);
+	const differences = [];
+	for (const field of new Set([...configuredMap.keys(), ...officialMap.keys()])) {
+		const configured = configuredMap.get(field);
+		const official = officialMap.get(field);
+		if (stableStringify(configured) === stableStringify(official)) continue;
+		differences.push({ field, configured: configured === undefined ? null : configured, official: official === undefined ? null : official });
+	}
+	differences.sort((left, right) => left.field.localeCompare(right.field));
+	return differences;
+}
+
+function catalogMatches(models, id) {
+	const matches = [];
+	for (const [slug, entries] of Object.entries(models ?? {})) {
+		for (const template of Object.values(entries ?? {})) {
+			if (template?.id === id && !matches.some((match) => match.officialProvider === slug)) {
+				matches.push({ officialProvider: slug, officialId: id, matchType: "exact", template });
+			}
+		}
+	}
+	const slash = id.indexOf("/");
+	if (slash > 0) {
+		const vendor = id.slice(0, slash);
+		const officialId = id.slice(slash + 1);
+		for (const template of Object.values(models?.[vendor] ?? {})) {
+			if (template?.id === officialId && !matches.some((match) => match.officialProvider === vendor)) {
+				matches.push({ officialProvider: vendor, officialId, matchType: "vendor", template });
+			}
+		}
+	}
+	return matches;
+}
+
+async function drift(providerKey, restrictArg) {
+	if (!providerKey) fail("Usage: vendor.mjs drift <provider-key> [official-provider,...]", 2);
+	const provider = readModels()?.providers?.[providerKey];
+	if (!provider || typeof provider !== "object" || Array.isArray(provider)) fail("Provider was not found");
+	if (provider.models !== undefined && !Array.isArray(provider.models)) fail("Provider models must be an array");
+	const models = await officialModels();
+	const restrict = restrictArg ? new Set(restrictArg.split(",").map((slug) => slug.trim()).filter(Boolean)) : null;
+	const results = [];
+	const noOfficialMatch = [];
+	let drifted = 0;
+	let upToDate = 0;
+	for (const model of provider.models ?? []) {
+		const id = typeof model?.id === "string" ? model.id : "";
+		if (!id) continue;
+		let matches = catalogMatches(models, id);
+		if (restrict) matches = matches.filter((match) => restrict.has(match.officialProvider));
+		if (matches.length === 0) { noOfficialMatch.push(id); continue; }
+		const withDifferences = matches.map((match) => ({
+			officialProvider: match.officialProvider,
+			officialId: match.officialId,
+			matchType: match.matchType,
+			differences: diffFields(model, match.template),
+		}));
+		// A configuration copied from an official template is up to date as long as it still
+		// equals at least one current template exactly; differences against other sources are noise.
+		if (withDifferences.some((match) => match.differences.length === 0)) { upToDate += 1; continue; }
+		drifted += 1;
+		results.push({ id, matches: withDifferences });
+	}
+	output({
+		source: "official-catalog-drift",
+		providerKey,
+		restrictedTo: restrict ? [...restrict] : null,
+		checked: results.length + upToDate + noOfficialMatch.length,
+		drifted,
+		upToDate,
+		noOfficialMatch,
+		models: results,
+	});
+	const rows = results.flatMap((entry) => entry.matches.flatMap((match) => match.differences.map((difference) => `| ${entry.id} | ${match.officialProvider} (${match.officialId}) | ${difference.field} | ${difference.configured === null ? "missing" : JSON.stringify(difference.configured)} | ${difference.official === null ? "missing" : JSON.stringify(difference.official)} |`)));
+	console.log("");
+	console.log("#### Official template drift (machine-generated; every update still needs user confirmation)");
+	if (rows.length === 0) console.log("Every configured model still matches at least one current official template exactly.");
+	else {
+		console.log("| model id | official source | field | configured | official |");
+		console.log("|---|---|---|---|---|");
+		for (const row of rows) console.log(row);
+	}
+	if (upToDate > 0) console.log(`\nUp to date against at least one matched official source: ${upToDate} model(s).`);
+	if (noOfficialMatch.length > 0) console.log(`\nNo matching official catalog entry${restrict ? " under the selected source(s)" : ""} found for: ${noOfficialMatch.join(", ")}.`);
+}
+
 function routeKey(route) {
 	const headers = Object.entries(route.headers)
 		.map(([name, value]) => [name.toLowerCase(), value])
@@ -359,8 +514,9 @@ try {
 	switch (command) {
 		case "catalog": await catalog(args[0], args[1]); break;
 		case "discover": await discover(args[0]); break;
+		case "drift": await drift(args[0], args[1]); break;
 		case "set-key": await setKey(args[0]); break;
-		default: fail("Usage: vendor.mjs <catalog|discover> [argument]", 2);
+		default: fail("Usage: vendor.mjs <catalog|discover|drift> [argument]", 2);
 	}
 } catch (error) {
 	if (error instanceof CliError) {

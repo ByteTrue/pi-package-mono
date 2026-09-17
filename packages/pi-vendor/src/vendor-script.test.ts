@@ -67,6 +67,114 @@ describe("vendor skill script", () => {
 		expect(result.results[0]).toEqual({ officialProvider: "test", model: { id: "shim-model" } });
 	});
 
+	it("finds a catalog through a mise/aube bin shim that points at a relocated package", () => {
+		const prefix = join(dir, "node_modules");
+		const packageDir = join(prefix, ".mise", "@earendil-works+pi-coding-agent@0.85.1", "node_modules", "@earendil-works", "pi-coding-agent");
+		const catalogDir = join(prefix, ".mise", "@earendil-works+pi-coding-agent@0.85.1", "node_modules", "@earendil-works", "pi-ai", "dist");
+		mkdirSync(join(prefix, ".bin"), { recursive: true });
+		mkdirSync(packageDir, { recursive: true });
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { official: { m: { id: "relocated-model" } } };`);
+		writeFileSync(join(prefix, ".bin", "pi"), "#!/bin/sh\n# aube-bin-shim v2 target=../.mise/@earendil-works+pi-coding-agent@0.85.1/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js\nexec node \"$basedir/../.mise/@earendil-works+pi-coding-agent@0.85.1/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js\" \"$@\"\n");
+
+		const result = JSON.parse(run(["catalog", "relocated"], { env: { PI_VENDOR_PI_ROOT: undefined, PATH: join(prefix, ".bin") } }));
+		expect(result.results[0]).toEqual({ officialProvider: "official", model: { id: "relocated-model" } });
+	});
+
+	it("finds a catalog beside a mise .bin entry even without shim text", () => {
+		const prefix = join(dir, "node_modules");
+		const packageDir = join(prefix, ".mise", "@earendil-works+pi-coding-agent@0.9.0", "node_modules", "@earendil-works", "pi-coding-agent");
+		const catalogDir = join(prefix, ".mise", "@earendil-works+pi-coding-agent@0.9.0", "node_modules", "@earendil-works", "pi-ai", "dist");
+		mkdirSync(join(prefix, ".bin"), { recursive: true });
+		mkdirSync(packageDir, { recursive: true });
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(prefix, ".bin", "pi"), "#!/bin/sh\nexec something-else\"$@\"\n");
+		writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { official: { m: { id: "sibling-model" } } };`);
+
+		const result = JSON.parse(run(["catalog", "sibling"], { env: { PI_VENDOR_PI_ROOT: undefined, PATH: join(prefix, ".bin") } }));
+		expect(result.results[0]).toEqual({ officialProvider: "official", model: { id: "sibling-model" } });
+	});
+
+	it("reports the recovery hint when no catalog can be located", () => {
+		let message = "";
+		try { run(["catalog", "anything"], { env: { PI_VENDOR_PI_ROOT: undefined, PATH: "" } }); } catch (error) {
+			message = String((error as { stderr?: string }).stderr ?? "");
+		}
+		expect(message).toContain("PI_VENDOR_PI_ROOT");
+	});
+
+	it("reports official template drift as machine output without mutating anything", () => {
+		const catalogDir = join(dir, "node_modules/@earendil-works/pi-ai/dist");
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { vendor: { demo: { id: "demo-model", name: "Demo Model Official", api: "openai-completions", reasoning: true, cost: { input: 1.5, output: 2 }, contextWindow: 100000 }, fresh: { id: "fresh-model", name: "Fresh", api: "openai-completions", reasoning: true, cost: { input: 3, output: 4 }, contextWindow: 200000 } } };`);
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { apiKey: "secret", models: [
+			{ id: "demo-model", api: "openai-completions", name: "Demo Model", cost: { input: 1, output: 2 }, contextWindow: 100000, reasoning: true },
+			{ id: "fresh-model", api: "openai-completions", name: "Fresh", cost: { input: 3, output: 4 }, contextWindow: 200000, reasoning: true },
+		] } } }, null, 2)}\n`);
+
+		const output = run(["drift", "relay"], { env: { PI_VENDOR_PI_ROOT: dir, PATH: "" } });
+		const parsed = JSON.parse(output.slice(0, output.indexOf("#### Official template drift")).trim());
+		expect(parsed).toMatchObject({ source: "official-catalog-drift", providerKey: "relay", checked: 2, drifted: 1, upToDate: 1, noOfficialMatch: [] });
+		expect(parsed.models[0]).toMatchObject({ id: "demo-model" });
+		expect(parsed.models[0].matches[0].differences).toEqual([
+			{ field: "cost.input", configured: 1, official: 1.5 },
+			{ field: "name", configured: "Demo Model", official: "Demo Model Official" },
+		]);
+		expect(output).toContain("| model id | official source | field | configured | official |");
+		expect(output).toContain("| demo-model | vendor (demo-model) | cost.input | 1 | 1.5 |");
+		expect(output).toContain("Up to date against at least one matched official source: 1 model(s).");
+		expect(JSON.parse(readFileSync(join(dir, "models.json"), "utf8")).providers.relay.models[0]).toEqual({ id: "demo-model", api: "openai-completions", name: "Demo Model", cost: { input: 1, output: 2 }, contextWindow: 100000, reasoning: true });
+	});
+
+	it("treats routing overrides as non-drift and null as absent", () => {
+		const catalogDir = join(dir, "node_modules/@earendil-works/pi-ai/dist");
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { vendor: { m: { id: "routed-model", name: "Routed", api: "anthropic-messages", baseUrl: "https://official.invalid", thinkingLevelMap: { off: null, low: "low" }, contextWindow: 1000 } } };`);
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { baseUrl: "http://gateway.invalid/v1", models: [
+			{ id: "routed-model", api: "openai-completions", baseUrl: "http://gateway.invalid", name: "Routed", thinkingLevelMap: { low: "low" }, contextWindow: 1000 },
+		] } } }, null, 2)}\n`);
+
+		const output = run(["drift", "relay"], { env: { PI_VENDOR_PI_ROOT: dir, PATH: "" } });
+		const parsed = JSON.parse(output.slice(0, output.indexOf("#### Official template drift")).trim());
+		expect(parsed.drifted).toBe(0);
+		expect(parsed.upToDate).toBe(1);
+		expect(output).toContain("Every configured model still matches at least one current official template exactly.");
+	});
+
+	it("matches vendor-prefixed ids and honors the provider restrict argument", () => {
+		const catalogDir = join(dir, "node_modules/@earendil-works/pi-ai/dist");
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { vendor: { v: { id: "vision-model", name: "Vision", api: "openai-completions", cost: { input: 1, output: 2 }, contextWindow: 1000 } }, hub: { h: { id: "vendor/vision-model", name: "Vision Hub", api: "openai-completions", cost: { input: 9, output: 9 }, contextWindow: 9000 } } };`);
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { models: [
+			{ id: "vendor/vision-model", api: "openai-completions", name: "Vision", cost: { input: 1, output: 2 }, contextWindow: 1000 },
+			{ id: "custom-only", api: "openai-completions", name: "Custom" },
+		] } } }, null, 2)}\n`);
+
+		const unrestricted = run(["drift", "relay"], { env: { PI_VENDOR_PI_ROOT: dir, PATH: "" } });
+		const parsed = JSON.parse(unrestricted.slice(0, unrestricted.indexOf("#### Official template drift")).trim());
+		expect(parsed.checked).toBe(2);
+		expect(parsed.upToDate).toBe(1);
+		expect(parsed.noOfficialMatch).toEqual(["custom-only"]);
+		expect(unrestricted).toContain("No matching official catalog entry found for: custom-only.");
+
+		const restricted = run(["drift", "relay", "hub"], { env: { PI_VENDOR_PI_ROOT: dir, PATH: "" } });
+		const restrictedParsed = JSON.parse(restricted.slice(0, restricted.indexOf("#### Official template drift")).trim());
+		expect(restrictedParsed.drifted).toBe(1);
+		expect(restrictedParsed.models[0].matches).toHaveLength(1);
+		expect(restrictedParsed.models[0].matches[0]).toMatchObject({ officialProvider: "hub", matchType: "exact" });
+		expect(restricted).toContain("| vendor/vision-model | hub (vendor/vision-model) | cost.input | 1 | 9 |");
+	});
+
 	it("discovers model ids without returning credentials", async () => {
 		let authorization = "";
 		const server = createServer((request, response) => {

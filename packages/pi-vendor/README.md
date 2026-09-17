@@ -50,12 +50,13 @@ Successful saves are atomic, use file mode `0600`, refresh Pi's model registry, 
 
 ## On-demand helper
 
-The Skill has exactly two AI-facing bundled queries:
+The Skill has exactly three AI-facing read-only queries:
 
 | Command | Purpose |
 |---|---|
 | `vendor.mjs catalog <keyword>` | Fuzzy-search credential-free official templates from the active Pi installation |
 | `vendor.mjs discover <provider>` | Probe every deduplicated effective route for the provider and group upstream model IDs by API type |
+| `vendor.mjs drift <provider> [official-provider,...]` | Compare a provider's configured models against the built-in official catalog templates and report per-field drift |
 
 `vendor.mjs set-key <provider>` remains a separate user-terminal-only helper for private key entry. It is not an AI-facing query.
 
