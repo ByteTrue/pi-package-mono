@@ -140,6 +140,19 @@ describe("openMcpPanel state mapping", () => {
     panel.cleanup();
   });
 
+  it("panel height is stable across notice transitions", async () => {
+    const panel = openMcpPanel(host(), callbacks(), noopTui, () => {});
+    const before = panel.render(80).length;
+    panel.handleInput("\x13"); // ctrl+s → commitChanges sets a notice
+    await Promise.resolve();
+    await Promise.resolve();
+    const state = panel.getViewState();
+    expect(state.notice).toContain("No changes to write.");
+    const after = panel.render(80).length;
+    expect(after).toBe(before);
+    panel.cleanup();
+  });
+
   it("ctrl+r reconnects all enabled servers, not just the cursor one", async () => {
     const reconnected: string[] = [];
     const panel = openMcpPanel(
@@ -160,7 +173,9 @@ describe("openMcpPanel state mapping", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(reconnected.sort()).toEqual(["alpha", "beta"]);
     const state = panel.getViewState();
-    expect(state.notice).toContain("Reconnected 2");
+    // Upstream semantics: progress lives in row status labels, not a notice
+    // row — so panel height never jumps mid-reconnect (pi-tui diff safety).
+    expect(state.notice ?? "").toBe("");
     expect(state.servers.every((s) => s.connectionStatus === "connected")).toBe(true);
     panel.cleanup();
   });

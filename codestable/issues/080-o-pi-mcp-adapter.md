@@ -231,3 +231,11 @@ packages/pi-mcp/
 最终挂载：non-overlay 全屏 custom。面板打开期间 base 完全不参与渲染，残影类问题按构造消失；关闭后 base 恢复。这是对上游 overlay 挂载的唯一有意偏离，理由即上述 pi-tui 缺陷。
 
 验证：真机 mono 捕获单帧面板（标题/搜索/hints 各一）、base 行零透入、退出恢复 shell；79 测试绿；tsc 干净。
+
+### 追加修复 4（2026-09-17，0.4.2）：reconnect 期间行重复 = 高度跳变
+
+用户实测上游 reconnect 不撕裂、我们全屏后出现行重复。根因：ctrl+r 时我们自创的 notice 行（"Reconnecting N servers..."）插入使面板高度 +2，pi-tui diff 在高度跳变帧错址重写 → 旧行残留叠加成"重复"。上游无此动态 notice 行——重连进度只体现在每 server 行的状态标（connecting→connected），高度全程恒定，故不撕裂。
+
+对齐上游：① reconnectAll 不再设 notice；失败经行状态 + failure 行呈现。② notice 改固定槽位（恒两行：notice + 空行），任何 notice 出现/消失都不改变高度。单测新增高度稳定断言（ctrl+s 触发 notice 前后 render 行数相等）。
+
+验证：86/86 绿；真机 mono 单帧面板，server 行各一次、零重复。

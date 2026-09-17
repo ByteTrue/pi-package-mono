@@ -192,10 +192,10 @@ class McpPanelView extends Container {
         row("");
       }
 
-      if (state.notice) {
-        row(this.theme.needsAuth(this.theme.italic(sanitizeDisplayText(state.notice))));
-        row("");
-      }
+      // Fixed slot (always two rows): notices must never change panel height,
+      // height jumps make pi-tui's diff misaddress rows (ghosts/duplicates).
+      row(state.notice ? this.theme.needsAuth(this.theme.italic(sanitizeDisplayText(state.notice))) : "");
+      row("");
     }
 
     rule("├", "┤");
@@ -811,7 +811,6 @@ class McpPanel {
     for (const server of targets) {
       server.connectionStatus = "connecting";
     }
-    this.notice = `Reconnecting ${targets.length} server${targets.length === 1 ? "" : "s"}...`;
     this.tui.requestRender();
 
     await Promise.allSettled(
@@ -835,10 +834,8 @@ class McpPanel {
         }
       }),
     );
-    const failed = targets.filter((s) => s.connectionStatus === "failed").length;
-    this.notice = failed > 0
-      ? `Reconnect finished: ${targets.length - failed} ok, ${failed} failed.`
-      : `Reconnected ${targets.length} server${targets.length === 1 ? "" : "s"}.`;
+    // Failures surface via the row status + failure line (upstream semantics);
+    // no dynamic notice row, so panel height never jumps mid-reconnect.
     this.inFlight = null;
     this.tui.requestRender();
   }
