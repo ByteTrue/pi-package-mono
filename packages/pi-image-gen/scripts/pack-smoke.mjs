@@ -4,7 +4,7 @@
  * npm pack → allowlist paths → extract → production install → load extension entry.
  */
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -100,13 +100,22 @@ async function main() {
 			if (!existsSync(p)) throw new Error(`missing extracted file: ${rel}`);
 		}
 
-		// Production-only install of package dependencies (no devDeps).
+		// Production-only install, the way a consumer sees the package: drop
+		// devDependencies from the extracted manifest first. `--omit=dev` alone still
+		// builds the dev tree before pruning, and npm 10 dies on the vitest 4 / vite 8
+		// peers with "Cannot read properties of null (reading 'edgesOut')". Consumers
+		// never resolve a dependency's devDeps, so this is the faithful tree.
+		const pkgJson = JSON.parse(await readFile(join(extractedPkg, "package.json"), "utf8"));
+		delete pkgJson.devDependencies;
+		await writeFile(
+			join(extractedPkg, "package.json"),
+			`${JSON.stringify(pkgJson, null, 2)}\n`,
+		);
 		await run("npm", ["install", "--omit=dev", "--no-package-lock", "--ignore-scripts"], {
 			cwd: extractedPkg,
 		});
 		ok("production install complete");
 
-		const pkgJson = JSON.parse(await readFile(join(extractedPkg, "package.json"), "utf8"));
 		const ext = pkgJson?.pi?.extensions?.[0];
 		if (ext !== "./dist/index.js") {
 			throw new Error(`unexpected pi.extensions entry: ${ext}`);
