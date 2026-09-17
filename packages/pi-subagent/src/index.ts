@@ -1648,7 +1648,14 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Execute tasks in isolated child agent sessions. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). Runs concurrently by default, or sequentially when chain is true. Supports background execution and session resumption.",
+      "Delegate tasks to isolated child agent sessions. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). Runs concurrently by default, or sequentially when chain is true. Prefer async: true — the call returns at once and the full result arrives later as a new message that starts your next turn; until then, continue with other work or end your turn. Supports session resumption.",
+    promptSnippet:
+      "Delegate work to child agents (scout / researcher / reviewer); with async: true the result arrives later as a new message.",
+    // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
+    promptGuidelines: [
+      "Delegate self-contained recon, research, or review to subagent with async: true so you stay free to keep working or hand control back to the user",
+      "After an async subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
+    ],
     parameters: {
       type: "object",
       properties: {
@@ -1700,7 +1707,7 @@ export default function subagentExtension(pi: {
         async: {
           type: "boolean",
           description:
-            "Optional. If true, runs in the background and notifies the main session when finished. Default: false.",
+            "Optional. If true, returns immediately and delivers the full result later as a new message that starts your next turn (preferred). If false, blocks this turn until the tasks finish. Default: false.",
         },
         timeoutMs: {
           type: "number",
@@ -1787,7 +1794,7 @@ export default function subagentExtension(pi: {
           content: [
             {
               type: "text",
-              text: `Subagent task started in background (ID: ${taskId}, ${tasks.length} task(s)). You will be notified automatically upon completion.`,
+              text: `Subagent task started in background (ID: ${taskId}, ${tasks.length} task(s)). Its full result will arrive as a new message — continue with other work or end your turn now.`,
             },
           ],
           details: { id: taskId, status: "running", count: tasks.length, chain: isChain },

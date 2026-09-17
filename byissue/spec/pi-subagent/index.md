@@ -12,7 +12,7 @@
   - `tasks`（必填）：任务对象数组 `Array<{ task, agent?, tools?, cwd?, resume?, id?, timeoutMs?, maxTurns? }>`。
   - Agent 工具不暴露 `model` 或 `thinking`：模型与思考强度只由用户通过 `/subagent`、settings 或 agent 模板控制；旧调用即使伪造这两个字段也会在规范化与执行时被忽略。
   - `chain`（可选，默认 `false`）：设置为 `true` 时按顺序流水线执行（前序输出自动作为后序输入）；默认 `false` 为并发执行。
-  - `async`（可选，默认 `false`）：设置为 `true` 时在后台脱机执行，不阻塞当前会话；完成后通过 `followUp + triggerTurn` 自动唤醒主模型。
+  - `async`（可选，默认 `false`）：设置为 `true` 时在后台脱机执行，不阻塞当前会话；完成后通过 `followUp + triggerTurn` 自动唤醒主模型。工具 description / promptGuidelines 按 decision 001 正向措辞引导模型优先 `async: true`，并说明等待方式（继续做别的或结束回合，结果以新消息开启下一回合）。待 issue 088 落地后前台模式与此参数删除。
   - `timeoutMs`（可选，默认 `1200000` 即 20 分钟）：任务超时限制。
   - `maxTurns`（可选，默认 `50` 轮）：任务轮次限制。
 - 内置角色预设：
