@@ -11,7 +11,7 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("plan_stale");
 		expect(skill).toContain("plan_after_mismatch");
 		expect(skill).toContain("discovery_union_mismatch");
-		expect(skill).toContain("Never hand-copy, rename, summarize, or reconstruct its model ID sets in prose.");
+		expect(skill).toContain("the machine-generated plan JSON is the only mutation authority");
 	});
 
 	it("keeps the AI-facing script surface limited to catalog and discover", () => {
@@ -30,9 +30,9 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 	it("enforces strict-patch integrity, 100% official template key order preservation, and model ordering gates", () => {
 		expect(skill).toContain("Strict-Patch Rule (In-Place Integrity)");
 		expect(skill).toContain("preserve 100% of the official template's non-routing metadata verbatim");
-		expect(skill).toContain("Retain the exact original key order of the official template");
+		expect(skill).toContain("Retain the exact key order of the official template");
 		expect(skill).toContain("Run the mandatory Model ordering check");
 		expect(skill).toContain("Enforcement Gate");
-		expect(skill).toContain("conclude or report final success silently");
+		expect(skill).toContain("explicitly alert the user to the detected disorder");
 	});
 });

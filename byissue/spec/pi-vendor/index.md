@@ -14,6 +14,7 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 
 - 查看、增加、更新、删除、发现和审计 provider/model/modelOverrides；
 - 区分目标 provider 与官方模板来源 provider；
+- SKILL 措辞遵循 `byissue/decisions/001-positive-first-prompting.md`：正向优先，否定仅保留强默认与安全边界；`skill-contract.test.ts` 钉契约不变；
 - 模板有歧义时要求用户明确选择，不静默猜测；
 - 不编造 cost、context、capabilities、compat 等元数据；
 - 官方模板复制时 100% 原样保留所有字段与原始键声明顺序，严禁删减（如 `allowedFallbackModels`）或人工重排；修改已有模型必须为 strict in-place patch，仅修改目标 value，其余字段与键顺序 100% 原样不动；

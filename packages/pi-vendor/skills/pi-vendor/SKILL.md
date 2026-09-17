@@ -3,9 +3,10 @@ name: pi-vendor
 description: >
   Manage and audit Pi providers, custom models, modelOverrides, routing/API
   adapters, and upstream model discovery in models.json. Use for any models.json
-  or provider/model configuration request. Never invent model metadata, expose
-  credentials, or choose ambiguous providers, model IDs, or official sources
-  for the user.
+  or provider/model configuration request. Every model field comes from the
+  official catalog, upstream discovery, or the user; credentials stay out of the
+  conversation; the user resolves ambiguous providers, model IDs, and official
+  sources.
 ---
 
 # Pi Vendor
@@ -17,7 +18,7 @@ node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<keyword>' ['<limi
 node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>'
 ```
 
-Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value; never interpolate shell operators. There is no AI-facing CRUD, compare, or lint command. `/vendor` remains the human cold-start TUI.
+Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value (single quotes), so user text reaches the script literally. There is no AI-facing CRUD, compare, or lint command. `/vendor` remains the human cold-start TUI.
 
 `set-key` is a separate user-terminal-only helper because it prompts for a secret:
 
@@ -25,27 +26,27 @@ Replace `<absolute-skill-directory>` with the directory containing this `SKILL.m
 node '<absolute-skill-directory>/scripts/vendor.mjs' set-key '<provider-key>'
 ```
 
-Never execute `set-key` for the user and never ask them to paste a key into chat.
+Hand this command to the user to run in their own terminal and wait for them to report completion; the secret stays out of chat entirely.
 
-## Non-negotiable boundaries
+## Boundaries
 
-- Treat every `apiKey` and authentication header value as secret. Never reproduce one in replies, diffs, logs, tool arguments, or summaries. Refer to it only as configured, missing, or changed.
-- Never use `cat`, print the complete `models.json`, or perform a full configuration read for discovery. Locate provider/model keys first and read only the smallest range needed for a mutation.
-- Preserve unknown fields and unrelated providers. Make the smallest targeted edit; do not rewrite the document.
+- Treat every `apiKey` and authentication header value as secret: refer to it only as configured, missing, or changed — in replies, diffs, logs, tool arguments, and summaries alike.
+- Locate provider/model keys first (targeted search), then read only the smallest range needed for the mutation. The file carries secrets, so a whole-file read (`cat`, full `read`) is the one read shape to avoid.
+- Make the smallest targeted edit that preserves unknown fields and unrelated providers; everything outside the edit stays as the user wrote it.
 - Distinguish the configured target provider from the official catalog provider whose metadata is copied.
 - `catalog` is official metadata, not evidence that a target provider exposes a model. `discover` is upstream evidence, not official metadata.
-- Never invent pricing, capabilities, context limits, token limits, compat fields, model IDs, or routing.
+- Every pricing, capability, context/token limit, compat field, model ID, and routing value comes from the selected catalog template, `discover` output, or the user; when none of them supplies it, ask.
 - The user decides ambiguous model identity, official source, target provider, overwrite conflicts, and destructive operations.
-- Do not mutate `auth.json`, OAuth state, Pi settings, or unrelated providers unless explicitly requested.
-- For an exact synchronization, the machine-generated plan JSON is the only mutation authority. Never hand-copy, rename, summarize, or reconstruct its model ID sets in prose.
+- Edit only `models.json`, and in it only the requested provider/model. `auth.json`, OAuth state, Pi settings, and unrelated providers change only on an explicit request.
+- For an exact synchronization, the machine-generated plan JSON is the only mutation authority: show it verbatim and refer to its arrays by name (`add`, `remove`, `after`) rather than retyping IDs.
 
 ## Exact synchronization templates
 
-These are the only templates for exact synchronization. Keep `sync_dir`, `discovery_file`, and `plan_file` for the entire confirmation and mutation sequence; clean them after a successful finish or an abandoned plan. They contain only model IDs and route status, never credentials. Substitute the shell-quoted provider key and absolute skill directory, but do not alter the Node programs.
+These are the only templates for exact synchronization. Keep `sync_dir`, `discovery_file`, and `plan_file` for the entire confirmation and mutation sequence; clean them after a successful finish or an abandoned plan. They contain only model IDs and route status, never credentials. Substitute only the shell-quoted provider key and absolute skill directory; the Node programs run byte-for-byte as written.
 
 ### Generate the plan
 
-Run this once after `discover` has returned only `status: "ok"` routes. It writes and prints the one immutable plan JSON; it reads only `providers.<key>.models` internally. Exact synchronization does not support `modelOverrides`; use workflow 4 for those.
+Run this once after `discover` has returned only `status: "ok"` routes. It writes and prints the one immutable plan JSON; it reads only `providers.<key>.models` internally. Exact synchronization covers `models` only; `modelOverrides` go through workflow 4.
 
 ```sh
 sync_dir="$(mktemp -d "${TMPDIR:-/tmp}/pi-vendor-sync.XXXXXX")"
@@ -75,11 +76,11 @@ process.stdout.write(JSON.stringify(plan));
 NODE
 ```
 
-Show that exact JSON output verbatim, resolve catalog source for every `add` ID, and obtain confirmation for its exact `remove` and `after` arrays. Do not type any model ID outside that JSON block.
+Show that exact JSON output verbatim, resolve catalog source for every `add` ID, and obtain confirmation for its exact `remove` and `after` arrays. Every model ID the user sees comes from that JSON block, quoted as-is.
 
 ### Assert before and after
 
-Immediately before editing, run this exact stale check with `PI_VENDOR_SYNC_EXPECT=before`. A `plan_stale` result invalidates the plan; regenerate it rather than applying or merging it. Immediately after editing, run the same unchanged program with `PI_VENDOR_SYNC_EXPECT=after`; it must print `plan_after_matches=yes` before continuing.
+Immediately before editing, run this exact stale check with `PI_VENDOR_SYNC_EXPECT=before`. A `plan_stale` result invalidates the plan; regenerate it and obtain fresh confirmation. Immediately after editing, run the same unchanged program with `PI_VENDOR_SYNC_EXPECT=after`; it must print `plan_after_matches=yes` before continuing.
 
 ```sh
 PI_VENDOR_PROVIDER_KEY='<provider-key>' PI_VENDOR_SYNC_PLAN_FILE="$plan_file" PI_VENDOR_SYNC_EXPECT=before node <<'NODE'
@@ -98,7 +99,7 @@ console.log(`plan_${expected}_matches=yes`);
 NODE
 ```
 
-For the post-edit assertion, change only the shell assignment to `PI_VENDOR_SYNC_EXPECT=after`. Do not repair toward any hand-written list.
+For the post-edit assertion, change only the shell assignment to `PI_VENDOR_SYNC_EXPECT=after`. On `plan_after_mismatch`, repair toward the plan's `after` array (or restore the prior state), then rerun the assertion.
 
 ### Assert the final discovery union
 
@@ -119,34 +120,34 @@ NODE
 
 ## Choose one workflow
 
-Classify the request into exactly one workflow, then follow its numbered steps. Do not invent a second discovery loop or combine workflows speculatively.
+Classify the request into exactly one workflow and follow its numbered steps. When a step hands off ("continue with workflow 1"), that hand-off is the only way into another workflow; a single `discover` call is the whole discovery for a request.
 
 ### 1. Configure a model
 
-1. Treat the user's text as a model request, not automatically as a canonical ID. Preserve the original text.
-2. Derive a useful catalog keyword and run `catalog`. For example, `千问 3.7` should be searched using likely catalog terms such as `qwen 3.7`, not mechanically written as the model ID. If the first search is empty, retry with simpler brand/version terms.
+1. Treat the user's text as a model *request* and preserve it verbatim; the canonical ID is whatever `catalog` resolves it to.
+2. Derive a useful catalog keyword and run `catalog`. For example, search `千问 3.7` with likely catalog terms such as `qwen 3.7`. If the first search is empty, retry with simpler brand/version terms.
 3. Compare `count` with `total`. If truncated, rerun with limit `100` and narrow the keyword until every relevant candidate is visible.
-4. Show the mapping `(user text -> candidate ID -> official provider)` and all viable matches. A fuzzy result is a candidate, never silent authorization. If identity or official source is ambiguous, ask the user to select it.
-5. Resolve the target provider. An exact target named by the user remains valid; do not ask twice.
+4. Show the mapping `(user text -> candidate ID -> official provider)` and all viable matches. A fuzzy result is a candidate that the user confirms. If identity or official source is ambiguous, ask the user to select it.
+5. Resolve the target provider. An exact target named by the user is settled; move on.
 6. Locate only the target provider/model range and apply the narrow edit. When copying from the selected official template, preserve 100% of the official template's non-routing metadata verbatim:
    - Retain every official field (e.g. `allowedFallbackModels`, `compat`, `thinkingLevelMap`, `contextWindow`, etc.) without dropping or trimming anything.
-   - Retain the exact original key order of the official template; never reorder keys to match other models or personal habits.
-   - Never copy catalog `baseUrl`, credentials, headers, `provider`, or `authHeader`.
+   - Retain the exact key order of the official template, even when neighbouring models in the file use a different order.
+   - Routing fields (`baseUrl`, credentials, headers, `provider`, `authHeader`) come from the target provider, so they are left out of the copy.
    - Apply the Anthropic Messages `baseUrl` Rule below if applicable.
-7. Run the mandatory final verification below. Do not report completion before it passes.
+7. Run the mandatory final verification below; completion is reported only after it passes.
 8. Run the mandatory Model ordering check (see the "Model ordering" section). If any model order deviates, ask the user before concluding.
 
-If catalog returns no match, say this is not proof the model is invalid. Ask whether to use the requested text as a custom ID or provide another search term. Do not silently normalize, suffix, or substitute it.
+If catalog returns no match, say so — absence is not proof the model is invalid — and ask whether to use the requested text verbatim as a custom ID or to try another search term. The ID the user typed stays exactly as typed until they choose.
 
 Use `models` for new/custom definitions and `modelOverrides` for partial changes to an existing built-in or extension model. Add model-level `api` or `baseUrl` only when it differs from the inherited provider route, with one mandatory exception:
 
-- **Anthropic Messages `baseUrl` Rule**: Pi's `anthropic-messages` adapter (via the Anthropic SDK) automatically appends `/v1/messages` to requests. If a model uses or inherits `api: "anthropic-messages"` while the provider's `baseUrl` contains a trailing `/v1` (e.g. `http://host:port/v1`), you **must** configure a model-level `baseUrl` stripped of the trailing `/v1` (e.g. `baseUrl: "http://host:port"`). Leaving it unconfigured causes requests to hit `/v1/v1/messages` and fail with 404. If the provider's `baseUrl` already has no `/v1` segment, do not add a model-level `baseUrl`.
+- **Anthropic Messages `baseUrl` Rule**: Pi's `anthropic-messages` adapter (via the Anthropic SDK) automatically appends `/v1/messages` to requests. If a model uses or inherits `api: "anthropic-messages"` while the provider's `baseUrl` contains a trailing `/v1` (e.g. `http://host:port/v1`), you **must** configure a model-level `baseUrl` stripped of the trailing `/v1` (e.g. `baseUrl: "http://host:port"`). Leaving it unconfigured causes requests to hit `/v1/v1/messages` and fail with 404. When the provider's `baseUrl` has no `/v1` segment, the model inherits it unchanged (no model-level `baseUrl`).
 
 - **Strict-Patch Rule (In-Place Integrity)**:
-  - When updating an existing model, change **only** the specific field value requested by the user. Every other field and the original key declaration order must remain 100% unchanged. Never rewrite, reorder keys, or omit unmentioned fields during an update.
-  - When adding a model from an official template, carry over all non-routing fields in their exact official key order without reordering or dropping fields.
+  - When updating an existing model, change **only** the specific field value requested by the user. Every other field and the original key declaration order remain 100% unchanged.
+  - When adding a model from an official template, carry over all non-routing fields in their exact official key order.
 
-Never create duplicate IDs in one provider's `models` array.
+Each model ID appears once per provider's `models` array; when the ID already exists, the request is an update (workflow 4), not a second entry.
 
 ### 2. List or synchronize a provider's upstream models
 
@@ -156,21 +157,21 @@ Never create duplicate IDs in one provider's `models` array.
    node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>'
    ```
 
-2. Report each returned route by `routeId`, API type, status, and model IDs. The command already deduplicates effective provider/model routes across the four supported API adapters; do not build a manual loop.
+2. Report each returned route by `routeId`, API type, status, and model IDs. The command already deduplicates effective provider/model routes across the four supported API adapters, so this one call is the whole discovery.
 3. A returned ID is positive evidence that route listed it. An error means that route is unverified. Absence alone is not proof that a configured model is unsupported.
-4. For a plain listing, stop here. Do not calculate or present configured/unconfigured/unsupported sets.
+4. For a plain listing, stop here and report the routes and IDs as returned. Configured/unconfigured/unsupported set comparisons belong to exact synchronization only.
 5. Only when the user explicitly requests an exact synchronization and every intended route has `status: "ok"`, use **Generate the plan** from the exact synchronization templates. It emits the sorted `{"before":[],"add":[],"remove":[],"after":[]}` JSON without exposing configuration or credentials.
 6. Treat that generated JSON as immutable. Show it verbatim, run `catalog` for every ID in `add`, resolve every official source, and ask the user to confirm the exact `remove` and `after` arrays. Keep the whole batch read-only until every source and destructive choice is resolved.
-7. If any intended route failed, do not propose removals or exact synchronization. Report the unverified route; individually adding IDs with positive evidence may continue through workflow 1.
-8. Immediately before editing, run **Assert before and after**. If it returns `plan_stale`, stop, regenerate the plan, show it verbatim, and obtain fresh confirmation. Never merge a concurrent change into the old plan.
-9. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; a Pi-loadable file is not sufficient.
+7. If any intended route failed, report the unverified route and offer only additions with positive evidence (workflow 1); removals and exact synchronization wait until every intended route is `ok`.
+8. Immediately before editing, run **Assert before and after**. If it returns `plan_stale`, stop, regenerate the plan, show it verbatim, and obtain fresh confirmation — the old plan is discarded.
+9. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; the gate is the assertion, beyond Pi merely loading the file.
 10. Run the mandatory final verification, then **Assert the final discovery union**. Exact sync is successful only when all three assertion templates pass.
 11. Run the mandatory Model ordering check. If any order deviates, prompt the user before concluding.
 12. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
 
 ### 3. Add a provider
 
-1. Collect the provider key, `baseUrl`, API adapter, and any required non-secret headers. Do not guess unresolved routing.
+1. Collect the provider key, `baseUrl`, API adapter, and any required non-secret headers; ask for anything unresolved.
 2. Locate the `providers` object and add only the new provider with a narrow edit. Preserve every unrelated field.
 3. If a key is required, create the provider without exposing it and give the user the `set-key` command. Continue only after the user reports completion.
 4. Run the mandatory Pi offline verification.
@@ -179,14 +180,14 @@ Never create duplicate IDs in one provider's `models` array.
 
 ### 4. Read, update, or delete a provider/model
 
-1. Locate the exact provider key or model ID without printing the full file.
+1. Locate the exact provider key or model ID with a targeted search and read only that range.
 2. For a read, report only non-secret routing fields and model IDs.
 3. For an update, apply a strict in-place patch: modify only the requested field value. Keep every other existing field, nested structure, and key declaration order 100% intact. Before changing inherited provider routing, identify affected models and preserve required model-level overrides (including the Anthropic Messages trailing `/v1` `baseUrl` rule).
 4. For deletion, show the exact target and confirm unless the user already requested that exact deletion. Removing a built-in override restores built-in behavior; it does not delete Pi's built-in provider.
 5. Apply the narrow edit, then run the mandatory final verification.
 6. After a model update or deletion, run the mandatory Model ordering check. If any order deviates, ask the user before concluding.
 
-For conflicts, report the exact JSON path and ask whether to update, replace, skip, or choose another target. Do not upsert silently.
+For conflicts, report the exact JSON path and ask whether to update, replace, skip, or choose another target; the edit waits for that answer.
 
 ## Mandatory final verification
 
@@ -199,10 +200,10 @@ Every mutation has a hard completion gate:
    ```
 
 2. Inspect both streams. Pi can exit zero even when it prints `Warning: errors loading models.json:`. Require no models.json loading warning; after a model mutation, also require the intended model ID to be present or absent as requested.
-3. For an exact synchronization, structurally compare the configured sorted ID set with the confirmed plan's `after` array. Exact equality is mandatory; do not reconstruct either side manually.
-4. If the command fails, emits any models.json loading warning, or any intended or exact-set assertion fails, repair only the targeted edit or restore its previous value, then rerun every failed check. Never end with an invalid or wrongly synchronized configuration.
+3. For an exact synchronization, structurally compare the configured sorted ID set with the confirmed plan's `after` array. Exact equality is mandatory; both sides come from the assertion template, never from a hand-built list.
+4. If the command fails, emits any models.json loading warning, or any intended or exact-set assertion fails, repair only the targeted edit or restore its previous value, then rerun every failed check. The task ends only with a configuration that passes every check.
 5. After provider routing, authentication, model routing, or synchronization changes, also run `discover <provider-key>`. Require every intended route to return `status: "ok"`; for exact sync, require its discovered-ID union to equal the confirmed `after` set. Otherwise report verification failure, not configuration success.
-6. Do not print the whole provider, full diff, credential-bearing diagnostics, or raw secret values while verifying.
+6. Report verification by changed JSON paths and check results; the whole provider block, full diff, credential-bearing diagnostics, and raw secret values stay out of the transcript.
 
 An actual generation request can consume quota and is not part of the default gate. Run one only when the user explicitly asks for a live model call.
 
@@ -219,25 +220,25 @@ The agreed order is:
 1. Model series / families in alphabetical order (A-Z) by top-level brand or series name (e.g. `claude` before `deepseek`, `deepseek` before `gemini`, `gemini` before `glm`, `glm` before `gpt`, `gpt` before `kimi`, `kimi` before `qwen`).
 2. Within the same model series, models are ordered strictly by release date (`release_date`), oldest first (e.g. across the entire `claude` series: `claude-haiku-4-5` [2025-10-15] before `claude-fable-5` [2026-06-07] before `claude-sonnet-5` [2026-06-29] before `claude-opus-5` [2026-07-24] before `claude-fable-5-1` [2026-09-01]; fable-5 was released before sonnet-5 and opus-5, so it must precede them).
 
-Release dates come from `https://models.dev/api.json`. Fetch it, match each configured model ID against the providers/models there, and use the matched model's `release_date`. If a model cannot be matched there, do not guess a date: keep its relative position and ask the user.
+Release dates come from `https://models.dev/api.json`. Fetch it, match each configured model ID against the providers/models there, and use the matched model's `release_date`. If a model cannot be matched there, keep its relative position and ask the user for its date.
 
 **Enforcement Gate**:
-If any provider's `models` array deviates from the agreed order (such as `claude-fable-5` incorrectly placed after `claude-opus-5`), you **must not** conclude or report final success silently. You **must explicitly alert the user to the detected disorder** and ask whether to reorganize the entire file.
+If any provider's `models` array deviates from the agreed order (such as `claude-fable-5` incorrectly placed after `claude-opus-5`), **explicitly alert the user to the detected disorder** and ask whether to reorganize the entire file before reporting completion.
 
 Reordering is a narrow edit: move whole model objects without changing any field or key order within them. Confirm the proposed final order with the user before editing. Then rerun the mandatory final verification.
 
-This check applies to the file just edited only; never touch other configuration files.
+This check applies to the file just edited only.
 
 ## API keys
 
-Give the user this command; do not execute it:
+Give the user this command to run in their own terminal:
 
 ```sh
 node '<absolute-skill-directory>/scripts/vendor.mjs' set-key '<provider-key>'
 ```
 
-It prompts without echo and atomically writes mode `0600`. After the user reports completion, run the mandatory final verification; never ask them to reveal the value.
+It prompts without echo and atomically writes mode `0600`. After the user reports completion, run the mandatory final verification; the value itself stays with the user.
 
 ## Audit
 
-For an audit, run Pi offline validation, use `discover` for configured upstream routes, and use `catalog` only for model metadata questions. Verify routing constraints, especially the Anthropic Messages rule: any model with `api: "anthropic-messages"` under a provider whose `baseUrl` ends in `/v1` must specify a model-level `baseUrl` without `/v1`. Report exact JSON paths, route statuses, routing defects, ambiguity, and remediation without credential values. Do not rewrite a clean file.
+For an audit, run Pi offline validation, use `discover` for configured upstream routes, and use `catalog` only for model metadata questions. Verify routing constraints, especially the Anthropic Messages rule: any model with `api: "anthropic-messages"` under a provider whose `baseUrl` ends in `/v1` must specify a model-level `baseUrl` without `/v1`. Report exact JSON paths, route statuses, routing defects, ambiguity, and remediation without credential values. A clean file gets a clean report and no edit.

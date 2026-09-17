@@ -2,7 +2,7 @@
 kind: issue
 title: "pi-vendor SKILL.md 按正向优先判据重写"
 type: chore
-status: open
+status: closed
 created: 2026-09-17
 ---
 
@@ -32,6 +32,29 @@ created: 2026-09-17
   4. 更新单字段 → 其他字段与 key 顺序不变。
   5. anthropic-messages + trailing `/v1` → 模型级 baseUrl 剥 `/v1`。
 - 对照改前/改后各跑一遍，行为一致才算通过。
+
+## 执行记录
+
+逐条分类后重写 `SKILL.md`（+48/−47 行）：
+
+- **安全边界型**（凭据、auth.json/设置、全文件读、验证时的输出）：改为“只用 X 形式提及”。例：“Never reproduce one…” → “refer to it only as configured, missing, or changed — in replies, diffs, logs, tool arguments, and summaries alike”；“Do not mutate auth.json…” → “Edit only models.json, and in it only the requested provider/model”。全文件读保留一句带理由的尾注（强默认）。
+- **强默认型**（把用户文本当 ID、手抄 plan 列表、顺手算集合差）：正向前置 + 替代动作。例：“Do not type any model ID outside that JSON block” → “Every model ID the user sees comes from that JSON block, quoted as-is”；“Do not calculate or present configured/unconfigured sets” → “report the routes and IDs as returned; set comparisons belong to exact synchronization only”。
+- **真空型**：直接换成该做的事。例：“Do not guess unresolved routing” → “ask for anything unresolved”；“Do not upsert silently” → “the edit waits for that answer”；“Do not rewrite a clean file” → “A clean file gets a clean report and no edit”。
+- 保留的否定：两处描述性 never（“only model IDs…, never credentials”；“from the assertion template, never from a hand-built list”），均紧跟正向表述；定义性 “is not evidence / is not proof” 不动。
+- 不变量：三个 Node 程序与所有代码块 md5 相同；五个 workflow、每步编号、章节数（54）相同；确认/断言序列不变。
+- Frontmatter description 同步改为正向（触发句 “Use for any models.json…” 保留）。
+
+## 验证
+
+- 结构：`awk` 抽代码块 md5 前后一致；`rg -c` 标题/步骤数 54 = 54。
+- 契约测试：`skill-contract.test.ts` 钉了三句旧措辞原句，按同等契约换为新表述（plan 唯一权威 / 官方模板 key order / Enforcement Gate 显式报告），174 passed。
+- 行为对照：五个场景（模糊模型名 / exact sync 确认 / 聊天里粘 key / 单字段更新 / anthropic-messages + `/v1`）由两个只读 subagent 分别持改前、改后版本做角色演练，结果：五个场景的首步动作、拒绝/推迟项、引用的 workflow/step 全部一致。可观察的差别只在转述用词：持新版的 subagent 用正向动作描述规则（"refer to arrays by name"、"the model inherits it unchanged"），持旧版的用禁令描述（"never type a, b, c, d"、"do not add"）。
+
+## 关闭结论
+
+- 用户验收通过（五场景行为对照一致 + 契约测试 + 单测全绿）。
+- 回写 `byissue/spec/pi-vendor/index.md`：AI Skill 段补一句「措辞遵循 decision 001 正向优先」。
+- 遗留：无。
 
 ## 关闭时
 
