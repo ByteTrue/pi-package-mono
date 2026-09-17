@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -52,8 +52,6 @@ export interface SubagentInput {
   tasks?: (string | SubagentTaskItem)[];
   task?: string;
   chain?: boolean;
-  async?: boolean;
-  background?: boolean;
   resume?: string;
   timeoutMs?: number;
   maxTurns?: number;
@@ -148,6 +146,8 @@ export interface RunState {
   agent: string;
   prompt: string;
   sessionId: string;
+  /** Child process cwd; with sessionId it locates the persisted session log. */
+  cwd?: string;
   step?: number;
   status: RunStatus;
   pauseReason?: "timeout" | "max_turns";
@@ -175,30 +175,6 @@ export interface ProgressDetails {
 }
 
 // ── Native card handle registry ───────────────────────────────────────
-interface NativeCardHandle {
-  state: JsonObject;
-  invalidate: () => void;
-  updatedAt: number;
-}
-
-const MAX_NATIVE_CARDS = 20;
-const nativeCards = new Map<string, NativeCardHandle>();
-let activeSubagentToolCallId: string | null = null;
-
-function rememberNativeCard(id: string, card: NativeCardHandle) {
-  nativeCards.set(id, card);
-  const active = activeSubagentToolCallId
-    ? nativeCards.get(activeSubagentToolCallId)
-    : undefined;
-  if (!active || card.updatedAt >= active.updatedAt) {
-    activeSubagentToolCallId = id;
-  }
-  for (const key of nativeCards.keys()) {
-    if (nativeCards.size <= MAX_NATIVE_CARDS) break;
-    if (key !== activeSubagentToolCallId) nativeCards.delete(key);
-  }
-}
-
 function totalUsage(d: ProgressDetails): Usage {
   const u: Usage = {
     input: 0,
@@ -369,30 +345,60 @@ function runHeader(d: ProgressDetails, r: RunState): string {
   return `${r.agent} · ${progressDone(d)}/${d.runs.length} done · ${progressState(d)} · ${runElapsed(d, r)}${usage ? ` · ${usage}` : ""}`;
 }
 
-function renderRunBlock(
-  lines: string[],
-  d: ProgressDetails,
-  run: RunState,
-  expanded: boolean,
-) {
-  const step = run.step ? `step ${run.step} · ` : "";
-  lines.push(`  - ${step}${runHeader(d, run)}`);
-  const summary = behaviorSummary(run);
-  if (summary) lines.push(`    › ${summaryText(summary)}`);
-  const visibleTools = expanded ? run.tools.slice(-8) : run.tools.slice(-1);
-  for (const t of visibleTools) {
-    lines.push(`    ${toolIcon(t.status)} ${toolBrief(t)}`);
-  }
-  if (expanded && run.errorMessage) {
-    lines.push(`    ✗ ${oneLine(run.errorMessage, 120)}`);
+/**
+ * Where pi persisted the child's session: `<agentDir>/sessions/<encoded cwd>/<ts>_<sessionId>.jsonl`.
+ * Mirrors pi's getDefaultSessionDirPath (not exported). The full model behaviour history lives there.
+ */
+export function sessionLogPath(run: Pick<RunState, "cwd" | "sessionId">): string | undefined {
+  if (!run.cwd) return undefined;
+  const agentDir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
+  const safe = `--${resolve(run.cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  const dir = join(agentDir, "sessions", safe);
+  try {
+    const file = readdirSync(dir).find((n) => n.endsWith(`_${run.sessionId}.jsonl`));
+    return file ? join(dir, file) : undefined;
+  } catch {
+    return undefined;
   }
 }
 
-function renderProgressCard(
-  d: ProgressDetails,
-  expanded: boolean,
-  w: number,
-): string[] {
+function renderRunBlock(lines: string[], d: ProgressDetails, run: RunState, w: number) {
+  const step = run.step ? `step ${run.step} · ` : "";
+  lines.push(trunc(`  - ${step}${runHeader(d, run)}`, w));
+  const summary = behaviorSummary(run);
+  if (summary) lines.push(trunc(`    › ${summaryText(summary)}`, w));
+  for (const t of run.tools.slice(-8)) {
+    lines.push(trunc(`    ${toolIcon(t.status)} ${toolBrief(t)}`, w));
+  }
+  if (run.errorMessage) {
+    lines.push(trunc(`    ✗ ${oneLine(run.errorMessage, 120)}`, w));
+  }
+  // The full behaviour history is the child's session file. Show the path on its own line
+  // (home abbreviated to ~); when even that overflows, split at the last "/" so the two
+  // pieces are a directory and a file name rather than an arbitrary character cut.
+  const log = sessionLogPath(run);
+  if (log) {
+    const shown = abbreviateHome(log);
+    lines.push("    ⎘ session log:");
+    if (shown.length <= w) lines.push(shown);
+    else {
+      const cut = shown.lastIndexOf("/") + 1;
+      lines.push(shown.slice(0, cut), shown.slice(cut));
+    }
+  }
+}
+
+function abbreviateHome(p: string): string {
+  const home = homedir();
+  return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
+}
+
+/**
+ * Progress card for `/subagent → task → View Progress` (live view). Same shape as
+ * the former inline chat card — latest 8 tool calls per run, lines cut to width —
+ * plus the session log path holding the full history (issue 088).
+ */
+export function renderProgressCard(d: ProgressDetails, w: number): string[] {
   const r = activeRun(d);
   if (!r) return [];
   const spinner = ["◐", "◓", "◑", "◒"][Math.floor(Date.now() / 250) % 4]!;
@@ -409,23 +415,8 @@ function renderProgressCard(
     `${icon} subagent ${modeLabel} · total ${totalElapsed}`,
   ];
 
-  if (!expanded) {
-    renderRunBlock(lines, d, r, false);
-    lines.push("  Alt+O expand latest subagent card");
-    return lines.map((l) => trunc(l, w));
-  }
-
-  for (const run of d.runs) renderRunBlock(lines, d, run, true);
-  lines.push("  Alt+O collapse latest subagent card");
-  const max = 48;
-  const shown =
-    lines.length > max
-      ? [
-          ...lines.slice(0, max - 1),
-          `  … ${lines.length - max + 1} lines hidden`,
-        ]
-      : lines;
-  return shown.map((l) => trunc(l, w));
+  for (const run of d.runs) renderRunBlock(lines, d, run, w);
+  return lines.map((l) => trunc(l, w));
 }
 
 function progressKey(d: ProgressDetails): string {
@@ -1019,6 +1010,7 @@ export function runPi(
       PI_SUBAGENT_CHILD: "1",
     };
     const targetCwd = cfg.cwd || cwd;
+    state.cwd = targetCwd;
     const cli = spawn(inv.command, [...inv.args, ...buildPiArgs(cfg)], {
       cwd: targetCwd,
       env: childEnv,
@@ -1176,12 +1168,10 @@ function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
 export function normalizeTasks(input: SubagentInput): {
   tasks: SubagentTaskItem[];
   isChain: boolean;
-  isAsync: boolean;
   timeoutMs?: number;
   maxTurns?: number;
 } {
   const isChain = Boolean(input.chain || input.mode === "chain");
-  const isAsync = Boolean(input.async || input.background);
   const timeoutMs = typeof input.timeoutMs === "number" && input.timeoutMs > 0 ? input.timeoutMs : undefined;
   const maxTurns = typeof input.maxTurns === "number" && input.maxTurns > 0 ? input.maxTurns : undefined;
 
@@ -1237,7 +1227,17 @@ export function normalizeTasks(input: SubagentInput): {
     }
   }
 
-  return { tasks: items, isChain, isAsync, timeoutMs, maxTurns };
+  return { tasks: items, isChain, timeoutMs, maxTurns };
+}
+
+/** Plain-text one-liner for task lists, status bar and exit messages (no ANSI). */
+export function describeTasks(tasks: SubagentTaskItem[], isChain: boolean): string {
+  const first = tasks[0];
+  if (!first) return "subagent";
+  const head = oneLine(first.task, 60);
+  const prefix = first.agent ? `${first.agent}: ` : "";
+  if (tasks.length === 1) return `${prefix}${head}`;
+  return `${tasks.length} tasks (${isChain ? "chain" : "parallel"}) · ${prefix}${head}`;
 }
 
 // ── Task Manager ──────────────────────────────────────────────────
@@ -1246,7 +1246,6 @@ export interface SubagentTaskRecord {
   parentSessionId: string;
   description: string;
   agent?: string;
-  mode: "foreground" | "background";
   status: "running" | "succeeded" | "failed" | "cancelled" | "paused";
   output: string;
   startedAt: number;
@@ -1255,6 +1254,8 @@ export interface SubagentTaskRecord {
   notifyOnExit: boolean;
   done?: Promise<void>;
   pauseReason?: "timeout" | "max_turns";
+  /** Latest streamed progress; the single source for status bar and menu views. */
+  progress?: ProgressDetails;
 }
 
 export type BackgroundSubagentTask = SubagentTaskRecord;
@@ -1266,12 +1267,24 @@ export type BackgroundSubagentTask = SubagentTaskRecord;
  * sendMessage must be clone-safe (strings, numbers, booleans only).
  */
 export function toMessageDetails(task: SubagentTaskRecord): Record<string, unknown> {
-  const { controller: _controller, done: _done, notifyOnExit: _notifyOnExit, ...safe } = task;
+  const { controller: _controller, done: _done, notifyOnExit: _notifyOnExit, progress: _progress, ...safe } = task;
   return safe;
 }
 
+/**
+ * Footer text: `sub:N · <agent> <elapsed>` for the oldest running task, or
+ * undefined when nothing runs. Kept short on purpose; details live in /subagent.
+ */
+export function formatSubagentStatus(tasks: SubagentTaskRecord[], now = Date.now()): string | undefined {
+  const running = tasks.filter((t) => t.status === "running");
+  if (running.length === 0) return undefined;
+  const oldest = running.reduce((a, b) => (a.startedAt <= b.startedAt ? a : b));
+  const label = oldest.agent ?? "subagent";
+  return `sub:${running.length} · ${label} ${fmtDur(Math.max(0, now - oldest.startedAt))}`;
+}
+
 export class SubagentTaskManager {
-  private readonly tasks = new Map<string, SubagentTaskRecord>();
+  constructor(private readonly tasks: Map<string, SubagentTaskRecord> = new Map()) {}
   private onExit?: (task: SubagentTaskRecord) => void;
   private onChange?: () => void;
 
@@ -1297,6 +1310,13 @@ export class SubagentTaskManager {
     t.finishedAt = Date.now();
     this.emitChange();
     return true;
+  }
+
+  setProgress(id: string, progress: ProgressDetails): void {
+    const t = this.tasks.get(id);
+    if (!t || t.status !== "running") return;
+    t.progress = progress;
+    this.emitChange();
   }
 
   complete(id: string, output: string, failed: boolean, cancelled = false, paused = false): void {
@@ -1348,10 +1368,15 @@ export class SubagentTaskManager {
 export const SubagentBackgroundManager = SubagentTaskManager;
 export type SubagentBackgroundManager = SubagentTaskManager;
 
-const SUBAGENT_MGR_KEY = Symbol.for("@bytetrue/pi-subagent.manager");
-const globalStore = globalThis as unknown as Record<symbol, SubagentTaskManager | undefined>;
-export const subagentManager: SubagentTaskManager =
-  (globalStore[SUBAGENT_MGR_KEY] ??= new SubagentTaskManager());
+// /reload re-evaluates this module. Pin the task *data* (a Map) to a process global so tasks
+// started before a reload stay visible and stoppable, but build the manager itself fresh each
+// load so its methods always come from the current code. Pinning the instance instead left an
+// old prototype alive after an upgrade-reload ("setProgress is not a function", issue 088).
+const SUBAGENT_TASKS_KEY = Symbol.for("@bytetrue/pi-subagent.tasks");
+const globalStore = globalThis as unknown as Record<symbol, Map<string, SubagentTaskRecord> | undefined>;
+export const subagentManager: SubagentTaskManager = new SubagentTaskManager(
+  (globalStore[SUBAGENT_TASKS_KEY] ??= new Map()),
+);
 
 // ── Orchestrator ──────────────────────────────────────────────────────
 export async function runSubagent(
@@ -1551,6 +1576,7 @@ export default function subagentExtension(pi: {
   let updateStatus: (() => void) | undefined;
   let agentBusy = false;
   let pendingExits: BackgroundSubagentTask[] = [];
+  let statusTicker: ReturnType<typeof setInterval> | undefined;
   let activeParentModel: string | undefined = undefined;
   let activeParentThinking: string | undefined = undefined;
 
@@ -1628,33 +1654,17 @@ export default function subagentExtension(pi: {
     },
   });
 
-  const toggleDetail = (ctx: PiExtensionContext) => {
-    const id = activeSubagentToolCallId;
-    const card = id ? nativeCards.get(id) : undefined;
-    if (!card) {
-      ctx.ui?.notify?.("No subagent card to toggle yet.", "warning");
-      return;
-    }
-    card.state.localExpanded = card.state.localExpanded !== true;
-    card.invalidate();
-  };
-
-  pi.registerShortcut?.("alt+o", {
-    description: "Toggle latest subagent progress card details",
-    handler: async (ctx: PiExtensionContext) => toggleDetail(ctx),
-  });
-
   pi.registerTool?.({
     name: "subagent",
     label: "Subagent",
     description:
-      "Delegate tasks to isolated child agent sessions. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). Runs concurrently by default, or sequentially when chain is true. Prefer async: true — the call returns at once and the full result arrives later as a new message that starts your next turn; until then, continue with other work or end your turn. Supports session resumption.",
+      "Delegate tasks to isolated child agent sessions. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). Runs concurrently by default, or sequentially when chain is true. The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. Supports session resumption.",
     promptSnippet:
-      "Delegate work to child agents (scout / researcher / reviewer); with async: true the result arrives later as a new message.",
+      "Delegate work to child agents (scout / researcher / reviewer); the call returns at once and the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
     promptGuidelines: [
-      "Delegate self-contained recon, research, or review to subagent with async: true so you stay free to keep working or hand control back to the user",
-      "After an async subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
+      "Delegate self-contained recon, research, or review to subagent so you stay free to keep working or hand control back to the user",
+      "After a subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
     ],
     parameters: {
       type: "object",
@@ -1704,11 +1714,6 @@ export default function subagentExtension(pi: {
           description:
             "Optional. If true, runs tasks sequentially as a pipeline (output of step N is piped into step N+1). Default: false.",
         },
-        async: {
-          type: "boolean",
-          description:
-            "Optional. If true, returns immediately and delivers the full result later as a new message that starts your next turn (preferred). If false, blocks this turn until the tasks finish. Default: false.",
-        },
         timeoutMs: {
           type: "number",
           description:
@@ -1723,183 +1728,81 @@ export default function subagentExtension(pi: {
       required: ["tasks"],
     },
     execute: async (
-      id: string,
+      _id: string,
       input: SubagentInput,
-      signal?: AbortSignal,
-      onUpdate?: (r: PiToolResult) => void,
+      _signal?: AbortSignal,
+      _onUpdate?: (r: PiToolResult) => void,
       ctx?: PiExtensionContext,
     ) => {
-      activeSubagentToolCallId = id;
       const cwd = process.cwd();
       const inheritedThinking = resolveInheritedThinking();
       const inheritedModel = resolveInheritedModel(ctx);
 
-      const { tasks, isChain, isAsync } = normalizeTasks(input);
+      const { tasks, isChain } = normalizeTasks(input);
       if (tasks.length === 0) {
         throw new Error("No task specified. Provide 'tasks' with at least one task item.");
       }
 
-      // Background asynchronous execution
-      if (isAsync) {
-        const taskId = `sub_${randomBytes(6).toString("hex")}`;
-        const sessionId =
-          ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
-        const taskController = new AbortController();
-
-        const desc =
-          tasks.length === 1
-            ? trunc(tasks[0]!.task, 60)
-            : `${tasks.length} tasks (${isChain ? "chain" : "parallel"})`;
-
-        const bgTask: SubagentTaskRecord = {
-          id: taskId,
-          parentSessionId: sessionId,
-          description: desc,
-          agent: tasks[0]?.agent,
-          mode: "background",
-          status: "running",
-          output: "",
-          startedAt: Date.now(),
-          controller: taskController,
-          notifyOnExit: true,
-          done: Promise.resolve(),
-        };
-
-        const execution = runSubagent(
-          cwd,
-          input,
-          taskController.signal,
-          undefined,
-          inheritedThinking,
-          inheritedModel,
-        )
-          .then((res) => {
-            subagentManager.complete(
-              taskId,
-              res.output,
-              res.failed,
-              taskController.signal.aborted,
-              res.paused,
-            );
-          })
-          .catch((err) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            subagentManager.complete(taskId, msg, true, taskController.signal.aborted);
-          });
-
-        bgTask.done = execution;
-        subagentManager.register(bgTask);
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Subagent task started in background (ID: ${taskId}, ${tasks.length} task(s)). Its full result will arrive as a new message — continue with other work or end your turn now.`,
-            },
-          ],
-          details: { id: taskId, status: "running", count: tasks.length, chain: isChain },
-        };
-      }
-
-      // Foreground synchronous execution
+      // Pure background (issue 088): the call returns at once; progress streams into
+      // the manager record (status bar + /subagent menu) and the result arrives as a
+      // followUp message via subagentManager.complete → onExit.
       const taskId = `sub_${randomBytes(6).toString("hex")}`;
       const sessionId =
         ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
-      const fgController = new AbortController();
+      const controller = new AbortController();
 
-      const desc =
-        tasks.length === 1
-          ? trunc(tasks[0]!.task, 60)
-          : `${tasks.length} tasks (${isChain ? "chain" : "concurrent"})`;
-
-      const fgRecord: SubagentTaskRecord = {
+      const record: SubagentTaskRecord = {
         id: taskId,
         parentSessionId: sessionId,
-        description: desc,
+        description: describeTasks(tasks, isChain),
         agent: tasks[0]?.agent,
-        mode: "foreground",
         status: "running",
         output: "",
         startedAt: Date.now(),
-        controller: fgController,
-        notifyOnExit: false,
+        controller,
+        notifyOnExit: true,
+        done: Promise.resolve(),
       };
 
-      if (signal) {
-        signal.addEventListener("abort", () => fgController.abort(), { once: true });
-      }
+      const onProgress = (r: PiToolResult) => {
+        if (isObj(r.details) && r.details.kind === "pi-subagent-progress") {
+          subagentManager.setProgress(taskId, r.details as unknown as ProgressDetails);
+        }
+      };
 
-      subagentManager.register(fgRecord);
+      const execution = runSubagent(
+        cwd,
+        input,
+        controller.signal,
+        onProgress,
+        inheritedThinking,
+        inheritedModel,
+      )
+        .then((res) => {
+          subagentManager.complete(
+            taskId,
+            res.output,
+            res.failed,
+            controller.signal.aborted,
+            res.paused,
+          );
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          subagentManager.complete(taskId, msg, true, controller.signal.aborted);
+        });
 
-      try {
-        const result = await runSubagent(
-          cwd,
-          input,
-          fgController.signal,
-          onUpdate,
-          inheritedThinking,
-          inheritedModel,
-        );
+      record.done = execution;
+      subagentManager.register(record);
 
-        subagentManager.complete(
-          taskId,
-          result.output,
-          result.failed,
-          fgController.signal.aborted,
-          result.paused,
-        );
-
-        return {
-          content: [{ type: "text", text: result.output }],
-          details: result.details,
-        };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        subagentManager.complete(taskId, msg, true, fgController.signal.aborted);
-        throw err;
-      }
-    },
-    renderCall: () => ({
-      render() {
-        return [];
-      },
-      invalidate() {},
-    }),
-    renderResult: (
-      result: PiToolResult,
-      _opts?: { expanded?: boolean; isPartial?: boolean },
-      _theme?: unknown,
-      context?: unknown,
-    ) => {
-      const ctxObj = isObj(context) ? context : null;
-      const toolCallId = str(ctxObj?.toolCallId);
-      const state = isObj(ctxObj?.state) ? (ctxObj.state as JsonObject) : null;
-      const invalidate =
-        typeof ctxObj?.invalidate === "function"
-          ? (ctxObj.invalidate as () => void)
-          : null;
-      const isProgress =
-        isObj(result.details) &&
-        result.details.kind === "pi-subagent-progress";
-      if (toolCallId && state && invalidate) {
-        const updatedAt = isProgress
-          ? (result.details as ProgressDetails).updatedAt
-          : Date.now();
-        rememberNativeCard(toolCallId, { state, invalidate, updatedAt });
-      }
       return {
-        render(w: number) {
-          if (isProgress) {
-            const expanded = state?.localExpanded === true;
-            return renderProgressCard(
-              result.details as ProgressDetails,
-              expanded,
-              w,
-            );
-          }
-          return [trunc(result.content?.[0]?.text ?? "(no output)", w)];
-        },
-        invalidate() {},
+        content: [
+          {
+            type: "text",
+            text: `Subagent started (ID: ${taskId}, ${tasks.length} task(s)). Its full result will arrive as a new message — continue with other work or end your turn now.`,
+          },
+        ],
+        details: { id: taskId, status: "running", count: tasks.length, chain: isChain },
       };
     },
   });
@@ -1917,9 +1820,18 @@ export default function subagentExtension(pi: {
     trackSessionModel(ctx?.model);
     const sessionId = ctx?.sessionManager?.getSessionId?.() ?? "default";
     currentSessionId = sessionId;
+    // Progress events are throttled and stop while the child thinks, so a 1s ticker
+    // keeps the elapsed time honest while anything runs; it is cleared when idle.
     updateStatus = () => {
-      const running = subagentManager.getRunningCount(sessionId);
-      ctx?.ui?.setStatus?.("subagent", running === 0 ? undefined : `sub:${running}`);
+      const text = formatSubagentStatus(subagentManager.list(sessionId));
+      ctx?.ui?.setStatus?.("subagent", text);
+      if (text && !statusTicker) {
+        statusTicker = setInterval(() => updateStatus?.(), 1000);
+        statusTicker.unref?.();
+      } else if (!text && statusTicker) {
+        clearInterval(statusTicker);
+        statusTicker = undefined;
+      }
     };
     updateStatus();
   });
@@ -1945,28 +1857,14 @@ export default function subagentExtension(pi: {
     const sessionId =
       ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
     ctx?.ui?.setStatus?.("subagent", undefined);
+    if (statusTicker) {
+      clearInterval(statusTicker);
+      statusTicker = undefined;
+    }
     updateStatus = undefined;
     pendingExits = [];
     if (currentSessionId === sessionId) currentSessionId = null;
     await subagentManager.clearSession(sessionId);
-    nativeCards.clear();
-    activeSubagentToolCallId = null;
-  });
-
-  pi.on?.("tool_result", (event) => {
-    const ev = event as { toolName?: string; details?: unknown };
-    if (
-      ev.toolName === "subagent" &&
-      isObj(ev.details) &&
-      ev.details.kind === "pi-subagent-progress" &&
-      Array.isArray(ev.details.runs) &&
-      ev.details.runs.some(
-        (r) => isObj(r) && (r.status === "failed" || r.status === "cancelled"),
-      )
-    ) {
-      return { isError: true };
-    }
-    return undefined;
   });
 }
 
@@ -1979,5 +1877,12 @@ function formatSubagentExitMessage(task: BackgroundSubagentTask): string {
         : task.status === "failed"
           ? "failed"
           : "completed successfully";
-  return `[Subagent Task ${task.id}] (${task.description}) ${outcome}.\n\n${task.output}`;
+  const logs = (task.progress?.runs ?? [])
+    .map((run) => {
+      const path = sessionLogPath(run);
+      return path ? `- ${run.agent}: ${path}` : undefined;
+    })
+    .filter((line): line is string => Boolean(line));
+  const logSection = logs.length ? `\n\nSession log${logs.length > 1 ? "s" : ""} (full model behaviour history):\n${logs.join("\n")}` : "";
+  return `[Subagent Task ${task.id}] (${task.description}) ${outcome}.\n\n${task.output}${logSection}`;
 }

@@ -13,6 +13,10 @@ import {
   SubagentBackgroundManager,
   toMessageDetails,
   subagentManager,
+  describeTasks,
+  formatSubagentStatus,
+  sessionLogPath,
+  type ProgressDetails,
   type RunState,
   type JsonObject,
   type SubagentTaskItem,
@@ -308,12 +312,10 @@ You are an expert researcher. Read references carefully.
     const single = normalizeTasks({ task: "test task" });
     expect(single.tasks).toEqual([{ task: "test task" }]);
     expect(single.isChain).toBe(false);
-    expect(single.isAsync).toBe(false);
 
     // 2. Structured tasks object array with chain
     const chain = normalizeTasks({
       chain: true,
-      async: true,
       tasks: [
         { task: "step 1", agent: "scout" },
         {
@@ -325,7 +327,6 @@ You are an expert researcher. Read references carefully.
       ],
     });
     expect(chain.isChain).toBe(true);
-    expect(chain.isAsync).toBe(true);
     expect(chain.tasks.length).toBe(2);
     expect(chain.tasks[0]?.agent).toBe("scout");
     expect(chain.tasks[1]).not.toHaveProperty("model");
@@ -354,7 +355,6 @@ You are an expert researcher. Read references carefully.
       id: "sub_1",
       parentSessionId: "session_123",
       description: "testing task",
-      mode: "foreground",
       status: "running",
       output: "",
       startedAt: Date.now(),
@@ -397,7 +397,6 @@ You are an expert researcher. Read references carefully.
       parentSessionId: "session_123",
       description: "audit task",
       agent: "scout",
-      mode: "background",
       status: "succeeded",
       output: "done",
       startedAt: 1,
@@ -405,6 +404,7 @@ You are an expert researcher. Read references carefully.
       controller: new AbortController(),
       notifyOnExit: true,
       done: new Promise(() => {}),
+      progress: { kind: "pi-subagent-progress", agent: "scout", mode: "concurrent", startedAt: 1, updatedAt: 2, final: true, runs: [] },
     };
 
     const details = toMessageDetails(task);
@@ -412,6 +412,7 @@ You are an expert researcher. Read references carefully.
     expect(details).not.toHaveProperty("controller");
     expect(details).not.toHaveProperty("done");
     expect(details).not.toHaveProperty("notifyOnExit");
+    expect(details).not.toHaveProperty("progress");
     expect(details.id).toBe("sub_1");
     expect(details.status).toBe("succeeded");
 
@@ -442,6 +443,93 @@ You are an expert researcher. Read references carefully.
     expect(taskProperties).not.toHaveProperty("model");
     expect(taskProperties).not.toHaveProperty("thinking");
     expect(taskProperties).toHaveProperty("agent");
+    // Pure background (issue 088): there is no foreground mode to opt out of.
+    expect(parameters.properties).not.toHaveProperty("async");
+    expect(registered).not.toHaveProperty("renderResult");
+  });
+
+  it("formats the footer from the oldest running task and clears when idle", () => {
+    const base = {
+      parentSessionId: "s",
+      output: "",
+      controller: new AbortController(),
+      notifyOnExit: true,
+    };
+    const tasks: SubagentTaskRecord[] = [
+      { ...base, id: "a", description: "x", status: "succeeded", startedAt: 0 },
+      { ...base, id: "b", description: "y", agent: "reviewer", status: "running", startedAt: 10_000 },
+      { ...base, id: "c", description: "z", status: "running", startedAt: 70_000 },
+    ];
+    expect(formatSubagentStatus(tasks, 100_000)).toBe("sub:2 · reviewer 1m30s");
+    expect(formatSubagentStatus(tasks.filter((t) => t.status !== "running"), 100_000)).toBeUndefined();
+  });
+
+  it("stores streamed progress on the running record and stops after completion", () => {
+    const mgr = new SubagentTaskManager();
+    let changes = 0;
+    mgr.init(() => {}, () => changes++);
+    mgr.register({
+      id: "p",
+      parentSessionId: "s",
+      description: "d",
+      status: "running",
+      output: "",
+      startedAt: 0,
+      controller: new AbortController(),
+      notifyOnExit: false,
+    });
+    const progress: ProgressDetails = { kind: "pi-subagent-progress", agent: "scout", mode: "concurrent", startedAt: 0, updatedAt: 1, final: false, runs: [] };
+    mgr.setProgress("p", progress);
+    expect(mgr.get("p")?.progress).toBe(progress);
+    expect(changes).toBe(2);
+    mgr.complete("p", "ok", false);
+    mgr.setProgress("p", { ...progress, updatedAt: 2 });
+    expect(mgr.get("p")?.progress?.updatedAt).toBe(1);
+  });
+
+  it("shares task data across manager instances so a /reload keeps tasks but gets current methods", () => {
+    // Simulates two module evaluations pinning the same Map (issue 088 regression).
+    const shared = new Map<string, SubagentTaskRecord>();
+    const first = new SubagentTaskManager(shared);
+    first.register({
+      id: "r",
+      parentSessionId: "s",
+      description: "d",
+      status: "running",
+      output: "",
+      startedAt: 0,
+      controller: new AbortController(),
+      notifyOnExit: false,
+    });
+    const second = new SubagentTaskManager(shared);
+    expect(second.get("r")?.status).toBe("running");
+    expect(typeof second.setProgress).toBe("function");
+    second.stop("r");
+    expect(first.get("r")?.status).toBe("cancelled");
+  });
+
+  it("locates the child's persisted session log under the encoded-cwd sessions dir", () => {
+    const agentDir = join(tmpdir(), `pi-subagent-agent-${Date.now()}`);
+    const cwd = "/tmp/some project";
+    const dir = join(agentDir, "sessions", "--tmp-some project--");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "2026-01-01T00-00-00-000Z_sub_abc.jsonl"), "");
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    try {
+      expect(sessionLogPath({ cwd, sessionId: "sub_abc" })).toBe(join(dir, "2026-01-01T00-00-00-000Z_sub_abc.jsonl"));
+      expect(sessionLogPath({ cwd, sessionId: "sub_missing" })).toBeUndefined();
+      expect(sessionLogPath({ sessionId: "sub_abc" })).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = prev;
+      rmSync(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("describes tasks as plain text with role prefix and count", () => {
+    expect(describeTasks([{ task: "  Review\n  the diff  ", agent: "reviewer" }], false)).toBe("reviewer: Review the diff");
+    expect(describeTasks([{ task: "a" }, { task: "b" }], true)).toBe("2 tasks (chain) · a");
   });
 
   it("sends exit messages with clone-safe details through the manager wiring", async () => {
@@ -479,7 +567,6 @@ You are an expert researcher. Read references carefully.
       id: "sub_w",
       parentSessionId: "s-wiring",
       description: "scout run",
-      mode: "background",
       status: "running",
       output: "",
       startedAt: Date.now(),

@@ -9,6 +9,7 @@ import {
 } from "./settings.js";
 import { promptFuzzySelect, type PickerItem } from "./tui-picker.js";
 import { subagentManager, type SubagentTaskRecord } from "./index.js";
+import { showProgressView } from "./progress-view.js";
 
 const THINKING_CHOICES = [
   "off",
@@ -257,6 +258,15 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
   }
 }
 
+async function showText(ctx: ExtensionCommandContext, title: string, text: string): Promise<void> {
+  const rawUI = ctx.ui as unknown as Record<string, Function>;
+  if (typeof rawUI?.editor === "function") {
+    await rawUI.editor(title, text);
+  } else {
+    ctx.ui.notify(text.slice(0, 500), "info");
+  }
+}
+
 async function viewSubagentsMenu(ctx: ExtensionCommandContext): Promise<void> {
   const sessionId = ctx.sessionManager?.getSessionId?.() ?? "default";
 
@@ -271,11 +281,10 @@ async function viewSubagentsMenu(ctx: ExtensionCommandContext): Promise<void> {
     const taskChoices: PickerItem[] = tasks.map((t) => {
       const dur = fmtDur((t.finishedAt ?? Date.now()) - t.startedAt);
       const role = t.agent ? `[${t.agent}] ` : "";
-      const mode = t.mode === "background" ? "bg" : "fg";
       return {
         value: t.id,
         label: `[${t.status}] ${role}${trunc(t.description, 40)} (${t.id})`,
-        description: `${mode} · ${dur}`,
+        description: dur,
       };
     });
 
@@ -305,7 +314,9 @@ async function viewSingleTaskMenu(
   task: SubagentTaskRecord,
 ): Promise<void> {
   while (true) {
-    const actions = ["📄 View Output"];
+    const actions: string[] = [];
+    if (task.progress) actions.push("📊 View Progress");
+    if (task.status !== "running") actions.push("📄 View Output");
     if (task.status === "running") {
       actions.push("🛑 Stop Task");
     }
@@ -321,14 +332,11 @@ async function viewSingleTaskMenu(
 
     if (!action || action === "🔙 Back") return;
 
-    if (action === "📄 View Output") {
-      const out = task.output || "(no output captured yet)";
-      const rawUI = ctx.ui as unknown as Record<string, Function>;
-      if (typeof rawUI?.editor === "function") {
-        await rawUI.editor(`Output for ${task.id}`, out);
-      } else {
-        ctx.ui.notify(out.slice(0, 500), "info");
-      }
+    if (action === "📊 View Progress") {
+      // One data source (manager record), live scrollable view (issue 088).
+      await showProgressView(ctx, task);
+    } else if (action === "📄 View Output") {
+      await showText(ctx, `Output for ${task.id}`, task.output || "(no output captured)");
     } else if (action === "🛑 Stop Task") {
       const confirmed = await ctx.ui.confirm(
         "Stop this subagent task?",

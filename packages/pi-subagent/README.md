@@ -2,7 +2,7 @@
 
 Lightweight, high-performance Subagent runner for [Pi coding agent](https://pi.dev).
 
-Spawns focused child agents in isolated sessions for delegating tasks, background work, code reviews, or investigations, complete with real-time TUI progress streaming, token & cost tracking, and parallel/chain orchestration.
+Spawns focused child agents in isolated sessions for delegating tasks, code reviews, or investigations. Every call returns at once; the parent agent keeps working (or ends its turn) and the full result arrives as a new message. Live progress, token & cost tracking sit in the status bar and the `/subagent` menu, with parallel/chain orchestration.
 
 ## Features
 
@@ -13,13 +13,13 @@ Spawns focused child agents in isolated sessions for delegating tasks, backgroun
   - `reviewer`: Disciplined adversarial code review and test validation (`read, grep, find, bash`, `thinking: high`).
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
-- **📊 Real-time TUI Card**: Differential progress card showing live execution duration, current thinking intent, active tool call traces with arguments, token usage, and cost tracking (`Alt+O` to expand/collapse).
+- **🚀 Always Non-blocking**: The tool call returns a task id immediately; the parent turn is never held. The complete output is delivered as a follow-up message that starts the next turn.
+- **📊 Progress Where It Belongs**: The footer shows `sub:N · <role> <elapsed>` for the oldest running task; `/subagent → task → View Progress` shows the detailed card (duration, thinking intent, tool traces with arguments, token usage, cost).
 - **⚙️ `/subagent` Interactive Menu**:
-  - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect output, or stop running tasks.
+  - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect progress or output, or stop running tasks.
   - **Fuzzy Model Search**: Model picker with real-time text filter and wrap-around keyboard navigation (Up at top loops to bottom).
   - **Back Navigation**: Pressing `Esc` in any sub-menu smoothly returns to the parent menu level.
   - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `scout`, `researcher`, `reviewer` or custom).
-- **📟 Live Status Bar**: Displays `sub:N` in the footer whenever any foreground or background subagent is actively executing.
 
 ## Installation
 
@@ -45,7 +45,9 @@ Run `/subagent` in the Pi TUI to interactively:
 
 ### `subagent`
 
-Execute tasks in isolated child agent sessions. Multiple tasks run concurrently by default, or sequentially as a pipeline when `chain: true`. Supports non-blocking background execution with `async: true`.
+Delegate tasks to isolated child agent sessions. Multiple tasks run concurrently by default, or sequentially as a pipeline when `chain: true`. The call always returns at once with a task id; the result arrives later as a new message.
+
+Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, so a subagent started there has no next turn to report to. Pure background is the only mode by design (issue 088).
 
 #### Parameters
 
@@ -57,7 +59,8 @@ Execute tasks in isolated child agent sessions. Multiple tasks run concurrently 
 | `tasks[i].tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `tasks[i].cwd` | `string` | No | Optional working directory for the task. |
 | `chain` | `boolean` | No | Set to `true` to pipe output from step N to step N+1. Default: `false` (concurrent). |
-| `async` | `boolean` | No | Set to `true` to run in the background and notify upon completion. Default: `false`. |
+| `timeoutMs` | `number` | No | Global task timeout in ms. Default: 1200000 (20 minutes). |
+| `maxTurns` | `number` | No | Global turn limit before pausing. Default: 50. |
 
 #### Usage Examples
 
@@ -89,13 +92,6 @@ Execute tasks in isolated child agent sessions. Multiple tasks run concurrently 
 }
 ```
 
-**4. Background task (`async: true`):**
-```json
-{
-  "async": true,
-  "tasks": [{ "task": "Run end-to-end stress tests and summarize metrics" }]
-}
-```
 
 #### Model and Thinking Resolution
 
