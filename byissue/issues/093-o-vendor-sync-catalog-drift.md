@@ -72,14 +72,14 @@ labels: [pi-vendor, bug, skill, sync, drift]
 - 降噪规则：配置与任一当前官方模板完全一致即 up-to-date（对其他源差异不再展示）——实测用户配置 19 模型中 16 个 up-to-date，仅 3 个真实漂移（含 vision-exp 手工 4.1 修复 vs 当前内置 deepseek 模板的 4 处差异，诚实上报交用户决定）。
 - 验证：`npm --workspace @bytetrue/pi-vendor test` 185/185 通过；typecheck 通过；真机 smoke：`drift bytetrueapi`（无网络无快照，16 up-to-date / 3 drifted，表格正确）、`drift bytetrueapi deepseek`（restrict 模式）。
 
-2026-09-17（远端主干整合与发布授权）：
+2026-09-17（发布完成与本地副本更新）：
 
-- 远端已合并 `f6ca5db`（重构 SKILL 正面表述）并发布 `pi-vendor 0.3.9`，且制度记忆根目录已由 `codestable` 更名为 `byissue`（issue 086 占用，本 issue 顺延为 093）。
-- 将本变更完整整合至当前主干：SKILL.md 遵循 `byissue/decisions/001-positive-first-prompting.md`（正面表述优先）；`byissue/spec/pi-vendor/index.md` 同步；版本升级为 `0.4.0`。
-- 用户确认授权发布。准备推送到 main 并触发 GitHub Actions CI OIDC 发布 `pi-vendor-v0.4.0`，之后更新 `~/.pi/agent/npm` 本地安装副本。
+- commit `4f28737` 推送到 main。
+- 推送 tag `pi-vendor-v0.4.0`，GitHub Actions OIDC 发布工作流（run `35242331572`）成功发布 `@bytetrue/pi-vendor@0.4.0` 至 npm registry。
+- 本地 `~/.pi/agent/npm` 安装副本更新为 `0.4.0`：真机验证已安装的 `vendor.mjs catalog`（mise shim 自动解析通过）、`vendor.mjs drift`（同 schema 内置比对通过）及 `SKILL.md`（三查询 + 表格同步契约已生效）。
 
 ## 关闭时
 
 - 回写到 project spec 的候选：pi-vendor `index.md` 三查询、drift 语义、同步展示契约（本 issue 内已同步）。
 - 关闭判断与验证摘要：真机 sync 会话不再绕弯、计划以表格呈现、漂移主动询问。
-- 遗留：发布完成后更新本地副本并确认关闭。
+- 遗留：发布完成，待用户确认关闭本 issue。
