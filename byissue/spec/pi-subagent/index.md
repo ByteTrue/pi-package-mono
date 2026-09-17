@@ -17,9 +17,9 @@
   - **纯后台**：调用立即返回一行 started 文本与 task id，永不阻塞父回合；完整结果经 `followUp + triggerTurn` 作为新消息开启下一回合。没有 `async` 参数——没有前台模式可以退回（issue 088，对齐 background-terminal 079 的同一逻辑：结果由通知送达，"要不要阻塞"这根轴不存在）。
   - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达。
 - 内置角色预设：
-  - `scout`（只读快速侦察，`thinking: low`，工具：`read, grep, find`）
-  - `researcher`（技术与网络调研，`thinking: medium`，工具：`read, grep, find, web_search, web_fetch`）
-  - `reviewer`（代码审查与跑测，`thinking: high`，工具：`read, grep, find, bash`）
+  - `scout`（只读快速侦察，最低思考档，工具：`read, grep, find`）
+  - `researcher`（技术与网络调研，继承父会话思考强度，工具：`read, grep, find, web_search, web_fetch`）
+  - `reviewer`（代码审查与跑测，最高思考档，工具：`read, grep, find, bash`）
 - `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度、为角色绑定模型，以及查看当前运行中与最近完成的 subagent 任务（运行中可看详细进度卡与终止；结束后可看输出）。在任何子菜单按 `Esc` 均返回上一级。
 - 状态栏：有任务运行时显示 `sub:N · <agent> <elapsed>`（N 为运行数，角色/耗时取最老的运行中任务），每秒刷新；全部结束自动清除。
 
@@ -42,7 +42,7 @@
    - 子进程 JSON 事件流经 `runSubagent` 聚合为 `ProgressDetails`（节流 300ms），写入 manager 记录的 `progress` 字段（仅 running 期间接受更新）。
    - 状态栏读同一记录做简略显示；`/subagent → 任务 → View Progress` 是 `ctx.ui.custom` 实时视图（500ms 重绘、↑↓ 可滚、Esc 返回），用 `renderProgressCard` 渲染与旧内嵌卡同形的卡片（耗时、思考意图、最近 8 条工具调用、token/费用、错误，按宽度截断），末尾附 `⎘ session log:` + 文件路径（`$HOME` 缩写为 `~`，单独一行；放不下时按最后一个 `/` 拆成目录行 + 文件名行，不按字符硬折）。视图固定高度（16 行视口补空行）以避免残影。聊天流中不再有实时卡片，也没有 Alt+O。
    - **完整行为历史 = 子会话文件**：子 agent 是真实 pi 会话，落盘于 `<agentDir>/sessions/<cwd 编码>/<ts>_<sessionId>.jsonl`。`sessionLogPath()` 复刻 pi 未导出的目录编码规则定位它；进度卡每个 run 附文件路径；完成通知末尾附 `Session log(s)` 列表给完整路径（用户直接打开，模型需要时可 `read`）。用户明确要文件而非 `pi --session` 命令。
-5. **用户控制的执行策略**：模型优先级为 `subagent.agents[x].model > agent .md frontmatter model > subagent.defaultModel > 继承父会话当前完整 provider/model（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`；思考强度同链对称（角色设置 > agent 模板 > subagent 默认 > 父会话），内置角色提供其文档化默认值。Agent 的单次 tool call 无权覆盖二者。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`。
+5. **用户控制的执行策略**：模型优先级为 `subagent.agents[x].model > agent .md frontmatter model > subagent.defaultModel > 继承父会话当前完整 provider/model（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`；思考强度同链对称（角色设置 > agent 模板 > subagent 默认 > 父会话）。内置角色只给两端：`scout` 最低档（`minimal`，由 pi 按子模型能力向上夹取）、`reviewer` 最高档（`max`，向下夹取）；`researcher` 不设内置档位，随父会话。`off` 也是真实档位，会随继承传给子进程（`buildPiArgs` 不再丢弃它）。Agent 的单次 tool call 无权覆盖二者。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`。
 
 ## 明确不做
 

@@ -160,18 +160,29 @@ describe("pi-subagent unit tests", () => {
     const scout = findAgentDefinition(process.cwd(), "scout");
     expect(scout.found).toBe(true);
     expect(scout.config.tools).toEqual(["read", "grep", "find"]);
-    expect(scout.config.thinking).toBe("low");
+    expect(scout.config.thinking).toBe("minimal");
     expect(scout.config.systemPrompt).toContain("scouting subagent");
 
     const researcher = findAgentDefinition(process.cwd(), "researcher");
     expect(researcher.found).toBe(true);
     expect(researcher.config.tools).toEqual(["read", "grep", "find", "web_search", "web_fetch"]);
-    expect(researcher.config.thinking).toBe("medium");
+    // No built-in thinking default: researcher inherits the parent session's level.
+    expect(researcher.config.thinking).toBeUndefined();
 
     const reviewer = findAgentDefinition(process.cwd(), "reviewer");
     expect(reviewer.found).toBe(true);
     expect(reviewer.config.tools).toEqual(["read", "grep", "find", "bash"]);
-    expect(reviewer.config.thinking).toBe("high");
+    expect(reviewer.config.thinking).toBe("max");
+  });
+
+  it("inherits the parent session's thinking level, off included", () => {
+    const { config } = findAgentDefinition(process.cwd(), "researcher");
+    for (const level of ["minimal", "medium", "max", "off"]) {
+      const cfg = resolveRunCfg({ agent: "researcher" }, config, level, "p/m", {});
+      expect(cfg.thinking).toBe(level);
+      expect(cfg.model).toBe(`p/m:${level}`);
+      expect(buildPiArgs(cfg)).toContain(`p/m:${level}`);
+    }
   });
 
   it("resolves model and thinking through settings hierarchy", () => {

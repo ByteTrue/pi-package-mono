@@ -767,7 +767,9 @@ export function resolveRunCfg(
   const timeoutMs = typeof item.timeoutMs === "number" && item.timeoutMs > 0 ? item.timeoutMs : undefined;
   const maxTurns = typeof item.maxTurns === "number" && item.maxTurns > 0 ? item.maxTurns : undefined;
 
-  if (baseModel && thinking && thinking !== "off") {
+  // Bake the level into the model string whenever a model exists, "off" included:
+  // buildPiArgs cannot append through a model id that itself contains a colon.
+  if (baseModel && thinking) {
     return {
       model: `${baseModel}:${thinking}`,
       thinking,
@@ -800,13 +802,16 @@ export function buildPiArgs(cfg: PiRunConfig): string[] {
   }
 
   if (cfg.model) {
+    // A thinking level is a real level, "off" included: appending it is what makes
+    // inheritance faithful when the parent session sits at off. pi clamps the
+    // requested level to the child model's supported set.
     args.push(
       "--model",
-      cfg.thinking && cfg.thinking !== "off" && !cfg.model.includes(":")
+      cfg.thinking && !cfg.model.includes(":")
         ? `${cfg.model}:${cfg.thinking}`
         : cfg.model,
     );
-  } else if (cfg.thinking && cfg.thinking !== "off") {
+  } else if (cfg.thinking) {
     args.push("--thinking", cfg.thinking);
   }
   if (cfg.tools && cfg.tools.length > 0) {

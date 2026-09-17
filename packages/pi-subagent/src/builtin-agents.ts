@@ -7,7 +7,7 @@ export interface AgentConfig {
 
 export const BUILTIN_AGENTS: Record<string, AgentConfig> = {
   scout: {
-    thinking: "low",
+    thinking: "minimal",
     tools: ["read", "grep", "find"],
     systemPrompt: `You are a scouting subagent running inside pi.
 
@@ -43,7 +43,6 @@ Name the first file another agent should open and why.`,
   },
 
   researcher: {
-    thinking: "medium",
     tools: ["read", "grep", "find", "web_search", "web_fetch"],
     systemPrompt: `You are a research subagent.
 
@@ -76,7 +75,7 @@ What could not be answered confidently. Suggested next steps.`,
   },
 
   reviewer: {
-    thinking: "high",
+    thinking: "max",
     tools: ["read", "grep", "find", "bash"],
     systemPrompt: `You are a disciplined review subagent. Your job is to inspect, evaluate, and report findings with evidence. You verify every finding from the code, tests, docs, or requirements before reporting it.
 

@@ -8,9 +8,9 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 
 - **⚡️ Zero Bloat & Minimal Context**: Single lightweight tool schema (~150 tokens) replaces heavy multi-thousand-token multi-agent frameworks.
 - **🎭 Built-in Golden Roles**:
-  - `scout`: Fast read-only codebase reconnaissance (`read, grep, find`, `thinking: low`).
-  - `researcher`: Autonomous web & technical documentation research (`read, grep, find, web_search, web_fetch`, `thinking: medium`).
-  - `reviewer`: Disciplined adversarial code review and test validation (`read, grep, find, bash`, `thinking: high`).
+  - `scout`: Fast read-only codebase reconnaissance (`read, grep, find`, lowest thinking level).
+  - `researcher`: Autonomous web & technical documentation research (`read, grep, find, web_search, web_fetch`, inherits the parent session's thinking level).
+  - `reviewer`: Disciplined adversarial code review and test validation (`read, grep, find, bash`, highest thinking level).
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
 - **🚀 Always Non-blocking**: The tool call returns a task id immediately; the parent turn is never held. The complete output is delivered as a follow-up message that starts the next turn.
@@ -105,7 +105,7 @@ The model priority chain is:
 4. Parent session's current fully qualified provider/model (inherited)
 5. The child `pi` process's own default
 
-Thinking follows the same user-controlled chain: role settings, agent-template frontmatter, subagent default, then the parent session. Built-in roles provide their documented thinking defaults.
+Thinking follows the same user-controlled chain: role settings, agent-template frontmatter, subagent default, then the parent session. scout defaults to the lowest available thinking level and reviewer to the highest; researcher has no built-in level, so it inherits the parent session.
 
 Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
 
