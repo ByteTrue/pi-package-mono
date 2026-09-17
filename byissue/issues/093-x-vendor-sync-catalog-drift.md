@@ -2,7 +2,8 @@
 kind: issue
 title: "pi-vendor 同步体验修复：catalog 定位、计划表格化与存量模型漂移检查"
 type: bug
-status: open
+status: closed
+closed: 2026-09-17
 created: 2026-09-16
 labels: [pi-vendor, bug, skill, sync, drift]
 ---
@@ -80,6 +81,6 @@ labels: [pi-vendor, bug, skill, sync, drift]
 
 ## 关闭时
 
-- 回写到 project spec 的候选：pi-vendor `index.md` 三查询、drift 语义、同步展示契约（本 issue 内已同步）。
-- 关闭判断与验证摘要：真机 sync 会话不再绕弯、计划以表格呈现、漂移主动询问。
-- 遗留：发布完成，待用户确认关闭本 issue。
+- 回写到 project spec 的候选：pi-vendor `index.md` 三查询、drift 语义、同步展示契约（已回写）。
+- 关闭判断与验证摘要：真机 sync 会话不再绕弯（mise shim 自动解析）、计划以单行 JSON + 机器表格呈现（禁用 add[0] 式索引）、保留模型主动执行漂移检查并询问（发布后已在真机验证）。
+- 遗留：无。
