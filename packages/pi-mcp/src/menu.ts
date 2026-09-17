@@ -1,7 +1,9 @@
 // menu.ts — Clean, native Pi interactive menu for MCP management using
-// standard Pi dialogs (select, confirm, input, editor, notify).
+// standard Pi dialogs (select, confirm, input, editor, notify) and a
+// paginated, 10-per-page tool browser with Left/Right arrow key paging.
 // Zero custom TUI frames, zero overlay diff bugs, zero terminal tearing.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ServerManager } from "./server-manager.js";
 import type { McpConfig, ServerEntry, ToolMetadata } from "./types.js";
 import {
@@ -20,6 +22,13 @@ const SEPARATOR = "────────────────────�
 export interface McpMenuContext {
   ui: NonNullable<ExtensionContext["ui"]>;
   cwd?: string;
+}
+
+export interface ToolBrowserItem {
+  name: string;
+  serverName?: string;
+  description?: string;
+  inputSchema?: unknown;
 }
 
 /**
@@ -94,7 +103,20 @@ export async function runMcpMenu(
     }
 
     if (pick === actionViewTools) {
-      await ui.editor("All MCP Tools", allToolsText(manager, config.mcpServers));
+      const allTools: ToolBrowserItem[] = [];
+      for (const s of enabled) {
+        const meta = manager.metadataFor(s.name);
+        if (meta) {
+          for (const t of meta.tools) {
+            allTools.push({ ...t, serverName: s.name });
+          }
+        }
+      }
+      if (allTools.length === 0) {
+        ui.notify("No MCP tools available across enabled servers.", "info");
+      } else {
+        await runPaginatedToolBrowser(allTools, `All MCP Tools (${allTools.length})`, menuCtx);
+      }
       continue;
     }
 
@@ -314,28 +336,13 @@ async function runBrowseToolsMenu(
   manager: ServerManager,
   ctx: McpMenuContext,
 ): Promise<void> {
-  const ui = ctx.ui;
   const meta = manager.metadataFor(serverName);
-  if (!meta || meta.tools.length === 0) return;
-
-  while (true) {
-    const toolChoices = meta.tools.map((t) => {
-      const desc = t.description ? ` — ${t.description.split("\n")[0]}` : "";
-      return `${t.name}${desc}`;
-    });
-
-    const pick = await ui.select(`Tools: ${serverName} (${meta.tools.length})`, [...toolChoices, BACK]);
-    if (!pick || pick === BACK) return;
-
-    const idx = toolChoices.indexOf(pick);
-    const tool = meta.tools[idx];
-    if (tool) {
-      const shape = renderTsShape(tool.inputSchema);
-      const params = shape ? `Shape:\n${shape}` : `Parameters:\n${JSON.stringify(tool.inputSchema ?? {}, null, 2)}`;
-      const details = `Tool: ${tool.name}\nServer: ${serverName}\n\n${tool.description || "(no description)"}\n\n${params}`;
-      await ui.editor(`Tool — ${tool.name}`, details);
-    }
+  if (!meta || meta.tools.length === 0) {
+    ctx.ui.notify(`No cached tools for "${serverName}". Connect the server first.`, "info");
+    return;
   }
+  const items: ToolBrowserItem[] = meta.tools.map((t) => ({ ...t, serverName }));
+  await runPaginatedToolBrowser(items, `Tools: ${serverName} (${items.length})`, ctx);
 }
 
 async function runSearchMenu(
@@ -369,16 +376,142 @@ async function runSearchMenu(
     return;
   }
 
-  const lines = [
-    `Found ${matches.length} tool${matches.length === 1 ? "" : "s"} matching "${query}":`,
-    "",
-    ...matches.map((m) => {
-      const desc = m.tool.description ? ` — ${m.tool.description.split("\n")[0]}` : "";
-      return `- ${m.tool.name} [${m.server}]${desc}`;
-    }),
-  ];
+  const matchedTools: ToolBrowserItem[] = matches.map((m) => ({
+    ...m.tool,
+    serverName: m.server,
+  }));
+  await runPaginatedToolBrowser(matchedTools, `Search: "${query}" (${matchedTools.length})`, ctx);
+}
 
-  await ui.editor(`Search: ${query}`, lines.join("\n"));
+/**
+ * Paginated interactive tool browser:
+ * - 10 tools per page
+ * - Left/Right arrow keys (or p/n/h/l) flip pages
+ * - Up/Down arrow keys (or k/j) move selection
+ * - Enter inspects the selected tool's schema & description
+ * - Escape or q exits back to previous menu
+ * - Fixed 16-line render height guarantees zero terminal tearing or ghosting
+ */
+export async function runPaginatedToolBrowser(
+  tools: ToolBrowserItem[],
+  title: string,
+  ctx: McpMenuContext,
+): Promise<void> {
+  const ui = ctx.ui;
+  if (!ui || tools.length === 0) return;
+
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(tools.length / pageSize));
+  let page = 0;
+  let selectedIndex = 0;
+
+  function renderBoxLine(text: string, innerWidth: number, styleFn?: (t: string) => string): string {
+    const truncated = truncateToWidth(text, innerWidth, "…");
+    const padLen = Math.max(0, innerWidth - visibleWidth(truncated));
+    const styled = styleFn ? styleFn(truncated) : truncated;
+    return `│ ${styled}${" ".repeat(padLen)} │`;
+  }
+
+  while (true) {
+    const inspected = await new Promise<ToolBrowserItem | null>((resolve) => {
+      void ui.custom((tui, theme, _kb, done) => {
+        return {
+          render: (termWidth: number) => {
+            const width = Math.max(40, termWidth);
+            const innerWidth = width - 4;
+            const start = page * pageSize;
+            const end = Math.min((page + 1) * pageSize, tools.length);
+            const pageItems = tools.slice(start, end);
+
+            const titleHeader = truncateToWidth(title, innerWidth - 6, "…");
+            const topBorder =
+              `╭─ ${titleHeader} ` +
+              "─".repeat(Math.max(0, width - visibleWidth(`╭─ ${titleHeader} `) - 1)) +
+              "╮";
+            const subHeader = `Page ${page + 1}/${totalPages} (Tools ${start + 1}–${end} of ${
+              tools.length
+            }) • Use ←/→ to turn page`;
+
+            const lines = [
+              topBorder,
+              renderBoxLine(subHeader, innerWidth, (t) => theme.fg("accent", t)),
+              `├` + "─".repeat(innerWidth + 2) + `┤`,
+            ];
+
+            for (let i = 0; i < pageSize; i++) {
+              if (i < pageItems.length) {
+                const tool = pageItems[i]!;
+                const isSelected = i === selectedIndex;
+                const pointer = isSelected ? "▸ " : "  ";
+                const serverLabel = tool.serverName ? ` [${tool.serverName}]` : "";
+                const desc = tool.description ? ` — ${tool.description.split("\n")[0]}` : "";
+                const content = `${pointer}${tool.name}${serverLabel}${desc}`;
+                lines.push(
+                  renderBoxLine(content, innerWidth, (t) =>
+                    isSelected ? theme.bold(theme.fg("accent", t)) : t,
+                  ),
+                );
+              } else {
+                lines.push(`│ ${" ".repeat(innerWidth)} │`);
+              }
+            }
+
+            lines.push(`├` + "─".repeat(innerWidth + 2) + `┤`);
+            const hints = "←/→ page (or p/n) • ↑↓ select • enter inspect • esc back";
+            lines.push(renderBoxLine(hints, innerWidth, (t) => theme.fg("dim", t)));
+            lines.push(`╰` + "─".repeat(innerWidth + 2) + `╯`);
+
+            return lines;
+          },
+          invalidate: () => {},
+          handleInput: (data: string) => {
+            const start = page * pageSize;
+            const end = Math.min((page + 1) * pageSize, tools.length);
+            const pageItems = tools.slice(start, end);
+            const count = pageItems.length;
+            if (matchesKey(data, "left") || data === "p" || data === "h") {
+              page = page > 0 ? page - 1 : totalPages - 1;
+              selectedIndex = 0;
+              tui.requestRender();
+            } else if (matchesKey(data, "right") || data === "n" || data === "l") {
+              page = page < totalPages - 1 ? page + 1 : 0;
+              selectedIndex = 0;
+              tui.requestRender();
+            } else if (matchesKey(data, "up") || data === "k") {
+              selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : count - 1;
+              tui.requestRender();
+            } else if (matchesKey(data, "down") || data === "j") {
+              selectedIndex = selectedIndex < count - 1 ? selectedIndex + 1 : 0;
+              tui.requestRender();
+            } else if (matchesKey(data, "escape") || data === "q") {
+              done(undefined);
+              resolve(null);
+            } else if (matchesKey(data, "return")) {
+              const chosen = pageItems[selectedIndex];
+              if (chosen) {
+                done(undefined);
+                resolve(chosen);
+              }
+            }
+          },
+        };
+      });
+    });
+
+    if (!inspected) {
+      return; // user pressed esc / cancel -> return to caller menu
+    }
+
+    // Inspect chosen tool in full-screen reader
+    const shape = renderTsShape(inspected.inputSchema);
+    const params = shape
+      ? `Shape:\n${shape}`
+      : `Parameters:\n${JSON.stringify(inspected.inputSchema ?? {}, null, 2)}`;
+    const serverPart = inspected.serverName ? `\nServer: ${inspected.serverName}` : "";
+    const details = `Tool: ${inspected.name}${serverPart}\n\n${inspected.description || "(no description)"}\n\n${params}`;
+    await ui.editor(`Tool — ${inspected.name}`, details);
+    // After closing editor, loop continues at the SAME page and selection!
+  }
 }
 
 async function reconnectAllServers(

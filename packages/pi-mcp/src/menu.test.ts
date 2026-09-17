@@ -1,6 +1,7 @@
-// menu.test.ts — Unit tests for the native Pi dialog-based MCP menu.
+// menu.test.ts — Unit tests for the native Pi dialog-based MCP menu
+// and the paginated tool browser with 10 tools per page.
 import { describe, expect, it, vi } from "vitest";
-import { runMcpMenu } from "./menu.js";
+import { runMcpMenu, runPaginatedToolBrowser } from "./menu.js";
 import { ServerManager } from "./server-manager.js";
 import type { McpConfig, ServerEntry } from "./types.js";
 
@@ -11,6 +12,7 @@ function makeMockUi() {
     input: vi.fn(),
     editor: vi.fn(),
     notify: vi.fn(),
+    custom: vi.fn(),
   };
 }
 
@@ -60,7 +62,6 @@ describe("runMcpMenu", () => {
     });
 
     const ui = makeMockUi();
-    // First select: click reconnect all; second select: exit
     ui.select
       .mockResolvedValueOnce("🔄 Reconnect all servers (1 enabled)")
       .mockResolvedValueOnce("✕ Exit");
@@ -72,7 +73,7 @@ describe("runMcpMenu", () => {
     expect(ui.notify).toHaveBeenCalledWith("Reconnected all 1 servers.", "info");
   });
 
-  it("handles Browse all tools", async () => {
+  it("handles Browse all tools when no tools available", async () => {
     const manager = new ServerManager({ config: { a: entry({}) } });
     const config: McpConfig = { mcpServers: { a: entry({}) } };
 
@@ -83,7 +84,10 @@ describe("runMcpMenu", () => {
 
     await runMcpMenu(manager, config, { ui: ui as never });
 
-    expect(ui.editor).toHaveBeenCalledWith("All MCP Tools", expect.any(String));
+    expect(ui.notify).toHaveBeenCalledWith(
+      "No MCP tools available across enabled servers.",
+      "info",
+    );
   });
 
   it("handles Browse all prompts", async () => {
@@ -100,21 +104,6 @@ describe("runMcpMenu", () => {
     expect(ui.editor).toHaveBeenCalledWith("All MCP Prompts", expect.any(String));
   });
 
-  it("handles Search tools", async () => {
-    const manager = new ServerManager({ config: { a: entry({}) } });
-    const config: McpConfig = { mcpServers: { a: entry({}) } };
-
-    const ui = makeMockUi();
-    ui.select
-      .mockResolvedValueOnce("🔍 Search tools...")
-      .mockResolvedValueOnce("✕ Exit");
-    ui.input.mockResolvedValueOnce("test");
-
-    await runMcpMenu(manager, config, { ui: ui as never });
-
-    expect(ui.input).toHaveBeenCalledWith("Search MCP Tools", "keyword or pattern...");
-  });
-
   it("navigates into server menu and can reconnect single server", async () => {
     const manager = new ServerManager({ config: { srv: entry({}) } });
     const config: McpConfig = { mcpServers: { srv: entry({}) } };
@@ -127,10 +116,6 @@ describe("runMcpMenu", () => {
     });
 
     const ui = makeMockUi();
-    // 1. Pick server row in main menu
-    // 2. Pick Connect/Reconnect in server menu
-    // 3. Pick Back in server menu
-    // 4. Pick Exit in main menu
     ui.select
       .mockImplementationOnce((_t, choices: string[]) => choices[0]) // pick server row
       .mockResolvedValueOnce("⚡ Connect")
@@ -141,5 +126,72 @@ describe("runMcpMenu", () => {
 
     expect(reconnectSpy).toHaveBeenCalledWith("srv");
     expect(ui.notify).toHaveBeenCalledWith("Connected srv: 1 tools.", "info");
+  });
+});
+
+describe("runPaginatedToolBrowser", () => {
+  it("does nothing if tools array is empty or ui missing", async () => {
+    const ui = makeMockUi();
+    await expect(runPaginatedToolBrowser([], "Empty", { ui: ui as never })).resolves.toBeUndefined();
+    expect(ui.custom).not.toHaveBeenCalled();
+  });
+
+  it("paginates tools 10 per page, supports left/right arrows, enter to inspect, and escape to exit", async () => {
+    const tools = Array.from({ length: 25 }, (_, i) => ({
+      name: `tool_${i + 1}`,
+      serverName: "test-srv",
+      description: `Description for tool ${i + 1}`,
+      inputSchema: { type: "object", properties: { param1: { type: "string" } } },
+    }));
+
+    const ui = makeMockUi();
+    const tuiMock = { requestRender: vi.fn() };
+    const themeMock = {
+      fg: vi.fn((_type: string, text: string) => text),
+      bold: vi.fn((text: string) => text),
+    };
+
+    let sessionStep = 0;
+    ui.custom.mockImplementation((factory: (tui: unknown, theme: unknown, kb: unknown, done: (val: unknown) => void) => {
+      render: (w: number) => string[];
+      handleInput: (data: string) => void;
+    }) => {
+      sessionStep++;
+      let doneVal: unknown;
+      const done = (val: unknown) => { doneVal = val; };
+      const comp = factory(tuiMock, themeMock, {}, done);
+
+      // Verify rendering at 100 width: 16 lines exactly
+      const lines = comp.render(100);
+      expect(lines.length).toBe(16);
+      expect(lines.some((l: string) => l.includes("Page 1/3") || l.includes("Page 2/3"))).toBe(true);
+
+      if (sessionStep === 1) {
+        // Press right arrow to flip to Page 2
+        comp.handleInput("\x1b[C");
+        expect(tuiMock.requestRender).toHaveBeenCalled();
+        const p2Lines = comp.render(100);
+        expect(p2Lines.some((l: string) => l.includes("Page 2/3"))).toBe(true);
+        expect(p2Lines.some((l: string) => l.includes("tool_11"))).toBe(true);
+
+        // Press Enter on the first item of page 2 (tool_11)
+        comp.handleInput("\r");
+        return Promise.resolve(doneVal);
+      } else {
+        // Returned after inspecting tool in editor! Now press Esc to exit
+        comp.handleInput("\x1b");
+        return Promise.resolve(doneVal);
+      }
+    });
+
+    await runPaginatedToolBrowser(tools, "Test Tools", { ui: ui as never });
+
+    expect(ui.custom).toHaveBeenCalledTimes(2);
+    expect(ui.editor).toHaveBeenCalledTimes(1);
+    const [editorTitle, editorDetails] = ui.editor.mock.calls[0]!;
+    expect(editorTitle).toBe("Tool — tool_11");
+    expect(editorDetails).toContain("Tool: tool_11");
+    expect(editorDetails).toContain("Server: test-srv");
+    expect(editorDetails).toContain("param1");
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-mcp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Pi extension: minimal MCP adapter \u2014 one proxy tool, disk-cached tool metadata, lazy stdio/HTTP connections, output guard. Context management over feature breadth.",
   "keywords": [
     "pi-package",
@@ -44,7 +44,8 @@
     "cross-spawn": "^7.0.6"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
     "@modelcontextprotocol/server": "2.0.0",
