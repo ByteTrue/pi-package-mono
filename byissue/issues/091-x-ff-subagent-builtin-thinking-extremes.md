@@ -17,3 +17,5 @@ created: 2026-09-17
 - byissue：已同步 `byissue/spec/pi-subagent/index.md`（内置角色档位描述 + `off` 继承语义）；README 同步。
 
 顺手发现（不在本次范围）：`buildPiArgs` 的 `!cfg.model.includes(":")` 守卫会让「model id 自带冒号（如 openrouter `:exacto`）+ thinking」时不再拼接档位；`resolveRunCfg` 已在有 model 时预拼档位，所以只有直传 cfg 的调用路径受影响。
+
+发布：与 `092`（内置角色改为包内 agent 文档）合并发布于 `0.8.2`（本提交曾占 `0.8.1` 版本号，因从未发布而不存在该版本）。

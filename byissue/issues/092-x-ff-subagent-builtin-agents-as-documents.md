@@ -20,3 +20,11 @@ created: 2026-09-17
 - byissue：已同步 `byissue/spec/pi-subagent/index.md`（内置角色改为文档机制、模型优先级描述）；README 同步。
 
 顺手发现（不在本次范围）：`subagent.agents[x].model`（`/subagent` 菜单写的角色设置）仍压过 agent 文档。文档现在是角色的「定义」，这个优先级是否该反过来，需要另定。
+
+## 发布记录（2026-09-17）
+
+- 与 `091`（思考档两端 + `off` 继承）合并发布：版本 `0.8.0` → `0.8.2`（`0.8.1` 只落过本地提交，从未发布）。
+- 提交 `6539693`；tag `pi-subagent-v0.8.2` 触发 release.yml（Trusted Publishing OIDC，带 provenance）。
+- npm registry 确认：`dist-tags.latest` = `0.8.2`；发布物含 `agents/{scout,researcher,reviewer}.md`（总 11 文件）。
+- 从 npm 安装的 `0.8.2` 包内 `findAgentDefinition` 实测解析出三个内置角色（目录定位不依赖源码树）。
+- Release run `35210192061`：success；main CI run `35210182171`：success（即随本批提交修复的 pack-smoke）。
