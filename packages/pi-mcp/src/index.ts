@@ -228,11 +228,11 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
   });
 
   /** Open the management panel wired to this session's manager/config.
-   * Mounted as a full-screen custom component (pi's standard dialog mode),
-   * NOT an overlay: with overlays, base-screen mutations while the panel is
-   * open (startup install lines, spinners) make pi-tui's overlay diff
-   * misaddress rewritten rows, leaving ghost frames. Full-screen mounting
-   * removes the base from the render entirely while open. */
+   * Mounted as a centered overlay exactly like upstream pi-mcp-adapter
+   * (width 82): a focused overlay owns all input (app-level shortcuts like
+   * ctrl+r reach the panel), and with the upstream view structure (no dynamic
+   * height jumps — reconnect progress lives in row status labels, notice slot
+   * fixed) the overlay diff stays stable. */
   async function openMcpPanelForSession(
     _pi: ExtensionAPI,
     ctx: ExtensionContext,
@@ -283,6 +283,7 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
             );
             return panel;
           },
+          { overlay: true, overlayOptions: { anchor: "center", width: 82 } },
         );
       });
     } finally {

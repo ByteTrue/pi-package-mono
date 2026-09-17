@@ -239,3 +239,9 @@ packages/pi-mcp/
 对齐上游：① reconnectAll 不再设 notice；失败经行状态 + failure 行呈现。② notice 改固定槽位（恒两行：notice + 空行），任何 notice 出现/消失都不改变高度。单测新增高度稳定断言（ctrl+s 触发 notice 前后 render 行数相等）。
 
 验证：86/86 绿；真机 mono 单帧面板，server 行各一次、零重复。
+
+### 追加修复 5（2026-09-17，0.4.3）：回退全屏挂载，恢复上游 overlay
+
+0.4.2 全屏挂载两个问题：① 用户真机仍撕裂（notify 行在面板打开期间插入使 editor 区位移）；② 全屏下 app 级全局快捷键（ctrl+r = app.session.rename）先于面板拦截输入——0.4.0 overlay 时代 ctrl+r 能到面板（focused overlay 独占输入），全屏是输入路由回归。
+
+恢复上游挂载：`{ overlay: true, overlayOptions: { anchor: "center", width: 82 } }`。配合 0.4.2 的干净 view（无动态 notice 行、固定 notice 槽、重连进度走行状态标），渲染结构与上游逐行一致。已知验证局限：expect 伪终端无法向 overlay 送键（真终端可以），键路径靠单测 + 用户真机。
