@@ -66,6 +66,7 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
 
   // ── footer status bar (mcpFooterStatus) ──
   let footerCtx: ExtensionContext | null = null;
+  let panelOpen = false;
   const applyFooter = (): void => {
     if (!footerCtx?.ui) return;
     const text = footerStatusText(manager, config.settings?.mcpFooterStatus ?? "full");
@@ -226,58 +227,67 @@ export default function piMcpExtension(pi: ExtensionAPI): void {
     },
   });
 
-  /** Open the management panel wired to this session's manager/config. */
+  /** Open the management panel wired to this session's manager/config.
+   * Mounted as a full-screen custom component (pi's standard dialog mode),
+   * NOT an overlay: with overlays, base-screen mutations while the panel is
+   * open (startup install lines, spinners) make pi-tui's overlay diff
+   * misaddress rewritten rows, leaving ghost frames. Full-screen mounting
+   * removes the base from the render entirely while open. */
   async function openMcpPanelForSession(
     _pi: ExtensionAPI,
     ctx: ExtensionContext,
   ): Promise<void> {
-    if (!ctx.ui || ctx.mode !== "tui") return;
-    await new Promise<void>((resolve) => {
-      void ctx.ui.custom(
-        (tui, theme, keybindings, done) => {
-          const panel = openMcpPanel(
-            { config, cache: loadMetadataCache() },
-            {
-              reconnect: async (name) => {
-                try {
-                  await manager.reconnect(name);
-                  applyFooter();
-                  return true;
-                } catch {
-                  return false;
-                }
+    if (!ctx.ui || ctx.mode !== "tui" || panelOpen) return;
+    panelOpen = true;
+    try {
+      await new Promise<void>((resolve) => {
+        void ctx.ui.custom(
+          (tui, theme, keybindings, done) => {
+            const panel = openMcpPanel(
+              { config, cache: loadMetadataCache() },
+              {
+                reconnect: async (name) => {
+                  try {
+                    await manager.reconnect(name);
+                    applyFooter();
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                },
+                getConnectionStatus: (name) => {
+                  const row = manager.status().find((s) => s.name === name);
+                  if (!row) return "idle";
+                  if (row.disabled) return "disabled";
+                  if (row.connected) return "connected";
+                  if (row.failed) return "failed";
+                  return "idle";
+                },
+                getFailureMessage: (name) => manager.status().find((s) => s.name === name)?.lastError ?? null,
+                refreshCacheAfterReconnect: (name) => {
+                  const definition = config.mcpServers[name];
+                  const entry = loadMetadataCache()?.servers[name];
+                  return definition && entry && isServerCacheValid(entry, definition) ? entry : null;
+                },
+                applyDisabledChange: async (name, disabled) =>
+                  writeProjectServerDisabledOverride(process.cwd(), name, disabled, config).changed,
+                applyDirectToolsChange: async (name, selection) =>
+                  writeProjectServerDirectToolsOverride(process.cwd(), name, selection).changed,
               },
-              getConnectionStatus: (name) => {
-                const row = manager.status().find((s) => s.name === name);
-                if (!row) return "idle";
-                if (row.disabled) return "disabled";
-                if (row.connected) return "connected";
-                if (row.failed) return "failed";
-                return "idle";
+              tui,
+              () => {
+                done(undefined);
+                resolve();
               },
-              getFailureMessage: (name) => manager.status().find((s) => s.name === name)?.lastError ?? null,
-              refreshCacheAfterReconnect: (name) => {
-                const definition = config.mcpServers[name];
-                const entry = loadMetadataCache()?.servers[name];
-                return definition && entry && isServerCacheValid(entry, definition) ? entry : null;
-              },
-              applyDisabledChange: async (name, disabled) =>
-                writeProjectServerDisabledOverride(process.cwd(), name, disabled, config).changed,
-              applyDirectToolsChange: async (name, selection) =>
-                writeProjectServerDirectToolsOverride(process.cwd(), name, selection).changed,
-            },
-            tui,
-            () => {
-              done(undefined);
-              resolve();
-            },
-            { keybindings, theme },
-          );
-          return panel;
-        },
-        { overlay: true, overlayOptions: { anchor: "center", width: 92 } },
-      );
-    });
+              { keybindings, theme },
+            );
+            return panel;
+          },
+        );
+      });
+    } finally {
+      panelOpen = false;
+    }
   }
 
   // ── lifecycle ──

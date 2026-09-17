@@ -110,23 +110,23 @@ export interface McpPanelResult {
  * The themed MCP view. It owns only component composition and formatting;
  * input routing and callbacks remain on McpPanel.
  */
-class McpPanelView implements Component {
-  private readonly container = new Container();
-
+// Extends Container so the instance is a real pi-tui Component: pi's
+// non-overlay ctx.ui.custom() only renders genuine components (a structural
+// object with render() is silently ignored), and fullscreen mounting is what
+// keeps base-screen mutations from ghosting through the panel.
+class McpPanelView extends Container {
   constructor(
     private readonly getState: () => McpPanelViewState,
     private readonly theme: McpPanelTheme,
-  ) {}
-
-  render(width: number): string[] {
-    return this.renderContent(width);
+  ) {
+    super();
   }
 
-  renderContent(width: number): string[] {
+  render(width: number): string[] {
     const panelWidth = Math.max(0, width);
     const innerWidth = Math.max(0, panelWidth - 2);
     const state = this.getState();
-    this.container.clear();
+    this.clear();
 
     // Layout follows upstream mcp-panel.ts exactly: dynamic-height content,
     // notices at the list bottom (authNotice slot). Padding/growing between
@@ -254,19 +254,15 @@ class McpPanelView implements Component {
     if (currentLine) row(this.theme.hint(currentLine));
 
     rule("╰", "╯");
-    return this.container.render(panelWidth);
-  }
-
-  invalidate(): void {
-    this.container.invalidate();
+    return super.render(panelWidth);
   }
 
   private addRow(content: string, innerWidth: number): void {
-    this.container.addChild(new Text(this.row(content, innerWidth), 0, 0));
+    this.addChild(new Text(this.row(content, innerWidth), 0, 0));
   }
 
   private addRule(left: string, right: string, title?: string): void {
-    this.container.addChild(new McpPanelFrame(this.theme, left, right, title));
+    this.addChild(new McpPanelFrame(this.theme, left, right, title));
   }
 
   private row(content: string, innerWidth: number): string {
@@ -387,14 +383,27 @@ export interface McpPanelHost {
   cache: MetadataCache | null;
 }
 
+/** The object handed to ctx.ui.custom(): a real pi-tui Component (the view)
+ * with the controller's input/state surface attached. */
+export type McpPanelComponent = McpPanelView & {
+  handleInput(data: string): void;
+  getViewState(): McpPanelViewState;
+  cleanup(): void;
+};
+
 export function openMcpPanel(
   host: McpPanelHost,
   callbacks: McpPanelCallbacks,
   tui: { requestRender(): void },
   done: (result: McpPanelResult) => void,
   options?: { keybindings?: PanelKeybindings; theme?: Theme },
-): McpPanel {
-  return new McpPanel(host, callbacks, tui, done, options ?? {});
+): McpPanelComponent {
+  const panel = new McpPanel(host, callbacks, tui, done, options ?? {});
+  const view = panel.view as McpPanelComponent;
+  view.handleInput = (data: string) => panel.handleInput(data);
+  view.getViewState = () => panel.getViewState();
+  view.cleanup = () => panel.cleanup();
+  return view;
 }
 
 class McpPanel {
@@ -412,7 +421,7 @@ class McpPanel {
   private inactivityTimeout: ReturnType<typeof setTimeout> | null = null;
   private visibleItems: VisibleItem[] = [];
   private tui: { requestRender(): void };
-  private readonly view: McpPanelView;
+  readonly view: McpPanelView;
   private keys: PanelKeys;
   private cache: MetadataCache | null;
 

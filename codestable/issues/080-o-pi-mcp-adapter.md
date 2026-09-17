@@ -221,3 +221,13 @@ packages/pi-mcp/
 - commit be05e88（P1+P2+审计对齐一次性合入），tag `pi-mcp-v0.4.0` → Release run 35091669396,publish job 1m24s,`latest` → 0.4.0（`npm view` 确认）。
 - 全局 `pi update --extensions` 升至 0.4.0;mono 外目录真机验证：五态 status（`MCP: 0/2 servers, 54 tools`）、工具面正常。
 - 遗留 1/2（TUI 交互真机验收）已由用户在 P2 迭代中实测驱动（面板打开、残影反馈、ctrl+r 语义反馈均来自真实 TUI）;`/mcp__server__prompt` 斜杠命令仍待用户顺手验证。080 关闭待用户最终确认。
+
+### 追加修复 3（2026-09-17，0.4.1）：面板残影根因与全屏挂载
+
+用户真机仍见残影（两帧叠加 + base 行透入）。根因链：overlay 挂载下，面板打开期间 base 屏追加行（mono 启动的 "Installed N packages"、spinner）使 pi-tui main-screen 的 overlay diff 在滚动/行移位后错址重写——旧帧像素残留、边框丢失。上游同机制同隐患（其 overlay 用法在 base 静止时不触发）。
+
+两个次级发现：① non-overlay `ctx.ui.custom` 只渲染真 pi-tui Component 实例（探针：Text 实例渲染、结构化对象 factory 被调用但 render 永不调用）；② 因此面板 view 改为 `extends Container`（真 Component），controller 的 handleInput/getViewState/cleanup 挂到 view 实例上。
+
+最终挂载：non-overlay 全屏 custom。面板打开期间 base 完全不参与渲染，残影类问题按构造消失；关闭后 base 恢复。这是对上游 overlay 挂载的唯一有意偏离，理由即上述 pi-tui 缺陷。
+
+验证：真机 mono 捕获单帧面板（标题/搜索/hints 各一）、base 行零透入、退出恢复 shell；79 测试绿；tsc 干净。

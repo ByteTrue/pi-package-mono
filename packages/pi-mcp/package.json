@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-mcp",
-  "version": "0.4.0",
-  "description": "Pi extension: minimal MCP adapter — one proxy tool, disk-cached tool metadata, lazy stdio/HTTP connections, output guard. Context management over feature breadth.",
+  "version": "0.4.1",
+  "description": "Pi extension: minimal MCP adapter \u2014 one proxy tool, disk-cached tool metadata, lazy stdio/HTTP connections, output guard. Context management over feature breadth.",
   "keywords": [
     "pi-package",
     "pi-extension",
