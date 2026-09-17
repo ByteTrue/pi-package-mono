@@ -13,7 +13,7 @@
 Pi's built-in `bash` is the foreground executor — and this package never touches it. It adds one standalone tool for the other half of the decision:
 
 - **Need the command's output to continue?** Use `bash` — it blocks and returns the result.
-- **Should it run hands-off (builds, test suites, dev servers, watch mode)?** Use `background_run` — it returns a task id immediately, and the Agent receives a follow-up when the command exits, with its exit code and last output line. No polling.
+- **Should it run hands-off (builds, test suites, dev servers, watch mode)?** Use `background_run` — it returns a task id immediately, and the Agent keeps working or ends its turn, and the command's exit arrives as a new message (exit code + last output line) that starts the next turn. That notification is how the Agent waits.
 
 `background_run(command, timeout?)`:
 

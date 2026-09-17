@@ -41,14 +41,16 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "background_run",
     label: "Run Command in Background",
-    description: `Starts a shell command in the background; returns immediately with a task id while the command keeps running. Use it for anything that should run hands-off — builds, test suites, dev servers, watch mode. For a command whose result you need right now, use bash. The command is hard-killed after timeout seconds (${DEFAULT_LIFETIME_SECONDS}s by default; pass a larger value like 86400 for dev servers and watch modes). Its exit — natural, failed, or timed-out — is reported automatically via a follow-up; do not poll. Full output streams to a file (path in the result); use read on that path.`,
-    promptSnippet: `Start a command in the background (task id returned, exit reported via follow-up); use bash when you need the result now`,
+    description: `Starts a shell command in the background and returns immediately with a task id; the command keeps running on its own. Use it for work that should run hands-off — builds, test suites, dev servers, watch mode. When you need the output to decide your next step, use bash instead. After it starts, continue with other work or end your turn: its exit — natural, failed, or timed-out — arrives as a new message that starts your next turn. That notification is how you wait. The command is hard-killed after timeout seconds (${DEFAULT_LIFETIME_SECONDS}s by default; pass a larger value like 86400 for dev servers and watch modes). Full output streams to a file (path in the result); use read on that path.`,
+    promptSnippet: `Start a command in the background; its exit arrives later as a new message. Use bash when you need the result now.`,
+    // Positive-first wording (decision 001): each line says what to do; the wait model is stated
+    // explicitly because a bare "do not poll" left a vacuum the model filled with `sleep`.
     promptGuidelines: [
-      "Use background_run only when the command should run hands-off — you do not need its output to continue",
-      "If you need the command's output to decide your next step, use bash instead (it blocks and returns the output)",
-      "The task's exit is reported automatically via a follow-up message; do not call background_status in a loop to detect completion",
+      "Use background_run for work that should run hands-off — builds, test suites, dev servers, watch mode — anything you can leave running while you do other things",
+      "When you need a command's output to decide your next step, use bash — it blocks and returns the output",
+      "After background_run returns, the command is already running: continue with other work or end your turn. Its exit arrives as a new message that starts your next turn — that notification is how you wait. background_status is for a one-off look at partial output",
       "timeout (default 600) is a hard lifetime cap — pass a large value (e.g. 86400) for dev servers and watch modes",
-      "bash/powershell calls are also hard-killed after 600s by default (this extension injects the timeout when none is passed); for a command that needs longer, use background_run with a larger timeout",
+      "bash/powershell are hard-killed after 600s when no timeout is passed (this extension injects it); when you need the result of a longer command, pass a larger timeout to bash",
     ],
     parameters: Type.Object({
       command: Type.String({ minLength: 1, description: "The shell command to run in the background" }),
@@ -78,7 +80,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
         content: [
           {
             type: "text",
-            text: `Started in background: ${task.id}\nOutput file: ${task.outputPath}\nHard timeout: ${timeoutSeconds}s. You will be notified when it exits; until then the output file is partial.`,
+            text: `Started in background: ${task.id}\nOutput file: ${task.outputPath}\nHard timeout: ${timeoutSeconds}s. Its exit will arrive as a new message — continue with other work or end your turn now. Until then the output file is partial.`,
           },
         ],
         details: task,

@@ -22,7 +22,7 @@ describe("background_run tool", () => {
     expect(Date.now() - startedAt).toBeLessThan(2000);
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/Started in background: bg_[0-9a-f]+/);
-    expect(text).toMatch(/Hard timeout: 600s\. You will be notified when it exits; until then the output file is partial\./);
+    expect(text).toMatch(/Hard timeout: 600s\. Its exit will arrive as a new message — continue with other work or end your turn now\. Until then the output file is partial\./);
 
     const id = text.match(/bg_[0-9a-f]+/)?.[0];
     expect(manager.get(id!, SESSION)?.status).toBe("running");

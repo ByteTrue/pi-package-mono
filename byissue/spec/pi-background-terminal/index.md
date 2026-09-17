@@ -19,7 +19,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 - **`timeout` 缺省 600s**（总寿命硬杀；`timed_out` 可观测并入通知）；dev server 逃逸口写在 description（"pass a larger value like 86400"）。
 - **无等待路径**：不内联返回输出、无 waitSeconds、无 demote 竞态。print/JSON 会话无需特判——fire-and-forget 在所有 mode 行为一致，任务随进程死。
 - 尊重用户 `shellPath`/`shellCommandPrefix`（`SettingsManager.create`，尊重项目信任态，损坏 fail-open）；注入 `PI_*` 会话环境 + agent-bin PATH 前置（复刻内建 `getShellEnv()` 语义；上游导出后切换——upgrade trigger 在代码注释）。
-- promptGuidelines 五条引导：need the result now → bash；hands-off → background_run；退出自动通知勿轮询；dev server 传大 timeout；bash/powershell 默认也被 600s 硬杀（本扩展注入），需更久用 background_run。`timed_out` 唤醒消息附带恢复提示；background_status 运行中任务的 tail 标注 "still running"（防部分输出误读）。
+- promptGuidelines 五条引导，按 decision 001 正向优先措辞：hands-off → background_run；need the result now → bash；启动后继续做别的或结束回合，退出以新消息开启下一回合（"that notification is how you wait"），`background_status` 只用于一次性查看部分输出；dev server 传大 timeout；bash/powershell 无 timeout 时被 600s 硬杀（本扩展注入），需要更长命令的结果就给 bash 传更大 timeout（不是转 background_run）。返回文本同样以动作收尾（continue with other work or end your turn now）。`timed_out` 唤醒消息附带恢复提示；background_status 运行中任务的 tail 标注 "still running"（防部分输出误读）。
 
 ### 后台管理
 

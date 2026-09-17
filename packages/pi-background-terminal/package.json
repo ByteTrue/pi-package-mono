@@ -1,6 +1,6 @@
 {
   "name": "@bytetrue/pi-background-terminal",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Pi extension: background_run starts shell commands hands-off with automatic exit notifications, plus a 600s default timeout for the built-in bash/powershell tools.",
   "keywords": [
     "pi-package",
