@@ -14,3 +14,9 @@ mihomo/Clash TUN 的 fake-ip DNS 会把本机所有域名解析成 `198.18.0.0/1
 - 改动：`packages/pi-web-search/src/html.test.ts` — accepts 用例补 `http://198.18.0.1/` IP 字面量放行断言。
 - 验证：包内 `vitest` 全绿（12 文件 108 过）；本机 mihomo TUN 环境实测 `fetchUrlOrThrow('https://pi.dev/changelog')` 修复前复现报错、修复后 200 / 125KB（tsx 临时脚本，已清理）。
 - byissue：无影响——spec 只承诺「direct route 在 DNS、redirect、connect-time 守 SSRF 边界」，未枚举网段清单；README「private, loopback, link-local, metadata, and other non-public」表述仍准确。旧 bug `008`（SSRF host resolution）结论不受影响：metadata/内网段照挡。
+
+## 发布记录（2026-09-20）
+
+- 版本 `0.4.0` → `0.4.1`；提交 `4918cbf`（fix），byissue 记录 `3503130`；tag `pi-web-search-v0.4.1` 触发 release.yml（Trusted Publishing OIDC，带 provenance）。
+- Release run `35489728497`：success；main CI run `35489728453`：success。
+- npm registry 确认：`dist-tags.latest` = `0.4.1`，tarball `pi-web-search-0.4.1.tgz` 已发布。
