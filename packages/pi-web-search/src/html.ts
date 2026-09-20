@@ -140,7 +140,9 @@ for (const [network, prefix] of [
 	["192.0.2.0", 24],
 	["192.88.99.2", 32],
 	["192.168.0.0", 16],
-	["198.18.0.0", 15],
+	// 198.18.0.0/15 (RFC 2544) is intentionally NOT blocked: TUN proxies with
+	// fake-ip DNS (mihomo/Clash) answer every lookup from this range and route
+	// the connection transparently, so it is a legitimate destination.
 	["198.51.100.0", 24],
 	["203.0.113.0", 24],
 	["224.0.0.0", 4],

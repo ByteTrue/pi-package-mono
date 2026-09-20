@@ -39,6 +39,7 @@ describe("parseAndAssertHttpUrl (SSRF guard)", () => {
 		expect(parseAndAssertHttpUrl("https://pi.dev/x").hostname).toBe("pi.dev");
 		expect(parseAndAssertHttpUrl("http://[64:ff9b::808:808]/").hostname).toBe("[64:ff9b::808:808]");
 		expect(parseAndAssertHttpUrl("http://192.0.0.9/").hostname).toBe("192.0.0.9");
+		expect(parseAndAssertHttpUrl("http://198.18.0.1/").hostname).toBe("198.18.0.1");
 		expect(parseAndAssertHttpUrl("http://[2001:20::1]/").hostname).toBe("[2001:20::1]");
 		expect(parseAndAssertHttpUrl("http://[2001:30::1]/").hostname).toBe("[2001:30::1]");
 	});
