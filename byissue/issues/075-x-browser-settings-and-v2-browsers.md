@@ -21,7 +21,7 @@ created: 2026-09-14
 
 **范围：** 包含 Settings 菜单、headless 保留、Brave/Arc 检测与 executablePath 配置；不包含其他 config 键（viewport/args 自定义等）、不包含多 profile/并发浏览器。
 
-**归属：** 独立 issue；相关 spec：`byissue/spec/pi-browser/index.md`；前置：`byissue/issues/done/074-x-browser-package.md`。
+**归属：** 独立 issue；相关 spec：`byissue/spec/pi-browser/index.md`；前置：`byissue/issues/074-x-browser-package.md`。
 
 ## 为什么现在做
 

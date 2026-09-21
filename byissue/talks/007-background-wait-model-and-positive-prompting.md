@@ -55,8 +55,8 @@
 
 1. **判据立碑**：每条面向 LLM 的规则先说该做什么；否定只在 (a) 被禁行为是模型强默认、(b) 安全/不可逆边界 两种情况保留，且必须紧跟替代动作。→ `byissue/decisions/001-positive-first-prompting.md`
 2. **本次 ff 范围**：background-terminal 五条 guideline + description + 返回文本；subagent 补 promptGuidelines / 描述；builtin-agents 三行。`sleep` 这个词不出现在提示词里。→ `byissue/issues/087-x-ff-positive-first-background-prompts.md`
-3. **subagent 直接走 C**：纯后台 + 进度搬状态栏/菜单 + 删前台，常规 issue。→ `byissue/issues/088-o-subagent-pure-background.md`
-4. **pi-vendor SKILL 按判据重写**：单独 issue，需配验证场景。→ `byissue/issues/089-o-vendor-skill-positive-first.md`
+3. **subagent 直接走 C**：纯后台 + 进度搬状态栏/菜单 + 删前台，常规 issue。→ `byissue/issues/088-x-subagent-pure-background.md`
+4. **pi-vendor SKILL 按判据重写**：单独 issue，需配验证场景。→ `byissue/issues/089-x-vendor-skill-positive-first.md`
 5. **print 模式**：接受后台 subagent 结果随进程丢，写进 spec「明确不做」，不加回落分支。
 
 ## 术语

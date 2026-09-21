@@ -57,4 +57,4 @@
 
 ## 出口
 
-受管理实现：`byissue/issues/071-o-background-terminal-bash-waitseconds.md`。理由：改工具 schema + manager 竞态 + 工具面收敛 + 真实 Pi 回归 + spec 重写，不是 ff 量级。
+受管理实现：`byissue/issues/071-x-background-terminal-bash-waitseconds.md`。理由：改工具 schema + manager 竞态 + 工具面收敛 + 真实 Pi 回归 + spec 重写，不是 ff 量级。
