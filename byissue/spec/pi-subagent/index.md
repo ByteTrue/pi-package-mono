@@ -2,33 +2,34 @@
 
 ## 定位
 
-`@bytetrue/pi-subagent` 提供单一轻量 Agent 工具 `subagent` 以及用户配置命令 `/subagent`：在隔离的子进程会话中执行特定子任务、代码审查或探索性工作，并带有实时的 TUI 差分进度卡片和 Token/费用统计。
+`@bytetrue/pi-subagent` 提供三个轻量工具(`subagent` / `subagent_status` / `subagent_stop`)以及用户配置命令 `/subagent`:在隔离的子进程会话中执行特定子任务、代码审查或探索性工作。一次调用 = 一个 subagent;并行 = 模型在同一条消息里发多个 `subagent` 调用(095)。
 
 它不依赖任何外部框架或 Python 脚本，采用纯 TypeScript 实现，通过 Pi 原生 CLI 启动子进程并流式解析 JSON 事件。
 
 ## 当前表面
 
-- `subagent(params)`：
-  - `tasks`（必填）：任务对象数组 `Array<{ task, agent?, tools?, cwd?, resume?, id?, timeoutMs?, maxTurns? }>`。
+- `subagent(params)`:
+  - `task`(必填)：要执行的提示词。
+  - `agent?` / `tools?` / `cwd?` / `resume?` / `timeoutMs?`(默认 20 分钟)/ `maxTurns?`(默认 50 轮)：单任务参数;`id?` 仍被归一化接受(手动指定 session id),但不出现在 schema。
+  - **单任务语义(095)**:没有 `tasks[]`、`chain`、`prompts`、`mode`——批量与链式已删除。要同时跑多个子任务，在同一条 assistant 消息里发多个 `subagent` tool call，各自独立 id、独立 manager 记录、独立进度卡、各自回各自的完成通知；退出通知在 agent 忙时经 `pendingExits` 合并为一条。
   - Agent 工具不暴露 `model` 或 `thinking`：模型与思考强度只由用户通过 `/subagent`、settings 或 agent 模板控制；旧调用即使伪造这两个字段也会在规范化与执行时被忽略。
-  - `chain`（可选，默认 `false`）：设置为 `true` 时按顺序流水线执行（前序输出自动作为后序输入）；默认 `false` 为并发执行。
-  - `timeoutMs`（可选，默认 `1200000` 即 20 分钟）：任务超时限制。
-  - `maxTurns`（可选，默认 `50` 轮）：任务轮次限制。
   - **纯后台**：调用立即返回一行 started 文本与 task id，永不阻塞父回合；完整结果经 `followUp + triggerTurn` 作为新消息开启下一回合。没有 `async` 参数——没有前台模式可以退回（issue 088，对齐 background-terminal 079 的同一逻辑：结果由通知送达，"要不要阻塞"这根轴不存在）。
-  - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达。
+  - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达；多任务 = 同一消息多次调用，控制用 `subagent_status` / `subagent_stop`。
+- `subagent_status(id)`：按 id 查一个任务——状态、耗时、当前活动(运行中工具/轮次/token/费用/模型)、最近 5 条工具调用、子会话 log 路径。**不含任务 output**(全文由完成通知送达)；description 写明完成自动通知、无需轮询。
+- `subagent_stop(id)`：停止一个运行中任务。幂等(已结束返回 “is already …; nothing to stop”)；停止后照常发 “was cancelled” 通知。两工具都按 parent session 过滤,跨会话的 id 视为不存在。
 - 内置角色预设（以包内 agent 文档形式提供，见 `agents/*.md`，与用户 `.pi/agents/*.md` 同一套解析，同名用户文件优先）：
   - `scout`（只读快速侦察，最低思考档，工具：`read, grep, find`）
   - `researcher`（技术与网络调研，继承父会话思考强度，工具：`read, grep, find, web_search, web_fetch`）
   - `reviewer`（代码审查与跑测，最高思考档，工具：`read, grep, find, bash`）
 - `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度、为角色绑定模型，以及查看当前运行中与最近完成的 subagent 任务（运行中可看详细进度卡与终止；结束后可看输出）。在任何子菜单按 `Esc` 均返回上一级。
-- 状态栏：有任务运行时显示 `sub:N · <agent> <elapsed>`（N 为运行数，角色/耗时取最老的运行中任务），每秒刷新；全部结束自动清除。
+- 状态栏：有任务运行时显示 `sub:N · <agent> <elapsed> · …`,**每个运行中任务一格**(最老优先)，上限 3 个后缀 `+N more`;全部结束自动清除。
 
 ## 核心机制
 
-1. **子进程流式通信与并发/流水线调度**：
+1. **子进程流式通信与单任务执行**：
    - 自动解析 `pi` CLI 路径，以 `--mode json -p` 启动子进程并通过 stdin 传输指令。
    - 注入 `PI_SUBAGENT_CHILD=1` 环境变量防止嵌套递归。
-   - 默认并发执行（`Promise.all`），在 `chain: true` 时顺序串行执行并传递输出；任何一步失败自动熔断。
+   - 一次调用恰好跑一个子进程(095);并行由模型发多个 tool call 天然获得，`ProgressDetails.runs` 保留数组形状但恒为单元素。
 2. **防爆门与 Pi 原生 Session 断点续跑**：
    - 默认 20 分钟超时与 50 轮上限；达到上限时安全暂停子进程并输出 Session ID 与恢复提示。
    - 传递 `--session-id <id>`（初次）与 `--session <id>`（恢复），无缝复用 Pi 原生标准会话存储与断点续接机制。
@@ -47,6 +48,7 @@
 ## 明确不做
 
 - 前台/阻塞模式或任何 `async` 开关；
+- `tasks[]` 批量、`chain` 流水线或任何多任务入参(095 已删,不回归)：并行属于模型的 tool call 层,不属于本工具的入参层；
 - 聊天流内的实时进度卡与 Alt+O 展开；
 - print 模式（`pi -p` / `--mode json`）下的结果回落：进程跑完一回合即退出，后台 subagent 没有下一回合可送达，结果随进程丢（与 background-terminal 079 同一取舍）。
 
@@ -54,11 +56,13 @@
 
 | 目的 | 入口 |
 |---|---|
-| 执行独立子任务 / 审查 / 探索 | `subagent({ tasks: [{ task: "..." }] })` → 立即返回，结果以新消息到达 |
-| 并行对比或批量处理 | `subagent({ tasks: [{ task: "1" }, { task: "2" }] })` |
-| 链式多步骤流转 | `subagent({ chain: true, tasks: [...] })` |
+| 执行独立子任务 / 审查 / 探索 | `subagent({ task: "..." })` → 立即返回，结果以新消息到达 |
+| 并行对比或批量处理 | 同一消息里发多个 `subagent` 调用(各自独立 id/进度/通知) |
+| 查看某任务状态/活动/子会话 log | `subagent_status({ id })` |
+| 中途停止某任务 | `subagent_stop({ id })`(幂等) |
+| 链式多步骤流转 | 让父会话自己做编排:逐步调用、读结果、决定下一步 |
 | 配置默认模型与角色映射 | `/subagent` 用户菜单 |
-| 看简略进度 | 底部状态栏 `sub:N · <agent> <elapsed>` |
+| 看简略进度 | 底部状态栏 `sub:N · <agent> <elapsed> · …` |
 | 看详细进度 / 输出 / 停止任务 | `/subagent` → `View Active Subagents` → 任务 |
 | 查看当前配置与识别的角色 | `/subagent list` 或 `/subagent show` |
 

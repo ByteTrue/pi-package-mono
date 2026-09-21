@@ -48,20 +48,8 @@ export interface SubagentTaskItem {
   maxTurns?: number;
 }
 
-export interface SubagentInput {
-  tasks?: (string | SubagentTaskItem)[];
-  task?: string;
-  chain?: boolean;
-  resume?: string;
-  timeoutMs?: number;
-  maxTurns?: number;
-  // Legacy / fallback fields
-  mode?: string;
-  prompts?: string[];
-  agent?: string;
-  tools?: string[];
-  cwd?: string;
-}
+/** One call = one subagent (issue 095); parallelism = multiple tool calls in one message. */
+export type SubagentInput = SubagentTaskItem;
 
 export interface PiRunConfig {
   model?: string;
@@ -110,7 +98,6 @@ const MAX_TAIL = 256 * 1024;
 const MAX_LINE_BUFFER = 1024 * 1024;
 const MAX_TOOL_ARG_CHARS = 2048;
 const MAX_TOOLS = 256;
-const MAX_PARALLEL_TASKS = 16;
 const ABORT_KILL_GRACE_MS = 1500;
 const THROTTLE_MS = 300;
 const MAX_FALLBACK_OUTPUT_CHARS = 8192;
@@ -167,7 +154,6 @@ export interface RunState {
 export interface ProgressDetails {
   kind: "pi-subagent-progress";
   agent: string;
-  mode: "concurrent" | "chain";
   startedAt: number;
   updatedAt: number;
   final: boolean;
@@ -410,9 +396,8 @@ export function renderProgressCard(d: ProgressDetails, w: number): string[] {
         : "✓"
     : spinner;
   const totalElapsed = fmtDur((d.final ? d.updatedAt : Date.now()) - d.startedAt);
-  const modeLabel = d.mode === "chain" ? "pipeline" : d.runs.length > 1 ? "parallel" : "single";
   const lines: string[] = [
-    `${icon} subagent ${modeLabel} · total ${totalElapsed}`,
+    `${icon} subagent · total ${totalElapsed}`,
   ];
 
   for (const run of d.runs) renderRunBlock(lines, d, run, w);
@@ -1119,7 +1104,7 @@ export function runPi(
             ? `timed out after ${fmtDur(timeoutMs)}`
             : `reached maximum limit of ${maxTurns} turns`;
         const partialResult = finalize(state, formatPiOutput(out, err));
-        const notice = `\n\n---\n⚠️ [Subagent session ${state.sessionId} paused: ${reasonText}]\n💡 To resume this session from where it left off, call: subagent({ tasks: [{ resume: "${state.sessionId}", task: "Continue the remaining work" }] })`;
+        const notice = `\n\n---\n⚠️ [Subagent session ${state.sessionId} paused: ${reasonText}]\n💡 To resume this session from where it left off, call: subagent({ resume: "${state.sessionId}", task: "Continue the remaining work" })`;
         done({
           output: partialResult ? `${partialResult}${notice}` : notice.trim(),
           failed: false,
@@ -1165,79 +1150,26 @@ function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
 }
 
 // ── Normalization Helper ──────────────────────────────────────────────
-export function normalizeTasks(input: SubagentInput): {
-  tasks: SubagentTaskItem[];
-  isChain: boolean;
-  timeoutMs?: number;
-  maxTurns?: number;
-} {
-  const isChain = Boolean(input.chain || input.mode === "chain");
-  const timeoutMs = typeof input.timeoutMs === "number" && input.timeoutMs > 0 ? input.timeoutMs : undefined;
-  const maxTurns = typeof input.maxTurns === "number" && input.maxTurns > 0 ? input.maxTurns : undefined;
-
-  const rawList = input.tasks ?? input.prompts;
-  const items: SubagentTaskItem[] = [];
-
-  if (Array.isArray(rawList) && rawList.length > 0) {
-    for (const item of rawList) {
-      if (typeof item === "string") {
-        const trimmed = item.trim();
-        if (trimmed) {
-          items.push({
-            task: trimmed,
-            agent: input.agent,
-            tools: input.tools,
-            cwd: input.cwd,
-            resume: input.resume,
-            timeoutMs,
-            maxTurns,
-          });
-        }
-      } else if (item && typeof item === "object") {
-        const t = String(item.task || "").trim();
-        if (t) {
-          items.push({
-            task: t,
-            agent: item.agent ?? input.agent,
-            tools: item.tools ?? input.tools,
-            cwd: item.cwd ?? input.cwd,
-            resume: item.resume ?? input.resume,
-            id: item.id,
-            timeoutMs: item.timeoutMs ?? timeoutMs,
-            maxTurns: item.maxTurns ?? maxTurns,
-          });
-        }
-      }
-    }
-  }
-
-  // Fallback to single task if tasks array was empty or omitted
-  if (items.length === 0) {
-    const single = String(input.task || "").trim();
-    if (single) {
-      items.push({
-        task: single,
-        agent: input.agent,
-        tools: input.tools,
-        cwd: input.cwd,
-        resume: input.resume,
-        timeoutMs,
-        maxTurns,
-      });
-    }
-  }
-
-  return { tasks: items, isChain, timeoutMs, maxTurns };
+/** One call = one task (issue 095). Known fields only; model/thinking never pass through. */
+export function normalizeTask(input: SubagentInput): SubagentTaskItem {
+  const task = String(input.task || "").trim();
+  if (!task) throw new Error("No task specified. Provide 'task' with the prompt to execute.");
+  return {
+    task,
+    agent: input.agent,
+    tools: input.tools,
+    cwd: input.cwd,
+    resume: input.resume,
+    id: input.id,
+    timeoutMs: typeof input.timeoutMs === "number" && input.timeoutMs > 0 ? input.timeoutMs : undefined,
+    maxTurns: typeof input.maxTurns === "number" && input.maxTurns > 0 ? input.maxTurns : undefined,
+  };
 }
 
-/** Plain-text one-liner for task lists, status bar and exit messages (no ANSI). */
-export function describeTasks(tasks: SubagentTaskItem[], isChain: boolean): string {
-  const first = tasks[0];
-  if (!first) return "subagent";
-  const head = oneLine(first.task, 60);
-  const prefix = first.agent ? `${first.agent}: ` : "";
-  if (tasks.length === 1) return `${prefix}${head}`;
-  return `${tasks.length} tasks (${isChain ? "chain" : "parallel"}) · ${prefix}${head}`;
+/** Plain-text one-liner for the record description, status bar and exit messages (no ANSI). */
+export function describeTask(item: SubagentTaskItem): string {
+  const head = oneLine(item.task, 60);
+  return item.agent ? `${item.agent}: ${head}` : head;
 }
 
 // ── Task Manager ──────────────────────────────────────────────────
@@ -1272,15 +1204,55 @@ export function toMessageDetails(task: SubagentTaskRecord): Record<string, unkno
 }
 
 /**
- * Footer text: `sub:N · <agent> <elapsed>` for the oldest running task, or
- * undefined when nothing runs. Kept short on purpose; details live in /subagent.
+ * Footer text: `sub:N · <agent> <elapsed> · …` per running task, oldest first.
+ * Caps at 3 entries (`+N more`) to keep the footer short; per-task detail lives
+ * in /subagent and subagent_status (issue 095: records are now 1:1 with children,
+ * so each deserves a slot).
  */
 export function formatSubagentStatus(tasks: SubagentTaskRecord[], now = Date.now()): string | undefined {
   const running = tasks.filter((t) => t.status === "running");
   if (running.length === 0) return undefined;
-  const oldest = running.reduce((a, b) => (a.startedAt <= b.startedAt ? a : b));
-  const label = oldest.agent ?? "subagent";
-  return `sub:${running.length} · ${label} ${fmtDur(Math.max(0, now - oldest.startedAt))}`;
+  const sorted = [...running].sort((a, b) => a.startedAt - b.startedAt);
+  const parts = sorted
+    .slice(0, 3)
+    .map((t) => `${t.agent ?? "subagent"} ${fmtDur(Math.max(0, now - t.startedAt))}`);
+  const rest = running.length - parts.length;
+  if (rest > 0) parts.push(`+${rest} more`);
+  return `sub:${running.length} · ${parts.join(" · ")}`;
+}
+
+/**
+ * Compact plain-text status for the subagent_status tool: header + activity +
+ * recent tool calls + child session log path. The task's output is NOT included —
+ * it is delivered by the exit notification (issue 095).
+ */
+export function formatSubagentTaskStatus(task: SubagentTaskRecord, now = Date.now()): string {
+  const elapsed = fmtDur(Math.max(0, (task.finishedAt ?? now) - task.startedAt));
+  const lines = [
+    `[${task.id}] ${task.agent ?? "subagent"} · ${task.status} · ${elapsed}`,
+    `Task: ${task.description}`,
+  ];
+  const run = task.progress?.runs[0];
+  if (!run) return lines.join("\n") + "\n(no progress yet)";
+  const active = run.tools.find((t) => t.status === "running");
+  const usage = fmtUsage(run.usage, modelLabel(run));
+  const parts = [
+    active ? `current: ${toolBrief(active)}` : undefined,
+    run.usage.turns ? `turn ${run.usage.turns}` : undefined,
+    usage || undefined,
+  ].filter((p): p is string => Boolean(p));
+  if (parts.length) lines.push(parts.join(" · "));
+  const recent = run.tools.slice(-5);
+  if (recent.length) {
+    lines.push("Recent tools:");
+    for (const t of recent) {
+      const icon = t.status === "running" ? "▸" : t.status === "failed" ? "✗" : "✓";
+      lines.push(`  ${icon} ${toolBrief(t)}`);
+    }
+  }
+  const log = sessionLogPath(run);
+  if (log) lines.push(`⎘ session log: ${log}`);
+  return lines.join("\n");
 }
 
 export class SubagentTaskManager {
@@ -1387,21 +1359,13 @@ export async function runSubagent(
   inheritedThinking?: string,
   inheritedModel?: string,
 ): Promise<{ output: string; details: ProgressDetails; failed: boolean; paused?: boolean }> {
-  const { tasks: taskItems, isChain } = normalizeTasks(input);
-  if (taskItems.length === 0) {
-    throw new Error("No task specified. Provide 'tasks' with at least one task item.");
-  }
-  if (taskItems.length > MAX_PARALLEL_TASKS) {
-    throw new Error(`Subagent supports at most ${MAX_PARALLEL_TASKS} tasks.`);
-  }
+  const item = normalizeTask(input);
 
   const subagentSettings = loadSubagentSettings(cwd, true);
   const startedAt = Date.now();
-  const primaryAgent = taskItems[0]?.agent || "subagent";
   const details: ProgressDetails = {
     kind: "pi-subagent-progress",
-    agent: primaryAgent,
-    mode: isChain ? "chain" : "concurrent",
+    agent: item.agent || "subagent",
     startedAt,
     updatedAt: startedAt,
     final: false,
@@ -1439,98 +1403,30 @@ export async function runSubagent(
   };
 
   try {
-    if (isChain) {
-      let prev = "";
-      let failed = false;
-      let paused = false;
-      for (let i = 0; i < taskItems.length; i++) {
-        const item = taskItems[i]!;
-        const role = item.agent || "subagent";
-        const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
-        const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
-        const runCfg = resolveRunCfg(
-          { ...item, id: sessionId },
-          agentCfg,
-          inheritedThinking,
-          inheritedModel,
-          subagentSettings,
-        );
-        const rs = newRun(`${role}-${i + 1}`, role, item.task, sessionId, i + 1);
-        applyRunConfig(rs, runCfg);
-        details.runs.push(rs);
-        emit(true);
-
-        const chainedPrompt = prev
-          ? `${item.task}\n\n### Previous Step Output:\n${prev}`
-          : item.task;
-        const result = await runPi(
-          cwd,
-          buildSubagentPrompt(chainedPrompt, agentCfg),
-          runCfg,
-          rs,
-          emit,
-          signal,
-        );
-        prev = result.output;
-        failed = failed || result.failed;
-        paused = paused || Boolean(result.paused);
-        if (result.failed || result.paused) break;
-      }
-      return finish(prev, failed, paused);
-    }
-
-    // Concurrent mode (single or parallel)
-    details.runs = taskItems.map((item, i) => {
-      const role = item.agent || "subagent";
-      const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
-      const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
-      const runCfg = resolveRunCfg(
-        { ...item, id: sessionId },
-        agentCfg,
-        inheritedThinking,
-        inheritedModel,
-        subagentSettings,
-      );
-      const r = newRun(`${role}-${i + 1}`, role, item.task, sessionId);
-      applyRunConfig(r, runCfg);
-      return r;
-    });
+    const role = item.agent || "subagent";
+    const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
+    const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
+    const runCfg = resolveRunCfg(
+      { ...item, id: sessionId },
+      agentCfg,
+      inheritedThinking,
+      inheritedModel,
+      subagentSettings,
+    );
+    const run = newRun(role, role, item.task, sessionId);
+    applyRunConfig(run, runCfg);
+    details.runs.push(run);
     emit(true);
 
-    const results = await Promise.all(
-      taskItems.map((item, i) => {
-        const sessionId = details.runs[i]!.sessionId;
-        const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
-        const runCfg = resolveRunCfg(
-          { ...item, id: sessionId },
-          agentCfg,
-          inheritedThinking,
-          inheritedModel,
-          subagentSettings,
-        );
-        return runPi(
-          cwd,
-          buildSubagentPrompt(item.task, agentCfg),
-          runCfg,
-          details.runs[i]!,
-          emit,
-          signal,
-        );
-      }),
+    const result = await runPi(
+      cwd,
+      buildSubagentPrompt(item.task, agentCfg),
+      runCfg,
+      run,
+      emit,
+      signal,
     );
-
-    if (results.length === 1) {
-      return finish(results[0]!.output, results[0]!.failed, results[0]!.paused);
-    }
-
-    const aggregated = results
-      .map((r, i) => `### Task ${i + 1} (${taskItems[i]?.agent || "subagent"}):\n${r.output}`)
-      .join("\n\n---\n\n");
-    return finish(
-      aggregated,
-      results.some((r) => r.failed),
-      results.some((r) => r.paused),
-    );
+    return finish(result.output, result.failed, Boolean(result.paused));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const r = activeRun(details);
@@ -1658,7 +1554,7 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Delegate tasks to isolated child agent sessions. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). Runs concurrently by default, or sequentially when chain is true. The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. Supports session resumption.",
+      "Delegate ONE task to an isolated child agent session. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.",
     promptSnippet:
       "Delegate work to child agents (scout / researcher / reviewer); the call returns at once and the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
@@ -1669,63 +1565,38 @@ export default function subagentExtension(pi: {
     parameters: {
       type: "object",
       properties: {
-        tasks: {
-          type: "array",
-          description: "List of subagent tasks to execute.",
-          items: {
-            type: "object",
-            properties: {
-              task: {
-                type: "string",
-                description: "The task prompt to execute (REQUIRED).",
-              },
-              agent: {
-                type: "string",
-                description:
-                  "Optional agent role (e.g. 'scout', 'researcher', 'reviewer', or custom name).",
-              },
-              tools: {
-                type: "array",
-                items: { type: "string" },
-                description: "Optional tool allowlist (e.g. ['read', 'grep', 'find']).",
-              },
-              cwd: {
-                type: "string",
-                description: "Optional working directory.",
-              },
-              resume: {
-                type: "string",
-                description: "Optional session ID or partial UUID to resume a previous subagent session.",
-              },
-              timeoutMs: {
-                type: "number",
-                description: "Optional task timeout in milliseconds. Default: 1200000 (20 minutes).",
-              },
-              maxTurns: {
-                type: "number",
-                description: "Optional maximum turns before pausing. Default: 50.",
-              },
-            },
-            required: ["task"],
-          },
+        task: {
+          type: "string",
+          description: "The task prompt to execute (REQUIRED).",
         },
-        chain: {
-          type: "boolean",
+        agent: {
+          type: "string",
           description:
-            "Optional. If true, runs tasks sequentially as a pipeline (output of step N is piped into step N+1). Default: false.",
+            "Optional agent role (e.g. 'scout', 'researcher', 'reviewer', or custom name).",
+        },
+        tools: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional tool allowlist (e.g. ['read', 'grep', 'find']).",
+        },
+        cwd: {
+          type: "string",
+          description: "Optional working directory.",
+        },
+        resume: {
+          type: "string",
+          description: "Optional session ID or partial UUID to resume a previous subagent session.",
         },
         timeoutMs: {
           type: "number",
-          description:
-            "Optional global timeout in milliseconds for all tasks. Default: 1200000 (20 minutes).",
+          description: "Optional timeout in milliseconds. Default: 1200000 (20 minutes).",
         },
         maxTurns: {
           type: "number",
-          description:
-            "Optional global maximum turns before pausing. Default: 50.",
+          description: "Optional maximum turns before pausing. Default: 50.",
         },
       },
-      required: ["tasks"],
+      required: ["task"],
     },
     execute: async (
       _id: string,
@@ -1738,10 +1609,7 @@ export default function subagentExtension(pi: {
       const inheritedThinking = resolveInheritedThinking();
       const inheritedModel = resolveInheritedModel(ctx);
 
-      const { tasks, isChain } = normalizeTasks(input);
-      if (tasks.length === 0) {
-        throw new Error("No task specified. Provide 'tasks' with at least one task item.");
-      }
+      const item = normalizeTask(input);
 
       // Pure background (issue 088): the call returns at once; progress streams into
       // the manager record (status bar + /subagent menu) and the result arrives as a
@@ -1754,8 +1622,8 @@ export default function subagentExtension(pi: {
       const record: SubagentTaskRecord = {
         id: taskId,
         parentSessionId: sessionId,
-        description: describeTasks(tasks, isChain),
-        agent: tasks[0]?.agent,
+        description: describeTask(item),
+        agent: item.agent,
         status: "running",
         output: "",
         startedAt: Date.now(),
@@ -1799,10 +1667,89 @@ export default function subagentExtension(pi: {
         content: [
           {
             type: "text",
-            text: `Subagent started (ID: ${taskId}, ${tasks.length} task(s)). Its full result will arrive as a new message — continue with other work or end your turn now.`,
+            text: `Subagent started (ID: ${taskId}). Its full result will arrive as a new message — continue with other work or end your turn now.`,
           },
         ],
-        details: { id: taskId, status: "running", count: tasks.length, chain: isChain },
+        details: { id: taskId, status: "running" },
+      };
+    },
+  });
+
+  const findSessionTask = (
+    id: string,
+    ctx?: PiExtensionContext,
+  ): BackgroundSubagentTask | undefined => {
+    if (!id) return undefined;
+    const task = subagentManager.get(id);
+    const sessionId = ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
+    return task && task.parentSessionId === sessionId ? task : undefined;
+  };
+
+  pi.registerTool?.({
+    name: "subagent_status",
+    label: "Subagent Status",
+    description:
+      "Check one subagent task by id: status, elapsed time, current activity (running tool, turns, token/cost, model), recent tool calls, and the child session log path — read that file for the full model behaviour history. The full result is reported automatically as a new message when the task completes, so don't poll.",
+    promptSnippet: "Check one subagent task.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task id from the subagent call." },
+      },
+      required: ["id"],
+    },
+    execute: async (
+      _id: string,
+      input: { id?: string },
+      _signal?: AbortSignal,
+      _onUpdate?: (r: PiToolResult) => void,
+      ctx?: PiExtensionContext,
+    ) => {
+      const task = findSessionTask(String(input?.id ?? "").trim(), ctx);
+      if (!task) throw new Error(`No subagent task found with id "${input?.id}".`);
+      const status = formatSubagentTaskStatus(task);
+      const text =
+        task.status === "running"
+          ? `${status}\nResult arrives as a new message when it completes.`
+          : status;
+      return { content: [{ type: "text", text }], details: toMessageDetails(task) };
+    },
+  });
+
+  pi.registerTool?.({
+    name: "subagent_stop",
+    label: "Stop Subagent",
+    description: "Stop a running subagent task by id. A cancellation notice arrives as a new message.",
+    promptSnippet: "Stop one subagent task.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task id from the subagent call." },
+      },
+      required: ["id"],
+    },
+    execute: async (
+      _id: string,
+      input: { id?: string },
+      _signal?: AbortSignal,
+      _onUpdate?: (r: PiToolResult) => void,
+      ctx?: PiExtensionContext,
+    ) => {
+      const task = findSessionTask(String(input?.id ?? "").trim(), ctx);
+      if (!task) throw new Error(`No subagent task found with id "${input?.id}".`);
+      if (task.status !== "running" || !subagentManager.stop(task.id)) {
+        const settled = subagentManager.get(task.id) ?? task;
+        return {
+          content: [
+            { type: "text", text: `[${settled.id}] is already ${settled.status}; nothing to stop.` },
+          ],
+          details: toMessageDetails(settled),
+        };
+      }
+      const stopped = subagentManager.get(task.id) ?? task;
+      return {
+        content: [{ type: "text", text: `Stopped ${stopped.id} (${stopped.agent ?? "subagent"}).` }],
+        details: toMessageDetails(stopped),
       };
     },
   });

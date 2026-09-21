@@ -8,17 +8,19 @@ import {
   parseAgentFile,
   findAgentDefinition,
   resolvePiCli,
-  normalizeTasks,
+  normalizeTask,
   SubagentTaskManager,
   SubagentBackgroundManager,
   toMessageDetails,
   subagentManager,
-  describeTasks,
+  describeTask,
   formatSubagentStatus,
+  formatSubagentTaskStatus,
   sessionLogPath,
   type ProgressDetails,
   type RunState,
   type JsonObject,
+  type SubagentInput,
   type SubagentTaskItem,
   type SubagentTaskRecord,
 } from "./index.js";
@@ -342,40 +344,19 @@ You are an expert researcher. Read references carefully.
     expect(res.found).toBe(false);
   });
 
-  it("normalizes tasks cleanly from various input shapes", () => {
-    // 1. Single task string
-    const single = normalizeTasks({ task: "test task" });
-    expect(single.tasks).toEqual([{ task: "test task" }]);
-    expect(single.isChain).toBe(false);
+  it("normalizes a single task input, dropping unknown fields (issue 095)", () => {
+    const item = normalizeTask({ task: "  test task  " });
+    expect(item).toEqual({ task: "test task" });
 
-    // 2. Structured tasks object array with chain
-    const chain = normalizeTasks({
-      chain: true,
-      tasks: [
-        { task: "step 1", agent: "scout" },
-        {
-          task: "step 2",
-          agent: "reviewer",
-          model: "gpt-5",
-          thinking: "off",
-        } as unknown as SubagentTaskItem,
-      ],
-    });
-    expect(chain.isChain).toBe(true);
-    expect(chain.tasks.length).toBe(2);
-    expect(chain.tasks[0]?.agent).toBe("scout");
-    expect(chain.tasks[1]).not.toHaveProperty("model");
-    expect(chain.tasks[1]).not.toHaveProperty("thinking");
+    // model/thinking never pass through (082 invariant) — not in SubagentInput, but models send junk
+    const junk = normalizeTask({
+      task: "x",
+      model: "gpt-5",
+      thinking: "off",
+    } as unknown as SubagentInput);
+    expect(junk).toEqual({ task: "x" });
 
-    // 3. String array fallback
-    const stringArray = normalizeTasks({
-      tasks: ["task a", "task b"],
-      agent: "default-agent",
-    });
-    expect(stringArray.tasks.length).toBe(2);
-    expect(stringArray.tasks[0]?.task).toBe("task a");
-    expect(stringArray.tasks[0]?.agent).toBe("default-agent");
-    expect(stringArray.tasks[1]?.task).toBe("task b");
+    expect(() => normalizeTask({ task: "   " })).toThrow(/No task specified/);
   });
 
   it("manages subagent tasks lifecycle including running count and stop", async () => {
@@ -439,7 +420,7 @@ You are an expert researcher. Read references carefully.
       controller: new AbortController(),
       notifyOnExit: true,
       done: new Promise(() => {}),
-      progress: { kind: "pi-subagent-progress", agent: "scout", mode: "concurrent", startedAt: 1, updatedAt: 2, final: true, runs: [] },
+      progress: { kind: "pi-subagent-progress", agent: "scout", startedAt: 1, updatedAt: 2, final: true, runs: [] },
     };
 
     const details = toMessageDetails(task);
@@ -457,29 +438,37 @@ You are an expert researcher. Read references carefully.
     expect(() => structuredClone([task])).toThrow(); // the bug we just fixed
   });
 
-  it("does not expose model or thinking controls in the Agent tool schema", () => {
-    let registered: JsonObject | undefined;
+  it("exposes a flat single-task schema with no model/thinking controls (issue 095)", () => {
+    const registered = new Map<string, JsonObject>();
     const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
     delete process.env.PI_SUBAGENT_CHILD;
     try {
       subagentExtension({
         registerTool: (tool: JsonObject) => {
-          registered = tool;
+          registered.set(String(tool.name), tool);
         },
       });
     } finally {
       if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
     }
 
-    const parameters = registered?.parameters as JsonObject;
-    const tasks = (parameters.properties as JsonObject).tasks as JsonObject;
-    const items = tasks.items as JsonObject;
-    const taskProperties = items.properties as JsonObject;
-    expect(taskProperties).not.toHaveProperty("model");
-    expect(taskProperties).not.toHaveProperty("thinking");
-    expect(taskProperties).toHaveProperty("agent");
+    // All three tools registered; assertions below target the main subagent tool.
+    expect([...registered.keys()].sort()).toEqual(["subagent", "subagent_status", "subagent_stop"]);
+    const main = registered.get("subagent")!;
+    const parameters = main.parameters as JsonObject;
+    const props = parameters.properties as JsonObject;
+    // Flat single-task surface: task required; batch/chain gone (issue 095).
+    expect(props).toHaveProperty("task");
+    expect(props).toHaveProperty("agent");
+    expect(parameters.required).toEqual(["task"]);
+    expect(props).not.toHaveProperty("tasks");
+    expect(props).not.toHaveProperty("chain");
+    expect(props).not.toHaveProperty("mode");
+    expect(props).not.toHaveProperty("prompts");
+    expect(props).not.toHaveProperty("model");
+    expect(props).not.toHaveProperty("thinking");
     // Pure background (issue 088): there is no foreground mode to opt out of.
-    expect(parameters.properties).not.toHaveProperty("async");
+    expect(props).not.toHaveProperty("async");
     expect(registered).not.toHaveProperty("renderResult");
   });
 
@@ -495,8 +484,33 @@ You are an expert researcher. Read references carefully.
       { ...base, id: "b", description: "y", agent: "reviewer", status: "running", startedAt: 10_000 },
       { ...base, id: "c", description: "z", status: "running", startedAt: 70_000 },
     ];
-    expect(formatSubagentStatus(tasks, 100_000)).toBe("sub:2 · reviewer 1m30s");
+    expect(formatSubagentStatus(tasks, 100_000)).toBe("sub:2 · reviewer 1m30s · subagent 30s");
     expect(formatSubagentStatus(tasks.filter((t) => t.status !== "running"), 100_000)).toBeUndefined();
+  });
+
+  it("caps the footer at 3 tasks with a +N more suffix", () => {
+    const base = {
+      parentSessionId: "s",
+      output: "",
+      controller: new AbortController(),
+      notifyOnExit: true,
+    };
+    const running = (id: string, agent: string | undefined, startedAt: number): SubagentTaskRecord => ({
+      ...base,
+      id,
+      description: id,
+      agent,
+      status: "running",
+      startedAt,
+    });
+    const tasks = [
+      running("a", "scout", 99_000),
+      running("b", "reviewer", 98_000),
+      running("c", undefined, 97_000),
+      running("d", "researcher", 96_000),
+    ];
+    // Oldest first; the 4th collapses into +1 more.
+    expect(formatSubagentStatus(tasks, 100_000)).toBe("sub:4 · researcher 4s · subagent 3s · reviewer 2s · +1 more");
   });
 
   it("stores streamed progress on the running record and stops after completion", () => {
@@ -513,7 +527,7 @@ You are an expert researcher. Read references carefully.
       controller: new AbortController(),
       notifyOnExit: false,
     });
-    const progress: ProgressDetails = { kind: "pi-subagent-progress", agent: "scout", mode: "concurrent", startedAt: 0, updatedAt: 1, final: false, runs: [] };
+    const progress: ProgressDetails = { kind: "pi-subagent-progress", agent: "scout", startedAt: 0, updatedAt: 1, final: false, runs: [] };
     mgr.setProgress("p", progress);
     expect(mgr.get("p")?.progress).toBe(progress);
     expect(changes).toBe(2);
@@ -562,9 +576,123 @@ You are an expert researcher. Read references carefully.
     }
   });
 
-  it("describes tasks as plain text with role prefix and count", () => {
-    expect(describeTasks([{ task: "  Review\n  the diff  ", agent: "reviewer" }], false)).toBe("reviewer: Review the diff");
-    expect(describeTasks([{ task: "a" }, { task: "b" }], true)).toBe("2 tasks (chain) · a");
+  it("describes a task as plain text with role prefix (no ANSI)", () => {
+    expect(describeTask({ task: "  Review\n  the diff  ", agent: "reviewer" })).toBe("reviewer: Review the diff");
+    expect(describeTask({ task: "Just a task" })).toBe("Just a task");
+  });
+
+  it("formats subagent_status output per state and hides output text (issue 095)", () => {
+    const base = {
+      id: "sub_x",
+      parentSessionId: "s",
+      description: "reviewer: Review the diff",
+      agent: "reviewer",
+      controller: new AbortController(),
+      notifyOnExit: false,
+    };
+    const run: RunState = {
+      id: "run-1",
+      agent: "reviewer",
+      prompt: "review",
+      sessionId: "sub_x",
+      status: "running",
+      startedAt: 0,
+      finalText: "",
+      textTail: "",
+      thinkingTail: "",
+      stderrTail: "",
+      tools: [],
+      model: "glm-5.3-flash:max",
+      usage: { input: 42000, output: 900, cacheRead: 0, cacheWrite: 0, cost: 0.31, ctxTokens: 42300, turns: 6 },
+    };
+    run.tools.push(
+      { id: "t1", name: "read", args: '{"path":"src/index.ts"}', status: "succeeded", startedAt: 1, finishedAt: 2 },
+      { id: "t2", name: "bash", args: '{"command":"npm test"}', status: "running", startedAt: 3 },
+    );
+    const running: SubagentTaskRecord = {
+      ...base,
+      status: "running",
+      output: "",
+      startedAt: 60_000,
+      progress: { kind: "pi-subagent-progress", agent: "reviewer", startedAt: 0, updatedAt: 5, final: false, runs: [run] },
+    };
+    const text = formatSubagentTaskStatus(running, 126_000);
+    expect(text).toContain("[sub_x] reviewer · running · 1m6s");
+    expect(text).toContain("Task: reviewer: Review the diff");
+    expect(text).toContain("current: bash: npm test");
+    expect(text).toContain("turn 6");
+    expect(text).toContain("$0.31");
+    expect(text).toContain("read: src/index.ts");
+    // The output text is delivered by the exit notification, never here.
+    expect(text).not.toContain("SECRET-OUTPUT");
+
+    const done: SubagentTaskRecord = { ...base, status: "succeeded", output: "SECRET-OUTPUT", startedAt: 0, finishedAt: 30_000 };
+    const doneText = formatSubagentTaskStatus(done, 30_000);
+    expect(doneText).toContain("succeeded · 30s");
+    expect(doneText).not.toContain("SECRET-OUTPUT");
+    expect(doneText).toContain("(no progress yet)");
+  });
+
+  it("subagent_status and subagent_stop are session-scoped and stop is idempotent (issue 095)", async () => {
+    let registered = new Map<string, JsonObject>();
+    const handlers = new Map<string, (event: unknown, ctx?: unknown) => unknown>();
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    try {
+      subagentExtension({
+        registerTool: (tool: JsonObject) => registered.set(String(tool.name), tool),
+        on: (event: string, handler: (event: unknown, ctx?: unknown) => unknown) => {
+          handlers.set(event, handler);
+        },
+      } as Parameters<typeof subagentExtension>[0]);
+    } finally {
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+    }
+    handlers.get("session_start")?.({}, { sessionManager: { getSessionId: () => "sess-1" } });
+
+    const controller = new AbortController();
+    const task: SubagentTaskRecord = {
+      id: "sub_ctl",
+      parentSessionId: "sess-1",
+      description: "scout: recon",
+      agent: "scout",
+      status: "running",
+      output: "",
+      startedAt: Date.now(),
+      controller,
+      notifyOnExit: false,
+    };
+    subagentManager.register(task);
+    try {
+      const runTool = async (name: string, args: unknown, sessionId?: string) => {
+        const tool = registered.get(name)!;
+        const execute = tool.execute as (
+          id: string,
+          input: unknown,
+          signal: undefined,
+          onUpdate: undefined,
+          ctx: { sessionManager: { getSessionId: () => string } },
+        ) => Promise<{ content: { type: string; text: string }[] }>;
+        return execute("call_1", args, undefined, undefined, { sessionManager: { getSessionId: () => sessionId ?? "sess-1" } });
+      };
+
+      // Other session must not see or stop it.
+      await expect(runTool("subagent_status", { id: "sub_ctl" }, "other")).rejects.toThrow(/No subagent task/);
+      await expect(runTool("subagent_stop", { id: "sub_ctl" }, "other")).rejects.toThrow(/No subagent task/);
+
+      const statusText = (await runTool("subagent_status", { id: "sub_ctl" })).content[0]!.text;
+      expect(statusText).toContain("running");
+
+      // Stop: aborts the controller, marks cancelled, idempotent afterwards.
+      const stopText = (await runTool("subagent_stop", { id: "sub_ctl" })).content[0]!.text;
+      expect(stopText).toContain("Stopped sub_ctl");
+      expect(controller.signal.aborted).toBe(true);
+      expect(task.status).toBe("cancelled");
+      const again = (await runTool("subagent_stop", { id: "sub_ctl" })).content[0]!.text;
+      expect(again).toContain("already cancelled");
+    } finally {
+      await subagentManager.clearSession("sess-1");
+    }
   });
 
   it("sends exit messages with clone-safe details through the manager wiring", async () => {

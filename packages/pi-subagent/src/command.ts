@@ -348,7 +348,7 @@ async function viewSingleTaskMenu(
         return;
       }
     } else if (action === "💡 How to Resume") {
-      const resumeCode = `subagent({ tasks: [{ resume: "${task.id}", task: "Continue the remaining work" }] })`;
+      const resumeCode = `subagent({ resume: "${task.id}", task: "Continue the remaining work" })`;
       ctx.ui.notify(`To resume this session in chat, run:\n${resumeCode}`, "info");
     }
   }

@@ -2,11 +2,11 @@
 
 Lightweight, high-performance Subagent runner for [Pi coding agent](https://pi.dev).
 
-Spawns focused child agents in isolated sessions for delegating tasks, code reviews, or investigations. Every call returns at once; the parent agent keeps working (or ends its turn) and the full result arrives as a new message. Live progress, token & cost tracking sit in the status bar and the `/subagent` menu, with parallel/chain orchestration.
+Spawns focused child agents in isolated sessions for delegating tasks, code reviews, or investigations. Every call returns at once; the parent agent keeps working (or ends its turn) and the full result arrives as a new message. Live progress, token & cost tracking sit in the status bar and the `/subagent` menu. One call = one subagent; to run several at once, the model makes multiple `subagent` calls in the same message.
 
 ## Features
 
-- **⚡️ Zero Bloat & Minimal Context**: Single lightweight tool schema (~150 tokens) replaces heavy multi-thousand-token multi-agent frameworks.
+- **⚡️ Zero Bloat & Minimal Context**: Three lightweight tool schemas (~200 tokens) replace heavy multi-thousand-token multi-agent frameworks.
 - **🎭 Built-in Golden Roles**: `scout`, `researcher`, and `reviewer` ship as ordinary agent documents in `agents/` — copy one into `.pi/agents/` to customise it.
   - `scout`: Fast read-only codebase reconnaissance (`read, grep, find`, lowest thinking level).
   - `researcher`: Autonomous web & technical documentation research (`read, grep, find, web_search, web_fetch`, inherits the parent session's thinking level).
@@ -14,6 +14,7 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
 - **🚀 Always Non-blocking**: The tool call returns a task id immediately; the parent turn is never held. The complete output is delivered as a follow-up message that starts the next turn.
+- **🎛️ Full Control Loop**: `subagent_status` checks a task (status, activity, recent tools, session log path); `subagent_stop` stops one — idempotent, session-scoped, mirroring the background-terminal run/status/kill trio.
 - **📊 Progress Where It Belongs**: The footer shows `sub:N · <role> <elapsed>` for the oldest running task; `/subagent → task → View Progress` shows the detailed card (duration, thinking intent, tool traces with arguments, token usage, cost).
 - **⚙️ `/subagent` Interactive Menu**:
   - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect progress or output, or stop running tasks.
@@ -45,7 +46,7 @@ Run `/subagent` in the Pi TUI to interactively:
 
 ### `subagent`
 
-Delegate tasks to isolated child agent sessions. Multiple tasks run concurrently by default, or sequentially as a pipeline when `chain: true`. The call always returns at once with a task id; the result arrives later as a new message.
+Delegate ONE task to an isolated child agent session. The call always returns at once with a task id; the result arrives later as a new message. To run several tasks at once, make multiple `subagent` calls in the same message — each gets its own task id, progress card, and completion notice.
 
 Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, so a subagent started there has no next turn to report to. Pure background is the only mode by design (issue 088).
 
@@ -53,44 +54,45 @@ Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, s
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `tasks` | `Array<TaskItem>` | **Yes** | List of tasks to execute. |
-| `tasks[i].task` | `string` | **Yes** | The task instruction / prompt. |
-| `tasks[i].agent` | `string` | No | Optional agent role (loads prompt/defaults from `.pi/agents/<name>.md`). |
-| `tasks[i].tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
-| `tasks[i].cwd` | `string` | No | Optional working directory for the task. |
-| `chain` | `boolean` | No | Set to `true` to pipe output from step N to step N+1. Default: `false` (concurrent). |
-| `timeoutMs` | `number` | No | Global task timeout in ms. Default: 1200000 (20 minutes). |
-| `maxTurns` | `number` | No | Global turn limit before pausing. Default: 50. |
+| `task` | `string` | **Yes** | The task instruction / prompt. |
+| `agent` | `string` | No | Optional agent role (loads prompt/defaults from `.pi/agents/<name>.md`). |
+| `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
+| `cwd` | `string` | No | Optional working directory for the task. |
+| `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
+| `timeoutMs` | `number` | No | Timeout in ms. Default: 1200000 (20 minutes). |
+| `maxTurns` | `number` | No | Turn limit before pausing. Default: 50. |
 
-#### Usage Examples
+#### Usage Example
 
-**1. Single task:**
 ```json
 {
-  "tasks": [{ "task": "Review packages/pi-subagent/src/index.ts for potential edge cases" }]
+  "agent": "reviewer",
+  "task": "Review packages/pi-subagent/src/index.ts for potential edge cases"
 }
 ```
 
-**2. Parallel fanout (multiple roles):**
+Parallel fanout is just several calls in one message:
+
 ```json
-{
-  "tasks": [
-    { "agent": "frontend-dev", "task": "Check UI components" },
-    { "agent": "backend-dev", "task": "Verify API contracts" }
-  ]
-}
+[{ "agent": "scout", "task": "Locate relevant test and config files" },
+ { "agent": "reviewer", "task": "Perform adversarial review on the located files" }]
 ```
 
-**3. Sequential pipeline (`chain: true`):**
-```json
-{
-  "chain": true,
-  "tasks": [
-    { "agent": "scout", "task": "Locate relevant test and config files" },
-    { "agent": "reviewer", "task": "Perform adversarial review on the located files" }
-  ]
-}
-```
+### `subagent_status`
+
+Check one subagent task by id: status, elapsed time, current activity (running tool, turns, token/cost, model), recent tool calls, and the child session log path — the model can `read` that file for the full behaviour history. The task's output is never included here; it is delivered automatically as a new message when the task completes, so there is no reason to poll.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | **Yes** | Task id from the `subagent` call. |
+
+### `subagent_stop`
+
+Stop a running subagent task by id. Idempotent: stopping an already-finished task reports its status instead of failing. Tasks from other sessions are not visible. A cancellation notice still arrives as a new message.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | **Yes** | Task id from the `subagent` call. |
 
 
 #### Built-in roles
