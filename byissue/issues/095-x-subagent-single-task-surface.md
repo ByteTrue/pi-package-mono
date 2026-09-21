@@ -76,6 +76,10 @@ created: 2026-09-21
 - 回写位置:`byissue/spec/pi-subagent/index.md`(定位、当前表面三工具、核心机制单任务执行、明确不做批量/链式、使用路径表)。
 - 遗留：无。
 
+2026-09-21（发布完成）：
+
+- 推送 tag `pi-subagent-v0.9.0`，GitHub Actions OIDC 发布工作流（run `35570680211`）全仓 typecheck/test 通过后发布 `@bytetrue/pi-subagent@0.9.0`，provenance 已签名入 transparency log（logIndex 2905092285），registry `latest = 0.9.0`。
+
 ## 关闭时
 
 - 回写 spec:工具表面(3 tools)、单任务语义、并行=多 tool call、明确不做(批量/链式不回归)。
