@@ -11,15 +11,16 @@ description: >
 
 # Pi Vendor
 
-Manage Pi's `models.json` with normal read/edit tools. The bundled script has exactly three AI-facing read-only queries:
+Manage Pi's `models.json` with normal read/edit tools. The bundled script has exactly four AI-facing read-only queries:
 
 ```sh
 node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<keyword>' ['<limit>']
 node '<absolute-skill-directory>/scripts/vendor.mjs' discover '<provider-key>'
 node '<absolute-skill-directory>/scripts/vendor.mjs' drift '<provider-key>' ['<official-provider>,...']
+node '<absolute-skill-directory>/scripts/vendor.mjs' order '<models.dev-snapshot-file>' ['<provider-key>,...']
 ```
 
-`drift` compares a provider's configured models against the active Pi installation's built-in official catalog (the same templates `catalog` serves) and reports per-field differences plus a machine-generated drift table; a model counts as up to date when it still matches at least one current official template exactly. Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value (single quotes), so user text reaches the script literally. There is no AI-facing CRUD or lint command. `/vendor` remains the human cold-start TUI.
+`drift` compares a provider's configured models against the active Pi installation's built-in official catalog (the same templates `catalog` serves) and reports per-field differences plus a machine-generated drift table; a model counts as up to date when it still matches at least one current official template exactly. `order` compares every provider's configured `models` array against the agreed series/`release_date` order and prints a machine-generated audit table plus its deviations; it reads a models.dev snapshot file, so fetch `https://models.dev/api.json` first (retry once through the environment's configured proxy if the direct fetch fails) and pass the saved path. Replace `<absolute-skill-directory>` with the directory containing this `SKILL.md`. Shell-quote the script path and every argument as one positional value (single quotes), so user text reaches the script literally. There is no AI-facing CRUD or lint command. `/vendor` remains the human cold-start TUI.
 
 `set-key` is a separate user-terminal-only helper because it prompts for a secret:
 
@@ -148,7 +149,7 @@ Classify the request into exactly one workflow and follow its numbered steps. Wh
    - Routing fields (`baseUrl`, credentials, headers, `provider`, `authHeader`) come from the target provider, so they are left out of the copy.
    - Apply the Anthropic Messages `baseUrl` Rule below if applicable.
 7. Run the mandatory final verification below; completion is reported only after it passes.
-8. Run the mandatory Model ordering check (see the "Model ordering" section). If any model order deviates, ask the user before concluding.
+8. Run the mandatory Model ordering check (see the "Model ordering" section): fetch the models.dev snapshot, run the `order` query, relay its table verbatim, and act on its deviations or unresolved rows.
 
 If catalog returns no match, say so — absence is not proof the model is invalid — and ask whether to use the requested text verbatim as a custom ID or to try another search term. The ID the user typed stays exactly as typed until they choose.
 
@@ -181,7 +182,7 @@ Each model ID appears once per provider's `models` array; when the ID already ex
 10. Apply only the confirmed plan and selected catalog templates, ensuring any `anthropic-messages` models on a provider with a trailing `/v1` `baseUrl` receive a model-level `baseUrl` stripped of `/v1`. Immediately run its after assertion. `plan_after_mismatch` means repair only this mutation or restore its prior state, then rerun the assertion; the gate is the assertion, beyond Pi merely loading the file.
 11. After the sync assertions pass, apply the user-approved drift updates as strict in-place patches: change only the approved field values, keep every other field and the original key declaration order 100% unchanged, and leave unapproved fields as they are.
 12. Run the mandatory final verification, then **Assert the final discovery union**. Exact sync is successful only when all three assertion templates pass.
-13. Run the mandatory Model ordering check, fetching `https://models.dev/api.json` for release dates (retry once through the environment's configured proxy if the direct fetch fails). If any order deviates, prompt the user before concluding.
+13. Run the mandatory Model ordering check: fetch `https://models.dev/api.json` to a file (retry once through the environment's configured proxy if the direct fetch fails), run the `order` query against it, relay its table verbatim, and act on its deviations or unresolved rows.
 14. If the user chooses only one model to add instead of synchronizing, continue with workflow 1 and use `catalog` only to resolve its official metadata.
 
 ### 3. Add a provider
@@ -200,7 +201,7 @@ Each model ID appears once per provider's `models` array; when the ID already ex
 3. For an update, apply a strict in-place patch: modify only the requested field value. Keep every other existing field, nested structure, and key declaration order 100% intact. Before changing inherited provider routing, identify affected models and preserve required model-level overrides (including the Anthropic Messages trailing `/v1` `baseUrl` rule).
 4. For deletion, show the exact target and confirm unless the user already requested that exact deletion. Removing a built-in override restores built-in behavior; it does not delete Pi's built-in provider.
 5. Apply the narrow edit, then run the mandatory final verification.
-6. After a model update or deletion, run the mandatory Model ordering check. If any order deviates, ask the user before concluding.
+6. After a model update or deletion, run the mandatory Model ordering check: fetch the models.dev snapshot, run the `order` query, relay its table verbatim, and act on its deviations or unresolved rows.
 
 For conflicts, report the exact JSON path and ask whether to update, replace, skip, or choose another target; the edit waits for that answer.
 
@@ -222,27 +223,32 @@ Every mutation has a hard completion gate:
 
 An actual generation request can consume quota and is not part of the default gate. Run one only when the user explicitly asks for a live model call.
 
-After successful verification, check model ordering (next section), then report only the changed JSON paths, selected official source or custom status, Pi offline verification result, and applicable discovery status.
+After successful verification, run the model ordering audit (next section), then report only the changed JSON paths, selected official source or custom status, Pi offline verification result, and applicable discovery status.
 
 ## Model ordering
 
-Every model mutation workflow (Configure a model, Exact sync, Update/delete a model) has a mandatory ordering check gate before reporting completion.
-
-After a successful mutation and mandatory final verification, check the entire file just edited — every provider's `models` array, not only the provider you touched — against the agreed order. Partial reordering is meaningless.
+Every model mutation workflow (Configure a model, Exact sync, Update/delete a model) has a mandatory ordering audit gate before reporting completion. The audit covers the entire file just edited — every provider's `models` array, not only the provider you touched — because partial reordering is meaningless.
 
 The agreed order is:
 
 1. Model series / families in alphabetical order (A-Z) by top-level brand or series name (e.g. `claude` before `deepseek`, `deepseek` before `gemini`, `gemini` before `glm`, `glm` before `gpt`, `gpt` before `kimi`, `kimi` before `qwen`).
-2. Within the same model series, models are ordered strictly by release date (`release_date`), oldest first (e.g. across the entire `claude` series: `claude-haiku-4-5` [2025-10-15] before `claude-fable-5` [2026-06-07] before `claude-sonnet-5` [2026-06-29] before `claude-opus-5` [2026-07-24] before `claude-fable-5-1` [2026-09-01]; fable-5 was released before sonnet-5 and opus-5, so it must precede them).
+2. Within the same model series, models are ordered strictly by release date (`release_date`), oldest first (e.g. across the entire `claude` series: `claude-haiku-4-5` [2025-10-15] before `claude-fable-5` [2026-06-07] before `claude-sonnet-5` [2026-06-29] before `claude-opus-5` [2026-07-24] before `claude-fable-5-1` [2026-09-01]; fable-5 was released before sonnet-5 and opus-5, so it must precede them). The dates above are illustrative: the audit table carries each snapshot date and flags any multi-source conflicts.
 
-Release dates come from `https://models.dev/api.json`. Fetch it, and when the direct fetch fails, retry once through the environment's configured proxy; match each configured model ID against the providers/models there and use the matched model's `release_date`. If a model cannot be matched there, keep its relative position and ask the user for its date.
+The audit is machine-generated, so never assert order from memory or from the fact that a mutation left positions untouched:
 
-**Enforcement Gate**:
-If any provider's `models` array deviates from the agreed order (such as `claude-fable-5` incorrectly placed after `claude-opus-5`), **explicitly alert the user to the detected disorder** and ask whether to reorganize the entire file before reporting completion.
+```sh
+snapshot="$(mktemp "${TMPDIR:-/tmp}/pi-vendor-order.XXXXXX")"
+curl -s --max-time 30 'https://models.dev/api.json' -o "$snapshot"
+node '<absolute-skill-directory>/scripts/vendor.mjs' order "$snapshot"
+```
 
-Reordering is a narrow edit: move whole model objects without changing any field or key order within them. Confirm the proposed final order with the user before editing. Then rerun the mandatory final verification.
+Fetch the snapshot directly, and on failure retry once through the environment's configured proxy before reporting the failure. Relay the audit table and its deviation/unresolved tables verbatim; do not restate model order in prose as if it were your own finding.
 
-This check applies to the file just edited only.
+**Enforcement Gate**: the audit exits nonzero when it detects a deviation or an unresolved date. In both cases, **explicitly alert the user with the audit's own rows** and ask whether to reorganize the whole file; never conclude silently. Resolve deviations by proposing the audit's `proposedOrder` and confirming with the user before editing. For unresolved rows (a model with no release date in the snapshot), ask the user for its date, or keep its relative position when they prefer.
+
+Reordering is a narrow edit: move whole model objects without changing any field or key order within them. After the edit, rerun the mandatory final verification and the audit until it reports no deviations and no unresolved rows.
+
+This audit applies to the file just edited only.
 
 ## API keys
 

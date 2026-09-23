@@ -428,6 +428,157 @@ async function drift(providerKey, restrictArg) {
 	if (noOfficialMatch.length > 0) console.log(`\nNo matching official catalog entry${restrict ? " under the selected source(s)" : ""} found for: ${noOfficialMatch.join(", ")}.`);
 }
 
+function modelSeries(id) {
+	const bare = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+	const match = bare.match(/^[a-z]+/i);
+	return match ? match[0].toLowerCase() : "";
+}
+
+function releaseDateIndex(snapshot) {
+	const index = new Map();
+	const add = (key, date, slug) => {
+		let dates = index.get(key);
+		if (!dates) { dates = new Map(); index.set(key, dates); }
+		let slugs = dates.get(date);
+		if (!slugs) { slugs = new Set(); dates.set(date, slugs); }
+		slugs.add(slug);
+	};
+	for (const [slug, provider] of Object.entries(snapshot ?? {})) {
+		const models = provider?.models;
+		if (!models || typeof models !== "object" || Array.isArray(models)) continue;
+		for (const [key, model] of Object.entries(models)) {
+			const date = typeof model?.release_date === "string" ? model.release_date : "";
+			if (!date) continue;
+			const id = typeof model?.id === "string" && model.id ? model.id : key;
+			add(id, date, slug);
+			// `vendor/id` lookups (for example `openai/gpt-oss-120b`) resolve through the slug-qualified key.
+			add(`${slug}/${id}`, date, slug);
+		}
+	}
+	return index;
+}
+
+function resolveReleaseDate(index, id) {
+	const dates = index.get(id);
+	if (!dates || dates.size === 0) return { date: null, sources: [], conflicts: [] };
+	const ranked = [...dates.entries()]
+		.map(([date, slugs]) => ({ date, count: slugs.size, providers: [...slugs].sort() }))
+		.sort((left, right) => right.count - left.count || left.date.localeCompare(right.date));
+	return { date: ranked[0].date, sources: ranked[0].providers, conflicts: ranked.slice(1).map(({ date, count }) => ({ date, count })) };
+}
+
+async function order(snapshotArg, providersArg) {
+	if (!snapshotArg) fail("Usage: vendor.mjs order <models.dev-snapshot-file> [provider-key,...]", 2);
+	let snapshot;
+	try { snapshot = JSON.parse(readFileSync(snapshotArg, "utf8")); } catch { fail(`Unable to read ${snapshotArg}`); }
+	if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) fail(`${snapshotArg} is not a models.dev snapshot`);
+	const index = releaseDateIndex(snapshot);
+	const config = readModels();
+	const restrict = providersArg ? new Set(providersArg.split(",").map((key) => key.trim()).filter(Boolean)) : null;
+	const providerKeys = Object.keys(config?.providers ?? {}).filter((key) => !restrict || restrict.has(key));
+	if (providerKeys.length === 0) fail(restrict ? "No configured provider matched" : "No configured provider was found");
+	const providers = [];
+	const allDeviations = [];
+	const allUnresolved = [];
+	let checked = 0;
+	for (const providerKey of providerKeys) {
+		const provider = config.providers[providerKey];
+		if (!provider || typeof provider !== "object" || Array.isArray(provider)) continue;
+		if (provider.models !== undefined && !Array.isArray(provider.models)) fail(`Provider ${JSON.stringify(providerKey)} must declare models as an array`);
+		const entries = [];
+		const unresolved = [];
+		for (const [position, model] of (provider.models ?? []).entries()) {
+			const id = typeof model?.id === "string" ? model.id : "";
+			if (!id) { unresolved.push({ position: position + 1, id: "", reason: "missing_id" }); continue; }
+			checked += 1;
+			const series = modelSeries(id);
+			const resolved = resolveReleaseDate(index, id);
+			const entry = { position: position + 1, id, series, date: resolved.date, dateProviders: resolved.sources.length, dateSources: resolved.sources.slice(0, 3), conflicts: resolved.conflicts };
+			if (!series || !resolved.date) unresolved.push({ position: position + 1, id, reason: !series ? "unresolved_series" : "no_release_date" });
+			entries.push(entry);
+		}
+		const seriesSequence = [];
+		const seenSeries = new Set();
+		for (const entry of entries) {
+			if (!entry.series || !entry.date || seenSeries.has(entry.series)) continue;
+			seenSeries.add(entry.series);
+			seriesSequence.push(entry.series);
+		}
+		const deviations = [];
+		const sortedSequence = [...seriesSequence].sort((left, right) => left.localeCompare(right));
+		if (sortedSequence.join("\u0000") !== seriesSequence.join("\u0000")) {
+			deviations.push({ providerKey, kind: "series", series: null, before: seriesSequence.join(" -> "), after: sortedSequence.join(" -> ") });
+		}
+		for (const series of sortedSequence) {
+			const group = entries.filter((entry) => entry.series === series && entry.date);
+			for (let i = 1; i < group.length; i += 1) {
+				const before = group[i - 1];
+				const after = group[i];
+				if (before.position > after.position) {
+					deviations.push({ providerKey, kind: "series", series, before: before.id, after: after.id });
+					continue;
+				}
+				if (before.date > after.date) {
+					deviations.push({ providerKey, kind: "release_date", series, before: `${before.id} (${before.date})`, after: `${after.id} (${after.date})` });
+				}
+			}
+		}
+		for (const item of unresolved) allUnresolved.push({ providerKey, ...item });
+		for (const item of deviations) allDeviations.push(item);
+		const proposedOrder = [...entries]
+			.sort((left, right) => {
+				if (left.series !== right.series) return (left.series || "\uffff").localeCompare(right.series || "\uffff");
+				if (left.date === right.date) return left.position - right.position;
+				if (!left.date) return 1;
+				if (!right.date) return -1;
+				return left.date.localeCompare(right.date);
+			})
+			.map((entry) => entry.id);
+		providers.push({ providerKey, order: entries.map((entry) => entry.id), proposedOrder, series: sortedSequence, models: entries, deviations, unresolved });
+	}
+	const status = allDeviations.length > 0 ? "deviations" : allUnresolved.length > 0 ? "unresolved" : "ordered";
+	output({
+		source: "model-order-audit",
+		snapshot: snapshotArg,
+		status,
+		checked: { providers: providers.length, models: checked },
+		deviations: allDeviations,
+		unresolved: allUnresolved,
+		providers,
+	});
+	console.log("");
+	console.log("#### Model order audit (machine-generated; snapshot from models.dev)");
+	for (const provider of providers) {
+		console.log("");
+		console.log(`##### ${provider.providerKey}`);
+		if (provider.models.length === 0) { console.log("No configured models."); continue; }
+		console.log("| # | model id | series | release_date | notes |");
+		console.log("|---|---|---|---|---|");
+		for (const entry of provider.models) {
+			const notes = entry.conflicts.length > 0 ? `conflict: ${entry.conflicts.map((item) => `${item.date} x${item.count}`).join(", ")}` : "";
+			console.log(`| ${entry.position} | ${entry.id} | ${entry.series || "-"} | ${entry.date || "-"} | ${notes} |`);
+		}
+	}
+	console.log("");
+	if (allDeviations.length === 0) console.log("Every provider's models array already follows the agreed order.");
+	else {
+		console.log("#### Detected deviations");
+		console.log("| provider | kind | series | before | after |");
+		console.log("|---|---|---|---|---|");
+		for (const item of allDeviations) console.log(`| ${item.providerKey} | ${item.kind} | ${item.series ?? "-"} | ${item.before} | ${item.after} |`);
+	}
+	if (allUnresolved.length > 0) {
+		console.log("");
+		console.log("#### Unresolved release dates (ask the user)");
+		console.log("| provider | # | model id | reason |");
+		console.log("|---|---|---|---|");
+		for (const item of allUnresolved) console.log(`| ${item.providerKey} | ${item.position} | ${item.id || "-"} | ${item.reason} |`);
+	}
+	console.log("");
+	console.log(`ordering_deviations=${allDeviations.length} ordering_unresolved=${allUnresolved.length}`);
+	if (allDeviations.length > 0 || allUnresolved.length > 0) process.exitCode = 1;
+}
+
 function routeKey(route) {
 	const headers = Object.entries(route.headers)
 		.map(([name, value]) => [name.toLowerCase(), value])
@@ -515,8 +666,9 @@ try {
 		case "catalog": await catalog(args[0], args[1]); break;
 		case "discover": await discover(args[0]); break;
 		case "drift": await drift(args[0], args[1]); break;
+		case "order": await order(args[0], args[1]); break;
 		case "set-key": await setKey(args[0]); break;
-		default: fail("Usage: vendor.mjs <catalog|discover|drift> [argument]", 2);
+		default: fail("Usage: vendor.mjs <catalog|discover|drift|order> [argument]", 2);
 	}
 } catch (error) {
 	if (error instanceof CliError) {

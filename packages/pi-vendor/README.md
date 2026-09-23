@@ -32,7 +32,7 @@ The bundled `pi-vendor` Skill is discovered automatically. Ask naturally:
 - “Remove model `old-model` from provider `local`.”
 
 
-The Skill uses Pi's normal read/edit flow, so changes stay narrow and inspectable. It treats a user phrase such as “Qwen 3.7” as a fuzzy catalog request rather than blindly writing it as an ID. Provider capability questions use one aggregate `vendor.mjs discover <provider>` query without printing the full configuration. Exact synchronization runs Skill-owned fixed Node templates to generate and retain a machine-confirmed `{before, add, remove, after}` plan, assert it is not stale before editing, assert the final ID set after editing, and assert the final discovery union. Model IDs are never manually transcribed into the mutation plan. Every mutation must pass `pi --list-models --offline` before the Skill reports completion.
+The Skill uses Pi's normal read/edit flow, so changes stay narrow and inspectable. It treats a user phrase such as “Qwen 3.7” as a fuzzy catalog request rather than blindly writing it as an ID. Provider capability questions use one aggregate `vendor.mjs discover <provider>` query without printing the full configuration. Exact synchronization runs Skill-owned fixed Node templates to generate and retain a machine-confirmed `{before, add, remove, after}` plan, assert it is not stale before editing, assert the final ID set after editing, and assert the final discovery union. Model IDs are never manually transcribed into the mutation plan. Every mutation must pass `pi --list-models --offline` before the Skill reports completion. Every model mutation then runs the `order` audit against a models.dev snapshot; a deviation or an unresolved release date exits nonzero and must be raised with the user before the Skill reports completion.
 
 > [!CAUTION]
 > When a working Agent is available, never paste an API key into chat. Let the Skill give you the bundled `vendor.mjs set-key` command, then run it yourself; terminal input is hidden and the key never enters argv or the assistant response. The cold-start `/vendor` key field is visible while typing, so do not use it while sharing or recording your terminal.
@@ -50,13 +50,14 @@ Successful saves are atomic, use file mode `0600`, refresh Pi's model registry, 
 
 ## On-demand helper
 
-The Skill has exactly three AI-facing read-only queries:
+The Skill has exactly four AI-facing read-only queries:
 
 | Command | Purpose |
 |---|---|
 | `vendor.mjs catalog <keyword>` | Fuzzy-search credential-free official templates from the active Pi installation |
 | `vendor.mjs discover <provider>` | Probe every deduplicated effective route for the provider and group upstream model IDs by API type |
 | `vendor.mjs drift <provider> [official-provider,...]` | Compare a provider's configured models against the built-in official catalog templates and report per-field drift |
+| `vendor.mjs order <models.dev-snapshot-file> [provider,...]` | Audit every provider's configured `models` array against the agreed series/`release_date` order and report deviations from a models.dev snapshot |
 
 `vendor.mjs set-key <provider>` remains a separate user-terminal-only helper for private key entry. It is not an AI-facing query.
 

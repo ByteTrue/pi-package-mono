@@ -20,7 +20,7 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 - exact sync 展示契约：plan 模板 stdout 输出单行 plan JSON（唯一 mutation 权威）+ 机器生成的摘要表格（add/remove 行 + kept 列表），Agent 原样转述；按 ID 的展示来自刚收到的机器输出，模型以 exact ID 命名；
 - 保留模型漂移检查：exact sync 确认阶段对 kept 模型（before ∩ after）运行 `drift`（比对当前 active Pi 内置官方 catalog，与 `catalog` 同源，不出网、无快照文件），漂移表格原样转述并逐项询问用户是否更新；漂移报告不是授权，更新走 strict in-place patch；无任何官方模板匹配的模型列 noOfficialMatch；
 - 官方模板复制时 100% 原样保留所有字段与原始键声明顺序，严禁删减（如 `allowedFallbackModels`）或人工重排；修改已有模型必须为 strict in-place patch，仅修改目标 value，其余字段与键顺序 100% 原样不动；
-- 模型变更后必须执行模型排序门禁，检查每个 provider 的 models 数组是否符合约定顺序（大系列 A-Z，系列内部统一按 models.dev `release_date` 升序）；任一 provider 不整齐时禁止静默结束，必须主动询问用户是否整理整个文件，局部整理无意义；整理是仅重排对象、不改内部字段与键序的窄编辑，完成后重新过离线验证；查不到日期/系列时问用户，不猜。
+- 模型变更后必须执行模型排序门禁：拉取 models.dev 快照后运行 bundled `order` 查询，得到机器生成的审计表格与 deviations/unresolved 行并原样转述；禁止凭记忆或“未移动位置”断言顺序正确。约定顺序为大系列 A-Z，系列内部按 models.dev `release_date` 升序；有任一 deviation 或 unresolved 时查询非零退出，禁止静默结束，必须主动询问用户是否整理整个文件，局部整理无意义；整理是仅重排对象、不改内部字段与键序的窄编辑，完成后重新过离线验证并复跑审计；查不到日期/系列时问用户，不猜。
 - 任何回复、diff 或工具参数都不复现 `apiKey`；
 - 每次修改后必须运行 active Pi 的 `pi --list-models --offline`，检查两条输出流没有 `errors loading models.json` warning，并验证目标模型列表变化；exact sync 还必须执行 Skill 固定 Node 模板生成且用户确认的 plan 文件、写前 stale assertion、写后 exact-set assertion 与 discovery union assertion。
 
@@ -28,17 +28,18 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 
 ### Bundled script
 
-AI-facing script 固定只有三个只读查询：
+AI-facing script 固定只有四个只读查询：
 
 | 子命令 | 调用方 | 输出/边界 |
 |---|---|---|
 | `catalog <keyword> [limit]` | AI | 从 active Pi catalog 模糊搜索并移除 routing/credential 字段；空格、连字符和下划线差异可归一匹配；输出 `source: official-catalog` 与 `officialProvider`；默认 50，范围 1–100 |
 | `discover <provider-key>` | AI | 从 provider route 固定派生四种 API adapter，再追加并去重 model-level effective overrides；每条 route 只输出 API、状态和排序去重后的 upstream ID，标记 `source: upstream-discovery` |
 | `drift <provider-key> [official-provider,...]` | AI | 把 provider 已配置模型与当前 active Pi 内置官方 catalog 的模板逐字段比对（同 schema，含 compat/thinkingLevelMap 等全部非路由字段；`api`/`baseUrl`/headers/凭据等路由字段不算漂移，null 视同缺省）；模板匹配含同 ID exact 与 `vendor/id` 前缀两种，可选第二参限定官方源；配置与任一当前官方模板完全一致即为 up-to-date，对其他源的差异不再展示；输出 JSON + 机器生成 drift 表格；无任何模板匹配的模型列 noOfficialMatch；脚本自身不出网、不落盘、不触碰凭据 |
+| `order <models.dev-snapshot-file> [provider-key,...]` | AI | 读取调用方提供的 models.dev 快照文件，对每个 provider 的 `models` 数组做排序审计：系列取 id 去 `vendor/` 前缀后的首个字母串，跨系列按系列名字母序、系列内按 `release_date` 升序；同 ID 多源日期取众数并输出全部候选（conflicts），无日期/无系列列 unresolved；输出 JSON（含 `order`/`proposedOrder`/`deviations`/`unresolved`）+ 机器表格（逐模型行、deviations 表、unresolved 表），有任一 deviation 或 unresolved 时非零退出；只读、不出网、不落盘、不触碰凭据 |
 
 `lint` 与 AI-facing CRUD 子命令不存在（历史上被移除的 configured/upstream compare 语义不复活；`drift` 只做官方元数据新鲜度比对，不是它）。`set-key <provider-key>` 是独立的用户终端密钥入口：无回显输入，只更新一个 key，原子 `0600` 写入；它不属于 AI 查询协议。
 
-AI 不得用 `catalog all`、手工 route 循环或完整输出 `models.json` 替代这些查询。Exact sync 的本地结构化 set 运算属于 Skill 固定 Node 模板，不是第四个 bundled 命令；模板内部只读取目标 provider 的 `models`，只输出 model ID plan 与摘要表格，且固定执行计划生成、写前 stale、写后 exact-set、最终 discovery-union 四次断言。
+AI 不得用 `catalog all`、手工 route 循环或完整输出 `models.json` 替代这些查询，也不得手工抓取 models.dev 逐条比对替代 `order`。Exact sync 的本地结构化 set 运算属于 Skill 固定 Node 模板，不是第五个 bundled 命令；模板内部只读取目标 provider 的 `models`，只输出 model ID plan 与摘要表格，且固定执行计划生成、写前 stale、写后 exact-set、最终 discovery-union 四次断言。
 
 catalog 安装定位依次尝试 `PI_VENDOR_PI_ROOT`、PATH 中 `pi` 的 realpath 上溯、mise/aube bin shim 文本中的包路径（`target=` 与 `$basedir` 引用）、`node_modules/.mise/@earendil-works+pi-coding-agent@*` 布局，以及 pi-ai 与 pi-coding-agent 同层的 hoisted 布局；失败信息提示 `PI_VENDOR_PI_ROOT`。SKILL 要求环境失败时至多做一次文档化恢复、向用户报告后停下。`modelOverrides` 不进入 exact sync。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
 
@@ -128,5 +129,6 @@ npm --workspace @bytetrue/pi-vendor pack --dry-run
 - README：`packages/pi-vendor/README.md`
 - 当前转向 epic：`byissue/epics/003-x-vendor-ai-first/spec.md`
 - 讨论：`byissue/talks/003-vendor-ai-first.md`
+- 确定性计算进脚本、散文只留判断：`byissue/decisions/002-deterministic-work-belongs-in-script.md`
 - 被取代的双界面历史：`byissue/epics/001-x-vendor-dual-ui-manager/spec.md`
 - 被取代的 Web 产品化历史：`byissue/epics/002-x-vendor-web-productization/spec.md`

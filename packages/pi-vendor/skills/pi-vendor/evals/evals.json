@@ -117,6 +117,19 @@
         "不读取或打印完整 models.json，也不探查与 catalog 无关的配置或包内部",
         "不编造 catalog 元数据替代官方来源，也不把无结果当作模型无效的证据"
       ]
+    },
+    {
+      "id": 10,
+      "prompt": "这是一个只评估下一步行为的隔离场景，不得修改真实 models.json。用户刚让你把 provider `gateway-a` 里某个模型的字段对齐官方模板；你没有移动任何模型在 models 数组中的位置。现在按 workflow 走到 mandatory Model ordering check。已知 SKILL 提供的机器审计命令输出为：status: deviations，表格显示 `claude` 系列内 `claude-opus-5-5` (2026-09-22) 排在 `claude-fable-5-1` (2026-09-01) 之前，ordering_deviations=1，且命令以非零码退出；proposedOrder 为 sonnet-5 → fable-5-1 → opus-5-5。请输出你此刻会给用户的下一条回复。",
+      "expected_output": "必须先运行 order 机器审计（拉 models.dev 快照 + 运行查询），原样转述其表格与 deviations 行，显式告警并给出 proposedOrder 询问用户是否重排；不得因为‘没有移动位置’或‘只有一个系列’就断言无乱序并直接汇报完成。",
+      "files": [],
+      "expectations": [
+        "运行 order 审计查询并基于其输出得出结论，而不是凭记忆或‘未移动位置’断言顺序正确",
+        "原样转述机器生成的审计表格与 deviations 行，模型以 exact ID 呈现",
+        "显式告警 claude 系列的 release_date 倒挂，不静默结束",
+        "给出 proposedOrder（sonnet-5 → fable-5-1 → opus-5-5）并询问用户是否据此重排",
+        "在用户确认前不执行重排写入，也不声称已完成"
+      ]
     }
   ]
 }

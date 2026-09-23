@@ -175,6 +175,112 @@ describe("vendor skill script", () => {
 		expect(restricted).toContain("| vendor/vision-model | hub (vendor/vision-model) | cost.input | 1 | 9 |");
 	});
 
+	it("audits model order against a models.dev snapshot and flags release-date inversions", async () => {
+		const snapshot = join(dir, "modelsdev.json");
+		writeFileSync(snapshot, JSON.stringify({
+			anthropic: { models: {
+				"claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-29" },
+				"claude-opus-5-5": { id: "claude-opus-5-5", release_date: "2026-09-22" },
+				"claude-fable-5-1": { id: "claude-fable-5-1", release_date: "2026-09-01" },
+			} },
+			google: { models: { "gemini-3.8-flash": { id: "gemini-3.8-flash", release_date: "2026-09-02" } } },
+			openrouter: { models: { "openai/gpt-oss-120b": { id: "openai/gpt-oss-120b", release_date: "2025-08-05" } } },
+		}));
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { models: [
+			{ id: "claude-sonnet-5" },
+			{ id: "claude-opus-5-5" },
+			{ id: "claude-fable-5-1" },
+			{ id: "gemini-3.8-flash" },
+			{ id: "openai/gpt-oss-120b" },
+		] }, other: { models: [{ id: "claude-fable-5-1" }, { id: "claude-sonnet-5" }] } } }, null, 2)}\n`);
+
+		const result = await runAsync(["order", snapshot]);
+		expect(result.code).toBe(1);
+		const json = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("#### Model order audit")).trim());
+		expect(json.status).toBe("deviations");
+		expect(json.checked).toEqual({ providers: 2, models: 7 });
+		expect(json.deviations).toEqual([
+			{ providerKey: "relay", kind: "release_date", series: "claude", before: "claude-opus-5-5 (2026-09-22)", after: "claude-fable-5-1 (2026-09-01)" },
+			{ providerKey: "other", kind: "release_date", series: "claude", before: "claude-fable-5-1 (2026-09-01)", after: "claude-sonnet-5 (2026-06-29)" },
+		]);
+		expect(json.unresolved).toEqual([]);
+		expect(json.providers[0].proposedOrder).toEqual(["claude-sonnet-5", "claude-fable-5-1", "claude-opus-5-5", "gemini-3.8-flash", "openai/gpt-oss-120b"]);
+		expect(result.stdout).toContain("| 2 | claude-opus-5-5 | claude | 2026-09-22 |");
+		expect(result.stdout).toContain("| relay | release_date | claude | claude-opus-5-5 (2026-09-22) | claude-fable-5-1 (2026-09-01) |");
+		expect(result.stdout).toContain("ordering_deviations=2 ordering_unresolved=0");
+	});
+
+	it("reports an ordered file as clean and exits zero", async () => {
+		const snapshot = join(dir, "modelsdev.json");
+		writeFileSync(snapshot, JSON.stringify({ anthropic: { models: {
+			"claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-29" },
+			"claude-fable-5-1": { id: "claude-fable-5-1", release_date: "2026-09-01" },
+			"claude-opus-5-5": { id: "claude-opus-5-5", release_date: "2026-09-22" },
+		} } }));
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { models: [{ id: "claude-sonnet-5" }, { id: "claude-fable-5-1" }, { id: "claude-opus-5-5" }] } } }, null, 2)}\n`);
+
+		const result = await runAsync(["order", snapshot]);
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain("Every provider's models array already follows the agreed order.");
+		expect(result.stdout).toContain("ordering_deviations=0 ordering_unresolved=0");
+	});
+
+	it("reports models without a resolvable date as unresolved and exits nonzero", async () => {
+		const snapshot = join(dir, "modelsdev.json");
+		writeFileSync(snapshot, JSON.stringify({ anthropic: { models: { "claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-29" } } } }));
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { models: [{ id: "claude-sonnet-5" }, { id: "mystery-1" }] } } }, null, 2)}\n`);
+
+		const result = await runAsync(["order", snapshot]);
+		expect(result.code).toBe(1);
+		const json = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("#### Model order audit")).trim());
+		expect(json.status).toBe("unresolved");
+		expect(json.deviations).toEqual([]);
+		expect(json.unresolved).toEqual([{ providerKey: "relay", position: 2, id: "mystery-1", reason: "no_release_date" }]);
+		expect(result.stdout).toContain("| relay | 2 | mystery-1 | no_release_date |");
+	});
+
+	it("requires the snapshot argument and rejects a non-snapshot file", async () => {
+		const missing = await runAsync(["order"]);
+		expect(missing.code).toBe(2);
+		expect(missing.stderr).toContain("Usage: vendor.mjs order <models.dev-snapshot-file> [provider-key,...]");
+		const notASnapshot = join(dir, "not-a-snapshot.json");
+		writeFileSync(notASnapshot, "[]");
+		const invalid = await runAsync(["order", notASnapshot]);
+		expect(invalid.code).toBe(1);
+		expect(invalid.stderr).toContain("is not a models.dev snapshot");
+	});
+
+	it("orders a series-shuffled array by series name before checking dates", async () => {
+		const snapshot = join(dir, "modelsdev.json");
+		writeFileSync(snapshot, JSON.stringify({
+			anthropic: { models: { "claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-29" } } },
+			google: { models: { "gemini-3.8-flash": { id: "gemini-3.8-flash", release_date: "2026-09-02" } } },
+		}));
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { models: [{ id: "gemini-3.8-flash" }, { id: "claude-sonnet-5" }] } } }, null, 2)}\n`);
+
+		const result = await runAsync(["order", snapshot]);
+		expect(result.code).toBe(1);
+		const json = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("#### Model order audit")).trim());
+		expect(json.deviations).toEqual([{ providerKey: "relay", kind: "series", series: null, before: "gemini -> claude", after: "claude -> gemini" }]);
+		expect(json.providers[0].proposedOrder).toEqual(["claude-sonnet-5", "gemini-3.8-flash"]);
+	});
+
+	it("picks the date backed by the most sources and reports the conflicts", async () => {
+		const snapshot = join(dir, "modelsdev.json");
+		writeFileSync(snapshot, JSON.stringify({
+			anthropic: { models: { "claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-30" } } },
+			openrouter: { models: { "claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-30" } } },
+			venice: { models: { "claude-sonnet-5": { id: "claude-sonnet-5", release_date: "2026-06-29" } } },
+		}));
+		writeFileSync(join(dir, "models.json"), `${JSON.stringify({ providers: { relay: { models: [{ id: "claude-sonnet-5" }] } } }, null, 2)}\n`);
+
+		const result = await runAsync(["order", snapshot]);
+		expect(result.code).toBe(0);
+		const json = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("#### Model order audit")).trim());
+		expect(json.providers[0].models[0]).toMatchObject({ date: "2026-06-30", dateProviders: 2, conflicts: [{ date: "2026-06-29", count: 1 }] });
+		expect(result.stdout).toContain("conflict: 2026-06-29 x1");
+	});
+
 	it("discovers model ids without returning credentials", async () => {
 		let authorization = "";
 		const server = createServer((request, response) => {
