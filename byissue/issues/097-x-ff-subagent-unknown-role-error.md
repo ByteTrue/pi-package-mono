@@ -23,3 +23,5 @@ Omit 'agent' for a general-purpose child, or use one of the roles above.
 - byissue：已同步 `byissue/spec/pi-subagent/index.md`（当前表面 + `resolveAgentRole` 语义）；README `agent` 参数行同步。
 
 顺手发现（不在本次范围）：`/subagent` 菜单允许给尚不存在的角色名配置 model/thinking；这类「只有 settings 绑定、没有文档」的名字现在可正常通过校验（有单测锁定），但子 agent 没有角色提示词，语义是「通用 agent + 指定模型/思考」——如需更强的配置校验另议。
+
+- 发布：随 `096` 一起发布于 `0.9.1`（2026-09-23，见 `096` 的发布记录）。

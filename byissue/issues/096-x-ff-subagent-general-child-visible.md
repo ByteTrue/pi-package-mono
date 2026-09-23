@@ -22,3 +22,11 @@ created: 2026-09-23
 顺手发现（不在本次范围）：`sessionLogPath` 用例在 Windows 上稳定失败（`src/index.test.ts:578`，clean HEAD 也失败）→ 已由 ff 098 修；`agent` 传未知名字时静默退化成通用子 agent，没有提示或报错 → 已由 ff 097 改为报错。
 
 发布：版本已 bump 到 0.9.1，未 commit / 未发布（需用户授权）。
+
+## 发布记录（2026-09-23）
+
+- 与 `097`（未知角色名报错）、`098`（Windows 测试修正）合并发布：`0.9.0` → `0.9.1`。
+- 提交 `2283a3e`；tag `pi-subagent-v0.9.1` 触发 release.yml（Trusted Publishing OIDC，带 provenance）。
+- npm registry 确认：`dist-tags.latest` = `0.9.1`；`gitHead` = `2283a3e5c6bb9d8da42c47505a10feb17b8e6afb`；provenance predicate `https://slsa.dev/provenance/v1`。
+- 解包 tarball 核对：11 文件，`agents/{scout,researcher,reviewer}.md` 齐全；`src/index.ts` 含 “general-purpose by default” 文案、`resolveAgentRole`、`Unknown agent role` 错误文本。
+- 本地安装已同步：`pi update npm:@bytetrue/pi-subagent` → `~/.pi/agent/npm/.../pi-subagent` 0.9.1，与仓库源码逐字节一致。
