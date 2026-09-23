@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
-import { loadSubagentSettings, type SubagentSettings } from "./settings.js";
+import { loadSubagentSettings, listDiscoveredAgentNames, type SubagentSettings } from "./settings.js";
 import { runSubagentCommand } from "./command.js";
 import { BUILTIN_AGENTS_DIR, listBuiltinAgentNames, type AgentConfig } from "./builtin-agents.js";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -698,6 +698,32 @@ export function findAgentDefinition(cwd: string, agentName?: string): { config: 
   }
 
   return { config: {}, found: false };
+}
+
+/**
+ * Load the agent document for a role, rejecting unknown names. A wrong role
+ * name must not silently degrade to the general-purpose child: the caller asked
+ * for specific tools/thinking and would get a different agent without knowing.
+ * The error lists the available roles so the caller can correct itself.
+ */
+export function resolveAgentRole(
+  cwd: string,
+  agentName?: string,
+  subagentSettings?: SubagentSettings,
+): AgentConfig {
+  const name = typeof agentName === "string" ? agentName.trim() : "";
+  if (!name) return {};
+  const { config, found } = findAgentDefinition(cwd, name);
+  if (found) return config;
+  // A role explicitly configured in settings is still real even without a
+  // document: it carries the role's model/thinking overrides.
+  const settings = subagentSettings ?? loadSubagentSettings(cwd, true);
+  if (settings.agents && Object.prototype.hasOwnProperty.call(settings.agents, name)) return {};
+  const known = listDiscoveredAgentNames(cwd);
+  throw new Error(
+    `Unknown agent role "${name}". Available roles: ${known.join(", ") || "(none)"}. ` +
+      `Omit 'agent' for a general-purpose child, or use one of the roles above.`,
+  );
 }
 
 export function resolveRunCfg(
@@ -1405,7 +1431,7 @@ export async function runSubagent(
   try {
     const role = item.agent || "subagent";
     const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
-    const { config: agentCfg } = findAgentDefinition(cwd, item.agent);
+    const agentCfg = resolveAgentRole(cwd, item.agent, subagentSettings);
     const runCfg = resolveRunCfg(
       { ...item, id: sessionId },
       agentCfg,
@@ -1554,12 +1580,13 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Delegate ONE task to an isolated child agent session. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.",
+      "Delegate ONE self-contained task to an isolated child agent session. The child is general-purpose by default: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), so any self-contained job you would otherwise do inline fits. Pass 'agent' only when a built-in role matches better: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.",
     promptSnippet:
-      "Delegate work to child agents (scout / researcher / reviewer); the call returns at once and the result arrives later as a new message.",
+      "Delegate a self-contained job to a child agent — general-purpose by default, or a built-in role (scout / researcher / reviewer) when one matches; the call returns at once and the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
     promptGuidelines: [
-      "Delegate self-contained recon, research, or review to subagent so you stay free to keep working or hand control back to the user",
+      "Delegate any self-contained job to subagent so you stay free to keep working or hand control back to the user",
+      "Omit 'agent' for a general-purpose child (inherits your model, thinking level, and default tools); pass 'agent' only when a built-in role or a custom .pi/agents document matches the job exactly",
       "After a subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
     ],
     parameters: {
@@ -1572,7 +1599,7 @@ export default function subagentExtension(pi: {
         agent: {
           type: "string",
           description:
-            "Optional agent role (e.g. 'scout', 'researcher', 'reviewer', or custom name).",
+            "Optional agent role. Omit it for a general-purpose child that inherits your model, thinking level, and default tools. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests); any custom .pi/agents/<name>.md works too. A name that matches no document is rejected with the list of available roles.",
         },
         tools: {
           type: "array",
@@ -1610,6 +1637,10 @@ export default function subagentExtension(pi: {
       const inheritedModel = resolveInheritedModel(ctx);
 
       const item = normalizeTask(input);
+      // Fail the tool call before any task is registered: an unknown role must
+      // surface as an error the model can correct, not as a silently different
+      // child (issue 097).
+      resolveAgentRole(cwd, item.agent);
 
       // Pure background (issue 088): the call returns at once; progress streams into
       // the manager record (status bar + /subagent menu) and the result arrives as a

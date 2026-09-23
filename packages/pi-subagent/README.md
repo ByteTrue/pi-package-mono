@@ -55,7 +55,7 @@ Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, s
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `task` | `string` | **Yes** | The task instruction / prompt. |
-| `agent` | `string` | No | Optional agent role (loads prompt/defaults from `.pi/agents/<name>.md`). |
+| `agent` | `string` | No | Optional role. **Omit it for a general-purpose child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`). Built-ins: `scout` (read-only recon), `researcher` (web/doc research), `reviewer` (code review & tests); any custom `.pi/agents/<name>.md` works too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to the general-purpose child. |
 | `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `cwd` | `string` | No | Optional working directory for the task. |
 | `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
@@ -63,6 +63,14 @@ Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, s
 | `maxTurns` | `number` | No | Turn limit before pausing. Default: 50. |
 
 #### Usage Example
+
+General-purpose child — omit `agent`:
+
+```json
+{ "task": "Dogfood the new onboarding flow and report what breaks" }
+```
+
+A built-in role, when one matches exactly:
 
 ```json
 {
@@ -97,7 +105,7 @@ Stop a running subagent task by id. Idempotent: stopping an already-finished tas
 
 #### Built-in roles
 
-The built-in roles — `scout`, `researcher`, `reviewer` — are ordinary agent documents shipped in the package's `agents/` directory. They are parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy one out to customise it:
+The child is general-purpose by default: omitting `agent` inherits your model, thinking level, and pi's default toolset. The built-in roles — `scout`, `researcher`, `reviewer` — are opt-in presets for jobs that match them exactly. They are ordinary agent documents shipped in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy one out to customise it:
 
 ```bash
 mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/scout.md .pi/agents/scout.md

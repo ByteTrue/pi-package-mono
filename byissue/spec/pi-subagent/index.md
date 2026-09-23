@@ -14,7 +14,8 @@
   - **单任务语义(095)**:没有 `tasks[]`、`chain`、`prompts`、`mode`——批量与链式已删除。要同时跑多个子任务，在同一条 assistant 消息里发多个 `subagent` tool call，各自独立 id、独立 manager 记录、独立进度卡、各自回各自的完成通知；退出通知在 agent 忙时经 `pendingExits` 合并为一条。
   - Agent 工具不暴露 `model` 或 `thinking`：模型与思考强度只由用户通过 `/subagent`、settings 或 agent 模板控制；旧调用即使伪造这两个字段也会在规范化与执行时被忽略。
   - **纯后台**：调用立即返回一行 started 文本与 task id，永不阻塞父回合；完整结果经 `followUp + triggerTurn` 作为新消息开启下一回合。没有 `async` 参数——没有前台模式可以退回（issue 088，对齐 background-terminal 079 的同一逻辑：结果由通知送达，"要不要阻塞"这根轴不存在）。
-  - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达；多任务 = 同一消息多次调用，控制用 `subagent_status` / `subagent_stop`。
+  - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达；多任务 = 同一消息多次调用，控制用 `subagent_status` / `subagent_stop`。同样正向说明默认路径：`agent` 省略 = 通用子 agent（继承父会话 model/thinking 与 pi 默认工具 `read, bash, edit, write`），内置角色是任务恰好匹配时才用的预设（issue 096 修正——此前四处模型可见文本只列 scout/researcher/reviewer，模型从不使用无角色路径）。
+  - `agent` 传了不存在的名字时**报错**：错误文本列出可用角色并提示可省略 `agent` 走通用子 agent，不会静默退化为通用子 agent（issue 097）。执行时经 `resolveAgentRole` 解析；settings 里显式配置过但无文档的角色名仍被接受。
 - `subagent_status(id)`：按 id 查一个任务——状态、耗时、当前活动(运行中工具/轮次/token/费用/模型)、最近 5 条工具调用、子会话 log 路径。**不含任务 output**(全文由完成通知送达)；description 写明完成自动通知、无需轮询。
 - `subagent_stop(id)`：停止一个运行中任务。幂等(已结束返回 “is already …; nothing to stop”)；停止后照常发 “was cancelled” 通知。两工具都按 parent session 过滤,跨会话的 id 视为不存在。
 - 内置角色预设（以包内 agent 文档形式提供，见 `agents/*.md`，与用户 `.pi/agents/*.md` 同一套解析，同名用户文件优先）：
@@ -56,7 +57,8 @@
 
 | 目的 | 入口 |
 |---|---|
-| 执行独立子任务 / 审查 / 探索 | `subagent({ task: "..." })` → 立即返回，结果以新消息到达 |
+| 执行独立子任务 / 审查 / 探索 | `subagent({ task: "..." })`（省略 `agent` = 通用子 agent）→ 立即返回，结果以新消息到达 |
+| 任务恰好是只读侦察 / 网络调研 / 代码审查 | `subagent({ agent: "scout\|researcher\|reviewer", task: "..." })`，角色会收窄工具集与思考档 |
 | 并行对比或批量处理 | 同一消息里发多个 `subagent` 调用(各自独立 id/进度/通知) |
 | 查看某任务状态/活动/子会话 log | `subagent_status({ id })` |
 | 中途停止某任务 | `subagent_stop({ id })`(幂等) |

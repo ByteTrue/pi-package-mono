@@ -7,6 +7,7 @@ import {
   buildPiArgs,
   parseAgentFile,
   findAgentDefinition,
+  resolveAgentRole,
   resolvePiCli,
   normalizeTask,
   SubagentTaskManager,
@@ -30,7 +31,7 @@ import {
   listDiscoveredAgentNames,
 } from "./settings.js";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 describe("pi-subagent unit tests", () => {
@@ -344,6 +345,42 @@ You are an expert researcher. Read references carefully.
     expect(res.found).toBe(false);
   });
 
+  it("resolves a known role and rejects an unknown one with the available list (issue 097)", () => {
+    expect(resolveAgentRole(process.cwd(), undefined)).toEqual({});
+    expect(resolveAgentRole(process.cwd(), "scout").tools).toEqual(["read", "grep", "find"]);
+    expect(() => resolveAgentRole(process.cwd(), "definitely-not-a-role")).toThrow(
+      /Unknown agent role "definitely-not-a-role"/,
+    );
+    expect(() => resolveAgentRole(process.cwd(), "definitely-not-a-role")).toThrow(
+      /Omit 'agent' for a general-purpose child/,
+    );
+  });
+
+  it("fails a subagent call with an unknown agent role before starting a task (issue 097)", async () => {
+    const registered = new Map<string, JsonObject>();
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    try {
+      subagentExtension({
+        registerTool: (tool: JsonObject) => registered.set(String(tool.name), tool),
+      });
+    } finally {
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+    }
+    const execute = registered.get("subagent")!.execute as (
+      id: string,
+      input: unknown,
+      signal: undefined,
+      onUpdate: undefined,
+      ctx: { sessionManager: { getSessionId: () => string } },
+    ) => Promise<unknown>;
+    await expect(
+      execute("call_1", { task: "x", agent: "no-such-role" }, undefined, undefined, {
+        sessionManager: { getSessionId: () => "sess-err" },
+      }),
+    ).rejects.toThrow(/Unknown agent role "no-such-role"/);
+  });
+
   it("normalizes a single task input, dropping unknown fields (issue 095)", () => {
     const item = normalizeTask({ task: "  test task  " });
     expect(item).toEqual({ task: "test task" });
@@ -470,6 +507,15 @@ You are an expert researcher. Read references carefully.
     // Pure background (issue 088): there is no foreground mode to opt out of.
     expect(props).not.toHaveProperty("async");
     expect(registered).not.toHaveProperty("renderResult");
+
+    // The role-less general-purpose child is the default and every model-facing
+    // surface must say so; otherwise models only ever fill `agent` with a role
+    // (issue 096).
+    expect(String(main.description)).toContain("general-purpose by default");
+    expect(String(main.promptSnippet)).toContain("general-purpose by default");
+    expect((main.promptGuidelines as string[]).join("\n")).toContain("Omit 'agent' for a general-purpose child");
+    const agentParam = props.agent as JsonObject;
+    expect(String(agentParam.description)).toContain("Omit it for a general-purpose child");
   });
 
   it("formats the footer from the oldest running task and clears when idle", () => {
@@ -559,8 +605,11 @@ You are an expert researcher. Read references carefully.
 
   it("locates the child's persisted session log under the encoded-cwd sessions dir", () => {
     const agentDir = join(tmpdir(), `pi-subagent-agent-${Date.now()}`);
-    const cwd = "/tmp/some project";
-    const dir = join(agentDir, "sessions", "--tmp-some project--");
+    const cwd = join(tmpdir(), `pi-subagent-cwd ${Date.now()}`);
+    // Mirror pi's getDefaultSessionDirPath encoding (not exported by pi), with
+    // resolve() first: on Windows a POSIX-style path resolves to a drive path.
+    const safe = `--${resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+    const dir = join(agentDir, "sessions", safe);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "2026-01-01T00-00-00-000Z_sub_abc.jsonl"), "");
     const prev = process.env.PI_CODING_AGENT_DIR;
