@@ -113,7 +113,9 @@ PI_CODING_AGENT_DIR=<isolated dir with a copy of the config> node '<skill dir>/s
 
 ## 发布
 
-（发布记录在推送 tag 后于此处补充。）
+- commit `f6ab2ed` 推送到 main（rebase 到远端 pi-subagent 0.9.1 两提交之上；远端并行会话已占用 096/097/098，本独立事项保留完整文件名空间，碰撞按 SKILL 约定处理）。
+- 推送 tag `pi-vendor-v0.5.0`，GitHub Actions OIDC 发布工作流（run `35826259143`）全仓 typecheck/test 通过后发布 `@bytetrue/pi-vendor@0.5.0`，provenance 已签名入 transparency log（logIndex 2916384054），registry `latest = 0.5.0`。
+- 本地 `~/.pi/agent/npm` 安装副本更新为 `0.5.0`：真机验证已安装的 `vendor.mjs order`（对已修正配置 `exit 0`）及 `SKILL.md`（四查询 + 机器审计契约）。
 
 ## 关闭时
 
