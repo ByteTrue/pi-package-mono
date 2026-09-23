@@ -6,7 +6,6 @@
     "../packages/pi-background-terminal",
     "../packages/pi-vision",
     "../packages/pi-subagent",
-    "../packages/pi-browser",
     "../packages/pi-mcp",
     {
       "source": "npm:@bytetrue/pi-mcp",
@@ -58,14 +57,6 @@
     },
     {
       "source": "npm:@bytetrue/pi-subagent",
-      "autoload": false,
-      "extensions": ["!**"],
-      "skills": ["!**"],
-      "prompts": ["!**"],
-      "themes": ["!**"]
-    },
-    {
-      "source": "npm:@bytetrue/pi-browser",
       "autoload": false,
       "extensions": ["!**"],
       "skills": ["!**"],

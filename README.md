@@ -5,7 +5,7 @@
 <h1 align="center">Pi Package Mono</h1>
 
 <p align="center">
-  Six focused extensions for <a href="https://pi.dev">Pi</a>: browser automation, background processes, image generation, model configuration, delegated vision, and web access.
+  Five focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated vision, and web access.
 </p>
 
 <p align="center">
@@ -21,7 +21,6 @@ Each package is independent. Install one capability without inheriting a framewo
 
 | You want Pi to… | Package | What it adds | First step |
 | --- | --- | --- | --- |
-| Drive a browser that is already logged in | [`@bytetrue/pi-browser`](packages/pi-browser) | `/browser` setup, login-data import, headless/headed settings, session cleanup | Run `/browser` |
 | Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `bash(waitSeconds)`, `background_status`, `background_kill`, `/background` | Install and ask Pi to run a command without hanging on it |
 | Generate or edit images | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | On-demand Skill + CLI, `/image-gen` setup | Run `/image-gen` |
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |
@@ -33,7 +32,6 @@ Each package is independent. Install one capability without inheriting a framewo
 Install any package from npm:
 
 ```bash
-pi install npm:@bytetrue/pi-browser
 pi install npm:@bytetrue/pi-background-terminal
 pi install npm:@bytetrue/pi-image-gen
 pi install npm:@bytetrue/pi-vendor
@@ -52,8 +50,7 @@ The repository keeps high-frequency and low-frequency capabilities separate:
 
 - **Agent tools** stay small and explicit: background terminal, delegated vision, and web access.
 - **Skills load on demand** for lower-frequency work: image generation and model configuration.
-- **TUI commands close the setup loop**: `/background`, `/browser`, `/image-gen`, `/vendor`, `/vision`, and `/web`.
-- **Setup-only packages stay out of the loop where they can**: `pi-browser` prepares and maintains another tool (the official Playwright CLI) and registers no agent tools of its own.
+- **TUI commands close the setup loop**: `/background`, `/image-gen`, `/vendor`, `/vision`, and `/web`.
 - **No package depends on another package here.** Install, upgrade, or remove each one independently.
 - **No package replaces Pi's built-in tools.** Background terminal, for example, complements `bash` rather than overriding it.
 
@@ -90,7 +87,6 @@ npm --workspace @bytetrue/pi-image-gen run build
 
 ```text
 packages/
-  pi-browser/              Browser setup and login-data import for playwright-cli
   pi-background-terminal/  Unified shell execution: bash waitSeconds + background tasks
   pi-image-gen/            Image generation and editing
   pi-vendor/               models.json provider/model management

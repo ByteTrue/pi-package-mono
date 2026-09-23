@@ -3,7 +3,7 @@ name: Release
 # Publish packages to npm when a version tag is pushed.
 #
 # Package-scoped tags publish one workspace (e.g. pi-web-search-v0.1.1).
-# Supported package tags: pi-browser-v*, pi-vendor-v*, pi-web-search-v*, pi-image-gen-v*, pi-background-terminal-v*, pi-vision-v*, pi-subagent-v*, pi-mcp-v*.
+# Supported package tags: pi-vendor-v*, pi-web-search-v*, pi-image-gen-v*, pi-background-terminal-v*, pi-vision-v*, pi-subagent-v*, pi-mcp-v*.
 #
 # Uses npm Trusted Publishing (OIDC) — no NPM_TOKEN needed. Each package must
 # have a Trusted Publisher configured on npmjs.com pointing at this repo and
@@ -11,7 +11,7 @@ name: Release
 # are generated automatically.
 on:
   push:
-    tags: ["pi-browser-v*", "pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*", "pi-background-terminal-v*", "pi-vision-v*", "pi-subagent-v*", "pi-mcp-v*"]
+    tags: ["pi-vendor-v*", "pi-web-search-v*", "pi-image-gen-v*", "pi-background-terminal-v*", "pi-vision-v*", "pi-subagent-v*", "pi-mcp-v*"]
 
 jobs:
   publish:
@@ -34,7 +34,6 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           case "$tag" in
-            pi-browser-v*) packages=(packages/pi-browser/) ;;
             pi-vendor-v*) packages=(packages/pi-vendor/) ;;
             pi-web-search-v*) packages=(packages/pi-web-search/) ;;
             pi-image-gen-v*) packages=(packages/pi-image-gen/) ;;
