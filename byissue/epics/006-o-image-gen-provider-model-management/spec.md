@@ -62,6 +62,7 @@ created: 2026-09-27
 - `issues/001-x-provider-model-data-shape.md` — 数据形状与迁移方案定稿。已关闭。
 - `issues/002-x-v2-settings-and-migration.md` — v2 形状、一次性迁移与 core 重切。已关闭。
 - `issues/003-x-manage-providers-surface.md` — `Manage providers` 两级管理面与 provider/模型 CRUD。已关闭。
+- 发布：三个 issue 的交付以 `@bytetrue/pi-image-gen@0.5.0` 发布于 2026-09-27（tag `pi-image-gen-v0.5.0`，GitHub Actions OIDC publish，含 provenance）。磁盘形状破坏性变更随 minor 号发布，读取时自动迁移。
 - 暂不推进：与 `pi-vendor` 的任何整合；CLI model override；新增生图协议。
 - 关闭条件：管理面覆盖 provider 与 model 的增删查改，迁移经真实旧配置验证，且 `npm --workspace @bytetrue/pi-image-gen test / typecheck / build` 与 pack smoke 全绿。**三条均满足。**
 - 合并候选：`byissue/spec/pi-image-gen/index.md` 的「它负责什么」与「配置边界」已按 v2 + 两级管理面重写；「它不负责什么」与「关键考量」经核对仍然成立，未改。
