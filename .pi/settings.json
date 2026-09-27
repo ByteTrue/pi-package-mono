@@ -6,15 +6,6 @@
     "../packages/pi-background-terminal",
     "../packages/pi-vision",
     "../packages/pi-subagent",
-    "../packages/pi-mcp",
-    {
-      "source": "npm:@bytetrue/pi-mcp",
-      "autoload": false,
-      "extensions": ["!**"],
-      "skills": ["!**"],
-      "prompts": ["!**"],
-      "themes": ["!**"]
-    },
     {
       "source": "npm:@bytetrue/pi-web-search",
       "autoload": false,
@@ -57,22 +48,6 @@
     },
     {
       "source": "npm:@bytetrue/pi-subagent",
-      "autoload": false,
-      "extensions": ["!**"],
-      "skills": ["!**"],
-      "prompts": ["!**"],
-      "themes": ["!**"]
-    },
-    {
-      "source": "npm:pi-mcp-adapter",
-      "autoload": false,
-      "extensions": ["!**"],
-      "skills": ["!**"],
-      "prompts": ["!**"],
-      "themes": ["!**"]
-    },
-    {
-      "source": "npm:@cortexkit/pi-magic-context",
       "autoload": false,
       "extensions": ["!**"],
       "skills": ["!**"],
