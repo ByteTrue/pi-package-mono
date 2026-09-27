@@ -1,196 +1,159 @@
-import { describe, expect, it } from 'vitest';
-import { resolveModel } from '../config.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { declaredModels, resolveDefaultRoute, resolveProviderRoute } from '../config.js';
 import type { ImageGenSettings } from '../types.js';
 
-describe('resolveModel', () => {
-  it('routes nano-banana alias to gemini provider', () => {
+const ENV_KEYS = ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'DASHSCOPE_API_KEY', 'ARK_API_KEY', 'OPENROUTER_API_KEY'];
+const originalEnv = new Map(ENV_KEYS.map((name) => [name, process.env[name]]));
+
+function clearProviderEnv(): void {
+  for (const name of ENV_KEYS) delete process.env[name];
+}
+
+afterEach(() => {
+  for (const [name, value] of originalEnv) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+});
+
+function route(settings: ImageGenSettings) {
+  const resolved = resolveDefaultRoute(settings);
+  if ('error' in resolved) throw new Error(resolved.error);
+  return resolved;
+}
+
+function routeError(settings: ImageGenSettings): string {
+  const resolved = resolveDefaultRoute(settings);
+  if (!('error' in resolved)) throw new Error('expected the route to fail');
+  return resolved.error;
+}
+
+describe('resolveProviderRoute', () => {
+  it('builds a built-in from its template and standard env var', () => {
+    clearProviderEnv();
     process.env.GEMINI_API_KEY = 'gem-test';
-    const result = resolveModel('nano-banana', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('gemini');
-    expect(result.provider.api).toBe('gemini');
-    expect(result.remoteId).toBe('gemini-2.5-flash-image');
-    expect(result.provider.apiKey).toBe('gem-test');
+    const provider = resolveProviderRoute('gemini', {});
+    expect(provider).toMatchObject({
+      id: 'gemini',
+      api: 'gemini',
+      builtIn: true,
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'gem-test',
+    });
   });
 
-  it('routes gpt-image-2 to openai', () => {
-    process.env.OPENAI_API_KEY = 'oa-test';
-    const result = resolveModel('gpt-image-2', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('openai');
-    expect(result.remoteId).toBe('gpt-image-2');
-    expect(result.requestedId).toBe('gpt-image-2');
-  });
-
-  it('routes qwen-image-2.0 to dashscope', () => {
-    process.env.DASHSCOPE_API_KEY = 'ds-test';
-    const result = resolveModel('qwen-image-2.0', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('dashscope');
-    expect(result.remoteId).toBe('qwen-image-2.0');
-    expect(result.provider.baseUrl).toContain('dashscope.aliyuncs.com');
-  });
-
-  it('respects per-provider apiKey override with env-var interpolation', () => {
+  it('lets a row override the base URL, credential source and display name', () => {
+    clearProviderEnv();
     process.env.MY_KEY = 'override-key';
     const settings: ImageGenSettings = {
       providers: {
-        // Build the literal `${MY_KEY}` at runtime so the source code itself
-        // does not contain a `${...}` sequence inside a single-quoted string,
-        // which would trip lint/suspicious/noTemplateCurlyInString.
-        openai: { apiKey: `$${'{MY_KEY}'}`, baseUrl: 'https://proxy.example.com/v1' },
+        // Built with runtime concatenation so the source does not contain a
+        // literal ${...} sequence, which lint flags as a suspicious template.
+        openai: { baseUrl: 'https://proxy.example.com/v1', apiKey: `$${'{MY_KEY}'}`, name: 'Corp proxy' },
       },
     };
-    const result = resolveModel('gpt-image-2', settings);
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.apiKey).toBe('override-key');
-    expect(result.provider.baseUrl).toBe('https://proxy.example.com/v1');
+    expect(resolveProviderRoute('openai', settings)).toMatchObject({
+      apiKey: 'override-key',
+      baseUrl: 'https://proxy.example.com/v1',
+      name: 'Corp proxy',
+    });
   });
 
-  it('matches a custom provider by alias', () => {
-    process.env.MY_SD_KEY = 'sd-key';
+  it('resolves environment references inside headers', () => {
+    clearProviderEnv();
+    process.env.CORP_HEADER_TOKEN = 'header-secret';
+    const provider = resolveProviderRoute('corp', {
+      providers: { corp: { api: 'openai', baseUrl: 'https://images.example/v1', headers: { authorization: 'Bearer $CORP_HEADER_TOKEN' } } },
+    });
+    expect(provider?.headers).toEqual({ authorization: 'Bearer header-secret' });
+  });
+
+  it('rejects a custom row that never chose a protocol', () => {
+    clearProviderEnv();
+    expect(resolveProviderRoute('corp', { providers: { corp: { baseUrl: 'https://images.example/v1' } } })).toBeUndefined();
+  });
+
+  it('returns nothing for an unknown provider id', () => {
+    expect(resolveProviderRoute('nope', { providers: { openai: { apiKey: 'k' } } })).toBeUndefined();
+  });
+});
+
+describe('declaredModels', () => {
+  it('normalizes string and object entries', () => {
     const settings: ImageGenSettings = {
-      customProviders: {
-        'my-sd': {
-          api: 'openai',
-          baseUrl: 'https://api.my-sd.test/v1',
-          apiKey: '$MY_SD_KEY',
-          models: [{ id: 'sd-3-large', alias: 'sd3' }, 'sd-3-medium'],
-        },
-      },
+      providers: { corp: { api: 'openai', models: ['image-v0', { id: 'image-v1', alias: 'hero' }] } },
     };
-    const a = resolveModel('sd3', settings);
-    if ('error' in a) throw new Error(a.error);
-    expect(a.provider.id).toBe('my-sd');
-    expect(a.provider.builtIn).toBe(false);
-    expect(a.remoteId).toBe('sd-3-large');
-    expect(a.provider.apiKey).toBe('sd-key');
+    expect(declaredModels(settings, 'corp')).toEqual([{ id: 'image-v0' }, { id: 'image-v1', alias: 'hero' }]);
+    expect(declaredModels(settings, 'missing')).toEqual([]);
+  });
+});
 
-    const b = resolveModel('sd-3-medium', settings);
-    if ('error' in b) throw new Error(b.error);
-    expect(b.remoteId).toBe('sd-3-medium');
+describe('resolveDefaultRoute', () => {
+  it('routes an explicit provider and model pair', () => {
+    clearProviderEnv();
+    process.env.OPENAI_API_KEY = 'oa-test';
+    const resolved = route({ default: { provider: 'openai', model: 'gpt-image-2' } });
+    expect(resolved.provider.id).toBe('openai');
+    expect(resolved.remoteId).toBe('gpt-image-2');
+    expect(resolved.requestedId).toBe('gpt-image-2');
   });
 
-  it('supports <provider>/<remote-id> fallback for openrouter', () => {
-    process.env.OPENROUTER_API_KEY = 'or-test';
-    const result = resolveModel('openrouter/google/gemini-2.5-flash-image', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('openrouter');
-    expect(result.remoteId).toBe('google/gemini-2.5-flash-image');
-  });
-
-  it('returns an error for an unknown model', () => {
-    const result = resolveModel('totally-made-up-model', {});
-    expect('error' in result).toBe(true);
-  });
-
-  it('error message lists configured customProviders when nothing matched', () => {
-    const result = resolveModel('totally-made-up-model', {
-      customProviders: {
-        narrow: {
-          api: 'openai',
-          baseUrl: 'https://narrow.example/',
-          apiKey: 'k',
-          models: [{ id: 'x' }],
-        },
+  it('prefers a declared alias as the requested id', () => {
+    clearProviderEnv();
+    const resolved = route({
+      default: { provider: 'corp', model: 'image-v1' },
+      providers: {
+        corp: { api: 'openai', baseUrl: 'https://images.example/v1', apiKey: 'k', models: [{ id: 'image-v1', alias: 'hero' }] },
       },
     });
-    if (!('error' in result)) throw new Error('expected error');
-    expect(result.error).toContain('narrow');
-    expect(result.error).toContain('catch-all');
+    expect(resolved.remoteId).toBe('image-v1');
+    expect(resolved.requestedId).toBe('hero');
+    expect(resolved.provider.builtIn).toBe(false);
   });
 
-  it('routes any model through a customProvider that omits `models` (catch-all)', () => {
-    const settings: ImageGenSettings = {
-      customProviders: {
-        amaster: {
-          api: 'openai',
-          baseUrl: 'https://credits.amaster.ai/',
-          apiKey: 'sk-test',
-        },
-      },
-    };
-    const result = resolveModel('any-future-model-id', settings);
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('amaster');
-    expect(result.remoteId).toBe('any-future-model-id');
+  it('routes a model id that contains slashes', () => {
+    clearProviderEnv();
+    const resolved = route({
+      default: { provider: 'openrouter', model: 'google/gemini-3.1-flash-image' },
+      providers: { openrouter: { apiKey: 'or-test' } },
+    });
+    expect(resolved.remoteId).toBe('google/gemini-3.1-flash-image');
+    expect(resolved.provider.baseUrl).toBe('https://openrouter.ai/api/v1');
   });
 
-  it('routes a built-in model id through a catch-all when its built-in provider has no api key', () => {
-    delete process.env.DASHSCOPE_API_KEY;
-    const settings: ImageGenSettings = {
-      customProviders: {
-        amaster: {
-          api: 'openai',
-          baseUrl: 'https://credits.amaster.ai/',
-          apiKey: 'sk-test',
-        },
-      },
-    };
-    const result = resolveModel('qwen-image-2.0', settings);
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('amaster');
-    expect(result.remoteId).toBe('qwen-image-2.0');
+  it('accepts a keyless built-in the user configured explicitly', () => {
+    clearProviderEnv();
+    const resolved = route({
+      default: { provider: 'openai', model: 'gpt-image-2' },
+      providers: { openai: { baseUrl: 'http://127.0.0.1:8188/v1' } },
+    });
+    expect(resolved.provider.apiKey).toBeUndefined();
+    expect(resolved.provider.baseUrl).toBe('http://127.0.0.1:8188/v1');
   });
 
-  it('explicit `models` list still wins over catch-all', () => {
-    const settings: ImageGenSettings = {
-      customProviders: {
-        narrow: {
-          api: 'openai',
-          baseUrl: 'https://narrow.example/',
-          apiKey: 'k1',
-          models: [{ id: 'sd-3', alias: 'sd' }],
-        },
-        wide: {
-          api: 'openai',
-          baseUrl: 'https://wide.example/',
-          apiKey: 'k2',
-        },
-      },
-    };
-    const a = resolveModel('sd', settings);
-    if ('error' in a) throw new Error(a.error);
-    expect(a.provider.id).toBe('narrow');
-
-    const b = resolveModel('something-else', settings);
-    if ('error' in b) throw new Error(b.error);
-    expect(b.provider.id).toBe('wide');
-  });
-  it('routes an explicitly configured keyless built-in provider', () => {
-    const previous = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    try {
-      const result = resolveModel('gpt-image-2', {
-        providers: { openai: { baseUrl: 'http://127.0.0.1:8188/v1' } },
-      });
-      if ('error' in result) throw new Error(result.error);
-      expect(result.provider.id).toBe('openai');
-      expect(result.provider.apiKey).toBeUndefined();
-      expect(result.provider.baseUrl).toBe('http://127.0.0.1:8188/v1');
-    } finally {
-      if (previous === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = previous;
-    }
+  it('reports an unset default', () => {
+    clearProviderEnv();
+    expect(routeError({})).toMatch(/default model is not set/i);
   });
 
-  it('resolves environment references inside custom headers', () => {
-    process.env.CORP_HEADER_TOKEN = 'header-secret';
-    try {
-      const result = resolveModel('corp/image-v1', {
-        customProviders: {
-          corp: {
-            api: 'openai',
-            baseUrl: 'https://images.example/v1',
-            headers: { authorization: 'Bearer $CORP_HEADER_TOKEN' },
-          },
-        },
-      });
-      if ('error' in result) throw new Error(result.error);
-      expect(result.provider.headers).toEqual({ authorization: 'Bearer header-secret' });
-    } finally {
-      delete process.env.CORP_HEADER_TOKEN;
-    }
+  it('reports a half-specified default', () => {
+    clearProviderEnv();
+    process.env.OPENAI_API_KEY = 'oa-test';
+    expect(routeError({ default: { model: 'gpt-image-2' } as never })).toMatch(/default.provider/);
+    expect(routeError({ default: { provider: 'openai' } as never })).toMatch(/default.model/);
   });
 
+  it('names the configured providers when the default points at an unknown one', () => {
+    const error = routeError({
+      default: { provider: 'ghost', model: 'x' },
+      providers: { corp: { api: 'openai', baseUrl: 'https://c.test/', apiKey: 'k' } },
+    });
+    expect(error).toMatch(/unknown provider "ghost".*corp/s);
+  });
+
+  it('points at the env var when a built-in route was never set up', () => {
+    clearProviderEnv();
+    const error = routeError({ default: { provider: 'ark', model: 'doubao-seedream-5-0-260128' } });
+    expect(error).toMatch(/no settings row and no API key.*ARK_API_KEY/s);
+  });
 });

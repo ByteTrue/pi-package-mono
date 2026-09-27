@@ -47,7 +47,7 @@ describe('pi-image-gen CLI', () => {
   it('loads settings, invokes the shared generate core, and emits markdown', async () => {
     const cwd = isolated();
     updateImageGenSettings(() => ({
-      defaultModel: 'gpt-image-2',
+      default: { provider: 'openai', model: 'gpt-image-2' },
       providers: { openai: { apiKey: 'secret-value' } },
     }));
     const stdout: string[] = [];
@@ -70,7 +70,7 @@ describe('pi-image-gen CLI', () => {
     expect(code).toBe(0);
     expect(generate).toHaveBeenCalledWith(
       { prompt: 'cat', filename: 'cat' },
-      expect.objectContaining({ cwd, settings: expect.objectContaining({ defaultModel: 'gpt-image-2' }) }),
+      expect.objectContaining({ cwd, settings: expect.objectContaining({ default: { provider: 'openai', model: 'gpt-image-2' } }) }),
     );
     expect(stdout.join('\n')).toContain('![cat](/tmp/cat.png)');
     expect(stdout.join('\n')).not.toContain('secret-value');
@@ -123,7 +123,7 @@ describe('pi-image-gen CLI', () => {
     const cwd = isolated();
     const path = imageGenSettingsPath();
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ customProviders: { corp: null } }));
+    writeFileSync(path, JSON.stringify({ version: 2, providers: { corp: null } }));
     const stderr: string[] = [];
     await expect(
       runImageGenCli({
@@ -133,7 +133,7 @@ describe('pi-image-gen CLI', () => {
         stderr: (text) => stderr.push(text),
       }),
     ).resolves.toBe(1);
-    expect(stderr.join('\n')).toMatch(/defaultModel is not set/i);
+    expect(stderr.join('\n')).toMatch(/default model is not set/i);
     expect(stderr.join('\n')).not.toContain('TypeError');
   });
 });

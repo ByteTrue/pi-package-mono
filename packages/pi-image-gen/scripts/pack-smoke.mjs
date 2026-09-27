@@ -51,9 +51,13 @@ function assertPackFiles(paths) {
 	return normalized;
 }
 
-async function extractTgz(tgzPath, destDir) {
+async function extractTgz(tempRoot, tgzRel) {
+	const extractRel = "extract";
+	const destDir = join(tempRoot, extractRel);
 	await mkdir(destDir, { recursive: true });
-	await run("tar", ["-xzf", tgzPath, "-C", destDir]);
+	// Relative POSIX paths only: Git Bash ships an MSYS tar that reads a Windows
+	// absolute path like C:\... as "host C:", and refuses to open the archive.
+	await run("tar", ["-xzf", tgzRel, "-C", extractRel], { cwd: tempRoot });
 	return join(destDir, "package");
 }
 
@@ -82,8 +86,7 @@ async function main() {
 
 		assertPackFiles(entry.files.map((file) => file.path));
 
-		const extractDir = join(tempRoot, "extract");
-		const extractedPkg = await extractTgz(actualTgz, extractDir);
+		const extractedPkg = await extractTgz(tempRoot, `pack/${entry.filename}`);
 		ok(`extracted to ${extractedPkg}`);
 
 		for (const rel of [

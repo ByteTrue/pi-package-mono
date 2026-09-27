@@ -3,60 +3,65 @@ export type ApiStyle = 'openai' | 'gemini' | 'dashscope' | 'openrouter' | 'ark';
 /** Built-in provider id. Currently 1:1 with ApiStyle. */
 export type BuiltInProviderId = ApiStyle;
 
-/** A user-defined image-generation provider. */
-export type CustomImageProvider = {
-  /**
-   * Image-API wire shape this provider speaks. Determines which adapter
-   * is used to call it. Required.
-   *
-   * Note: this is NOT the same as pi.dev custom providers' `api` field — pi.dev's
-   * values (`openai-completions`, `anthropic-messages`, ...) are LLM streaming
-   * formats. The values here are image-generation API shapes.
-   */
-  api: ApiStyle;
-  /** Override the API base URL. Optional; defaults to the api's default. */
-  baseUrl?: string;
-  /**
-   * API key. Supports `$ENV_VAR` and `${ENV_VAR}` syntax — resolved at load time.
-   * Required unless the api does not need one.
-   */
-  apiKey?: string;
-  /** Optional display name. */
-  name?: string;
-  /** Extra headers merged into every outbound request. */
-  headers?: Record<string, string>;
-  /** Models routed through this provider. Each entry is a model id (string) or an object. */
-  models?: Array<string | CustomImageModel>;
-};
-
-export type CustomImageModel = {
+/** A known model of a provider, with an optional local alias. */
+export type ImageModelEntry = {
   /** Model id sent to the provider (e.g. "qwen-image-2.0"). */
   id: string;
-  /** Optional alias the agent / user can refer to. Defaults to id. */
+  /** Optional alias the user may prefer to see and in output filenames. */
   alias?: string;
   /** Optional display name. */
   name?: string;
 };
 
-/** Per-built-in-provider override (api key, base url, custom headers). */
-export type BuiltInProviderOverride = {
-  apiKey?: string;
+/**
+ * One provider row. Built-in ids carry an implicit template (protocol, default
+ * base URL, standard env credential), so they may omit `api` and may exist
+ * without any row at all. Custom ids must state `api`.
+ */
+export type ImageProvider = {
+  /**
+   * Image-API wire shape this provider speaks. Required for custom providers;
+   * derived from the id for built-ins.
+   *
+   * Note: this is NOT pi.dev custom providers' `api` field (`openai-completions`,
+   * `anthropic-messages`, ...). Those are LLM streaming formats; the values here
+   * are image-generation API shapes.
+   */
+  api?: ApiStyle;
+  /** Optional display name. */
+  name?: string;
+  /** Override the API base URL. Optional; defaults to the protocol's default. */
   baseUrl?: string;
+  /** API key. Supports `$ENV_VAR` and `${ENV_VAR}`. `""` is a tombstone: no credential. */
+  apiKey?: string;
+  /** Extra headers merged into every outbound request. `{}` is a tombstone. */
   headers?: Record<string, string>;
+  /**
+   * Known models and aliases for this provider. Presentation and lookup only —
+   * the default route names its model explicitly, so an empty list never means
+   * "reject this model".
+   */
+  models?: Array<string | ImageModelEntry>;
+};
+
+/** The single route the Skill CLI generates with. */
+export type DefaultRoute = {
+  provider: string;
+  model: string;
 };
 
 export type ImageGenSettings = {
-  /** Default model id when the tool call does not pass `model`. */
-  defaultModel?: string;
+  /** On-disk layout version. Written as 2; a missing field means legacy v1. */
+  version?: number;
+  /** Which provider and remote model to use. */
+  default?: DefaultRoute;
   /**
    * Where to write generated images. Relative paths resolve against the session cwd.
    * Default: `.pi/images`.
    */
   outputDir?: string;
-  /** Per-built-in-provider overrides keyed by provider id. */
-  providers?: Partial<Record<BuiltInProviderId, BuiltInProviderOverride>>;
-  /** User-defined custom providers keyed by provider name. */
-  customProviders?: Record<string, CustomImageProvider>;
+  /** All configured providers, built-in and custom, keyed by provider id. */
+  providers?: Record<string, ImageProvider>;
 };
 
 export type GenerateImageParams = {

@@ -2,7 +2,6 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveModel } from '../config.js';
 import { generateImage } from '../generate.js';
 
 const PNG_BYTES = Buffer.from(
@@ -18,32 +17,6 @@ function fakeJsonResponse(payload: unknown): Response {
 }
 
 describe('ark provider (Volcengine Seedream)', () => {
-  it('routes seedream alias to the latest 5.0 model', () => {
-    process.env.ARK_API_KEY = 'ark-test';
-    const result = resolveModel('seedream', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('ark');
-    expect(result.provider.api).toBe('ark');
-    expect(result.remoteId).toBe('doubao-seedream-5-0-260128');
-    expect(result.provider.baseUrl).toBe('https://ark.cn-beijing.volces.com/api/v3');
-    expect(result.provider.apiKey).toBe('ark-test');
-  });
-
-  it('routes seedream-4 alias to the 4.0 model', () => {
-    process.env.ARK_API_KEY = 'ark-test';
-    const result = resolveModel('seedream-4', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.remoteId).toBe('doubao-seedream-4-0-250828');
-  });
-
-  it('routes seedream-5-pro alias to the 5.0 pro model', () => {
-    process.env.ARK_API_KEY = 'ark-test';
-    const result = resolveModel('seedream-5-pro', {});
-    if ('error' in result) throw new Error(result.error);
-    expect(result.provider.id).toBe('ark');
-    expect(result.remoteId).toBe('doubao-seedream-5-0-pro-260128');
-  });
-
   it('text-to-image posts to /images/generations with prompt/n/size as JSON', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-ark-'));
     process.env.ARK_API_KEY = 'ark-test';
@@ -65,7 +38,7 @@ describe('ark provider (Volcengine Seedream)', () => {
       { prompt: '一只猫', size: '1024x1024', filename: 'cat' },
       {
         cwd,
-        settings: { defaultModel: 'seedream' },
+        settings: { default: { provider: 'ark', model: 'doubao-seedream-5-0-260128' } },
         fetchImpl,
       },
     );
@@ -116,7 +89,7 @@ describe('ark provider (Volcengine Seedream)', () => {
 
     const result = await generateImage(
       { prompt: 'redraw it', image: [refPath] },
-      { cwd, settings: { defaultModel: 'seedream' }, fetchImpl: wrapped },
+      { cwd, settings: { default: { provider: 'ark', model: 'doubao-seedream-5-0-260128' } }, fetchImpl: wrapped },
     );
 
     expect(calls).toHaveLength(1);
@@ -135,8 +108,8 @@ describe('ark provider (Volcengine Seedream)', () => {
     await expect(
       generateImage(
         { prompt: 'x' },
-        { cwd, settings: { defaultModel: 'seedream' }, fetchImpl: fetch },
+        { cwd, settings: { default: { provider: 'ark', model: 'doubao-seedream-5-0-260128' } }, fetchImpl: fetch },
       ),
-    ).rejects.toThrow(/ARK_API_KEY|no API key|Unknown image model/i);
+    ).rejects.toThrow(/no settings row and no API key.*ARK_API_KEY/i);
   });
 });

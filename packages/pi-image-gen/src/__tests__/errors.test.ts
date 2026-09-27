@@ -31,9 +31,9 @@ describe('classifyHttpError', () => {
     expect(msg).toMatch(/Do not retry/);
   });
 
-  it('401 → key locator for custom points at customProviders settings path', () => {
+  it('401 → key locator for custom points at the providers settings path', () => {
     const msg = classifyHttpError(fakeRes(401), 'unauthorized', custom);
-    expect(msg).toMatch(/customProviders\.amaster\.apiKey/);
+    expect(msg).toMatch(/providers\.amaster\.apiKey/);
   });
 
   it('429 mentions rate limiting', () => {

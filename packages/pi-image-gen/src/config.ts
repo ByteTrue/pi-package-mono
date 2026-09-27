@@ -1,6 +1,5 @@
-export { loadImageGenSettings } from './settings.js';
 import {
-  BUILT_IN_MODELS,
+  BUILT_IN_PROVIDER_IDS,
   DEFAULT_API_STYLE,
   DEFAULT_BASE_URL,
   ENV_VARS,
@@ -8,9 +7,9 @@ import {
 } from './models.js';
 import type {
   BuiltInProviderId,
-  CustomImageModel,
-  CustomImageProvider,
   ImageGenSettings,
+  ImageModelEntry,
+  ImageProvider,
   ResolvedModel,
   ResolvedProvider,
 } from './types.js';
@@ -63,7 +62,7 @@ function resolveHeaders(headers: Record<string, string> | undefined): Record<str
 function buildBuiltInProvider(
   id: BuiltInProviderId,
   settings: ImageGenSettings,
-): ResolvedProvider | null {
+): ResolvedProvider | undefined {
   const override = settings.providers?.[id] ?? {};
   const apiKey = Object.prototype.hasOwnProperty.call(override, 'apiKey')
     ? resolveConfigString(override.apiKey)
@@ -72,7 +71,7 @@ function buildBuiltInProvider(
     id,
     api: DEFAULT_API_STYLE[id],
     baseUrl: resolveConfigString(override.baseUrl) ?? DEFAULT_BASE_URL[id],
-    name: PROVIDER_DISPLAY_NAME[id],
+    name: override.name ?? PROVIDER_DISPLAY_NAME[id],
     builtIn: true,
   };
   if (apiKey) provider.apiKey = apiKey;
@@ -81,139 +80,89 @@ function buildBuiltInProvider(
   return provider;
 }
 
-function buildCustomProvider(name: string, raw: CustomImageProvider): ResolvedProvider | null {
-  const api = raw.api;
-  if (!api) return null;
-  const baseUrl = resolveConfigString(raw.baseUrl) ?? DEFAULT_BASE_URL[api as BuiltInProviderId];
-  if (!baseUrl) return null;
+function buildCustomProvider(id: string, row: ImageProvider): ResolvedProvider | undefined {
+  const api = row.api;
+  if (!api) return undefined;
+  const baseUrl = resolveConfigString(row.baseUrl) ?? DEFAULT_BASE_URL[api as BuiltInProviderId];
+  if (!baseUrl) return undefined;
   const provider: ResolvedProvider = {
-    id: name,
+    id,
     api,
     baseUrl,
-    name: raw.name ?? name,
+    name: row.name ?? id,
     builtIn: false,
   };
-  const apiKey = resolveConfigString(raw.apiKey);
+  const apiKey = resolveConfigString(row.apiKey);
   if (apiKey) provider.apiKey = apiKey;
-  const headers = resolveHeaders(raw.headers);
+  const headers = resolveHeaders(row.headers);
   if (headers) provider.headers = headers;
   return provider;
 }
 
-function customModels(raw: CustomImageProvider): Array<{ id: string; alias: string }> {
-  const list = raw.models ?? [];
-  return list.flatMap((entry) => {
-    if (typeof entry === 'string') return [{ id: entry, alias: entry }];
-    const m = entry as CustomImageModel;
-    if (!m.id) return [];
-    return [{ id: m.id, alias: m.alias ?? m.id }];
-  });
+export function isBuiltInProviderId(value: string): value is BuiltInProviderId {
+  return (BUILT_IN_PROVIDER_IDS as readonly string[]).includes(value);
 }
 
 /**
- * Resolve a model id (or alias) to a (provider, remoteModelId) pair using:
- *   1. Custom providers' explicit model lists (alias or id match).
- *   2. Built-in known models (alias or id match).
- *   3. `<provider>/<remote-id>` fallback for explicit routing.
- *   4. Catch-all: any custom provider that didn't declare a `models` list
- *      will accept any unknown model id, passing it through as the remote id.
- *      This lets users configure a single OpenAI-compatible gateway and use
- *      any model name without restating it in `models`.
+ * Resolve a configured provider's route (protocol, base URL, credential,
+ * headers) without needing a model id. Built-in ids work with no row at all:
+ * their template and standard env var supply everything a row could.
  */
-export function resolveModel(
-  modelOrAlias: string,
+export function resolveProviderRoute(
+  providerId: string,
   settings: ImageGenSettings,
-): ResolvedModel | { error: string } {
-  const requested = modelOrAlias.trim();
-  if (!requested) return { error: 'Model id is empty.' };
-
-  for (const [name, raw] of Object.entries(settings.customProviders ?? {})) {
-    const provider = buildCustomProvider(name, raw);
-    if (!provider) continue;
-    for (const model of customModels(raw)) {
-      if (model.alias === requested || model.id === requested) {
-        return { provider, remoteId: model.id, requestedId: requested };
-      }
-    }
-  }
-
-  const builtIn = BUILT_IN_MODELS.find(
-    (entry) => entry.id === requested || entry.aliases?.includes(requested),
-  );
-  if (builtIn) {
-    const provider = buildBuiltInProvider(builtIn.provider, settings);
-    const explicitlyConfigured = Object.prototype.hasOwnProperty.call(
-      settings.providers ?? {},
-      builtIn.provider,
-    );
-    if (provider && (provider.apiKey || explicitlyConfigured)) {
-      return { provider, remoteId: builtIn.id, requestedId: requested };
-    }
-    // Built-in match without a credential or explicit route falls through so
-    // a catch-all customProvider can still pick it up.
-  }
-
-  const slash = requested.indexOf('/');
-  if (slash > 0) {
-    const providerKey = requested.slice(0, slash);
-    const remoteId = requested.slice(slash + 1);
-    if (isBuiltInProviderId(providerKey)) {
-      const provider = buildBuiltInProvider(providerKey, settings);
-      if (provider) return { provider, remoteId, requestedId: requested };
-    }
-    const customRaw = settings.customProviders?.[providerKey];
-    if (customRaw) {
-      const provider = buildCustomProvider(providerKey, customRaw);
-      if (provider) return { provider, remoteId, requestedId: requested };
-    }
-  }
-
-  for (const [name, raw] of Object.entries(settings.customProviders ?? {})) {
-    if (raw.models && raw.models.length > 0) continue;
-    const provider = buildCustomProvider(name, raw);
-    if (provider) return { provider, remoteId: requested, requestedId: requested };
-  }
-
-  return { error: unknownModelError(requested, settings) };
+): ResolvedProvider | undefined {
+  if (isBuiltInProviderId(providerId)) return buildBuiltInProvider(providerId, settings);
+  const row = settings.providers?.[providerId];
+  return row ? buildCustomProvider(providerId, row) : undefined;
 }
 
-function unknownModelError(requested: string, settings: ImageGenSettings): string {
-  const customNames = Object.keys(settings.customProviders ?? {});
-  const lines = [`Unknown image model "${requested}".`];
+/** Known models and aliases a provider row declares. Presentation and lookup only. */
+export function declaredModels(
+  settings: ImageGenSettings,
+  providerId: string,
+): ImageModelEntry[] {
+  return (settings.providers?.[providerId]?.models ?? []).flatMap((entry) => {
+    if (typeof entry === 'string') return [{ id: entry }];
+    return entry?.id ? [entry] : [];
+  });
+}
 
-  if (customNames.length > 0) {
-    const explicit = customNames.filter((n) => {
-      const m = settings.customProviders?.[n]?.models;
-      return m && m.length > 0;
-    });
-    if (explicit.length > 0) {
-      lines.push(
-        `Configured customProviders with explicit model lists: ${explicit.join(', ')}. The requested id didn't match any of their entries.`,
-      );
-    }
-    lines.push(
-      `To accept any model id without listing it, omit the "models" field on a customProvider — that provider then becomes a catch-all.`,
-    );
+function defaultRouteError(providerId: string, settings: ImageGenSettings): string {
+  const rows = settings.providers ?? {};
+  const listed = Object.keys(rows);
+  if (!isBuiltInProviderId(providerId) && !listed.includes(providerId)) {
+    const configured = listed.length > 0 ? listed.join(', ') : 'none configured yet';
+    return `pi-image-gen default points at unknown provider "${providerId}". Configured providers: ${configured}. Run /image-gen in Pi to configure a provider.`;
   }
-
-  const builtInIds = listKnownModelIds();
-  lines.push(
-    `Built-in model ids: ${builtInIds.slice(0, 10).join(', ')}${builtInIds.length > 10 ? ', ...' : ''}.`,
-  );
-  return lines.join(' ');
+  if (!listed.includes(providerId)) {
+    return `pi-image-gen provider "${providerId}" has no settings row and no API key. Set the ${ENV_VARS[providerId as BuiltInProviderId]} env var, or run /image-gen in Pi to configure it.`;
+  }
+  return `pi-image-gen provider "${providerId}" is missing its image API protocol. Run /image-gen in Pi to complete it.`;
 }
 
-export function listKnownModelIds(): string[] {
-  return BUILT_IN_MODELS.flatMap((m) => [m.id, ...(m.aliases ?? [])]);
-}
-
-
-function isBuiltInProviderId(value: string): value is BuiltInProviderId {
-  return (
-    value === 'openai' ||
-    value === 'gemini' ||
-    value === 'dashscope' ||
-    value === 'openrouter' ||
-    value === 'ark'
-  );
+/**
+ * The one route the runtime generates with: `default` names a provider and a
+ * remote model id explicitly, so nothing is inferred from a model string.
+ */
+export function resolveDefaultRoute(settings: ImageGenSettings): ResolvedModel | { error: string } {
+  const providerId = settings.default?.provider?.trim();
+  const remoteId = settings.default?.model?.trim();
+  if (!providerId && !remoteId) {
+    return { error: 'pi-image-gen default model is not set. Run /image-gen in Pi to configure the provider, model, and credentials.' };
+  }
+  if (!providerId) {
+    return { error: `pi-image-gen default.model is set but default.provider is not. Run /image-gen in Pi to fix the route.` };
+  }
+  if (!remoteId) {
+    return { error: `pi-image-gen default.provider "${providerId}" has no default.model. Run /image-gen in Pi to pick a model.` };
+  }
+  const provider = resolveProviderRoute(providerId, settings);
+  // A route is only usable when the user set the provider up: either it has a
+  // row of its own, or a built-in resolves a credential from the standard env.
+  if (!provider || (!settings.providers?.[providerId] && !provider.apiKey)) {
+    return { error: defaultRouteError(providerId, settings) };
+  }
+  const alias = declaredModels(settings, providerId).find((entry) => entry.id === remoteId)?.alias;
+  return { provider, remoteId, requestedId: alias ?? remoteId };
 }

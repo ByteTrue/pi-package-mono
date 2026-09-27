@@ -3,7 +3,7 @@ import { generateImage } from './generate.js';
 import { formatImageResult } from './format.js';
 import { imageGenSettingsPath, loadImageGenSettings } from './settings.js';
 import { ENV_VARS } from './models.js';
-import { configEnvironmentValues, resolveConfigString, resolveModel } from './config.js';
+import { configEnvironmentValues, resolveConfigString, resolveDefaultRoute } from './config.js';
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const REQUEST_KEYS = new Set(['prompt', 'image', 'n', 'size', 'filename', 'outputDir']);
@@ -61,10 +61,7 @@ function collectSecrets(settings: ImageGenSettings): string[] {
     const value = process.env[name];
     return value ? [value] : [];
   });
-  for (const provider of [
-    ...Object.values(settings.providers ?? {}),
-    ...Object.values(settings.customProviders ?? {}),
-  ]) {
+  for (const provider of Object.values(settings.providers ?? {})) {
     if (provider.apiKey) {
       values.push(provider.apiKey, resolveConfigString(provider.apiKey) ?? '', ...configEnvironmentValues(provider.apiKey));
     }
@@ -133,21 +130,20 @@ export async function runImageGenCli(options: ImageGenCliOptions = {}): Promise<
     return 0;
   }
   if (args.includes('--list')) {
+    const resolved = resolveDefaultRoute(settings);
     const lines = [
-      `Default model: ${settings.defaultModel ?? 'not configured'}`,
+      `Default model: ${settings.default ? `${settings.default.provider}/${settings.default.model}` : 'not configured'}`,
       `Output directory: ${settings.outputDir ?? '.pi/images'}`,
       `Config file: ${imageGenSettingsPath()}`,
     ];
-    if (settings.defaultModel) {
-      const resolved = resolveModel(settings.defaultModel, settings);
-      if ('error' in resolved) lines.push(`Route: ${resolved.error}`);
-      else {
-        lines.push(`Provider: ${resolved.provider.name} (${resolved.provider.api})`);
-        lines.push(`Credential: ${resolved.provider.apiKey ? 'configured (hidden)' : 'missing / not required'}`);
-      }
+    if ('error' in resolved) {
+      if (settings.default) lines.push(`Route: ${resolved.error}`);
+    } else {
+      lines.push(`Provider: ${resolved.provider.name} (${resolved.provider.api})`);
+      lines.push(`Credential: ${resolved.provider.apiKey ? 'configured (hidden)' : 'missing / not required'}`);
     }
     stdout(lines.join('\n'));
-    return settings.defaultModel ? 0 : 1;
+    return 'error' in resolved ? 1 : 0;
   }
   if (args.length > 1 || (args.length === 1 && args[0] !== 'generate')) {
     stderr(HELP);

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { resolveModel } from './config.js';
+import { resolveDefaultRoute } from './config.js';
 import { resolveImageInputs } from './image-input.js';
 import { getAdapter } from './providers/index.js';
 import type {
@@ -34,14 +34,7 @@ export async function generateImage(
 ): Promise<ImageGenResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  const requested = (options.settings.defaultModel ?? '').trim();
-  if (!requested) {
-    throw new Error(
-      'pi-image-gen defaultModel is not set. Run /image-gen in Pi to configure the image model and credentials.',
-    );
-  }
-
-  const resolved = resolveModel(requested, options.settings);
+  const resolved = resolveDefaultRoute(options.settings);
   if ('error' in resolved) throw new Error(resolved.error);
 
   const adapter = getAdapter(resolved.provider.api);

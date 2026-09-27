@@ -11,13 +11,15 @@ package 不注册常驻 Agent tool，也不注册生命周期钩子。
 
 ## 它负责什么
 
-- `/image-gen` 提供单一统一配置流，支持选择预设厂商模板（OpenAI、Gemini、DashScope、Ark、OpenRouter）或自定义厂商/中转站，配置 base URL、credential、headers、output directory。
+- `/image-gen` 顶部只有三项：`Manage providers`、`Set output directory`、`Show effective configuration`。管理面只在 `ctx.mode === 'tui'` 可用，`list` / `show` / `reload` 参数在其它模式仍应答。
+- `Manage providers` 列出所有可达 provider（有 settings row 的，或仅靠标准 env key 生效的 built-in，后者标 `(env)`），并给当前默认路由所属者标 `— default`；`Add provider…` 是唯一走完整向导（协议、base URL、credential、headers、模型、output directory）的入口。
+- 单个 provider 详情页做四件事：`Change/Set as default model…`（复用已存 route 探测模型列表，失败降级为已知/已声明模型或手输，确认后只写 `default`；已有非空 `models` 列表时 upsert 并保留 alias，否则不物化列表）、`Edit endpoint, credential, headers…`（逐项 keep-by-default，可改 custom provider 的协议，不碰路由）、`Manage model list…`（加模型 / 设或清 alias / 删条目，会在无清单时物化）、`Delete provider`（删除 row；若它持有 `default` 则一并清空；built-in 无 row 时只通知不写盘）。
 - 支持轻量安全的目标端点模型探测（Model Discovery，默认 5s 超时与 fail-soft 降级）：在配置好 Key 与 URL 后自动探测兼容 `/models` 端点的可用模型列表并优先高亮候选生图模型。
 - 配置写入专用文件 `<config dir>/pi-image-gen/settings.json`（随 `PI_CODING_AGENT_DIR` / `PI_AGENT_HOME` 重定向，默认 `~/.pi/agent/pi-image-gen/settings.json`），顶层即配置本体；不读写 Pi 的 `settings.json`。
 - literal key 使用遮罩输入；也支持标准 env、任意 `$ENV_VAR` 和无 key 本地 route。
 - TUI 选择 `No API key` / `No extra headers` 时分别持久化 `apiKey: ""` / `headers: {}` tombstone，以显式阻断 lower layer 与标准 env fallback。
 - 已损坏或嵌套 shape 非法的 settings runtime fail-soft 为无配置；交互写入 fail-closed，绝不覆盖原文件。
-- Skill wrapper 把一个 stdin JSON request 交给 `dist/cli.js`；CLI 固定使用 settings 的 `defaultModel`，不接受 model override。
+- Skill wrapper 把一个 stdin JSON request 交给 `dist/cli.js`；CLI 固定使用 settings 的 `default` route（`{provider, model}`），不接受 model override。
 - extension、CLI 和 tests 共用同一 model resolution、provider adapter、图片输入与落盘 core。
 - custom provider id 不得与 `openai`、`gemini`、`dashscope`、`ark`、`openrouter` 五个 built-in routing prefix 冲突。
 - 支持 OpenAI、Gemini、DashScope、Ark、OpenRouter 五种真实 wire protocol。
@@ -29,6 +31,10 @@ package 不注册常驻 Agent tool，也不注册生命周期钩子。
 没有 project 层：配置永不落在项目目录里，因此不存在未受信仓库覆盖 endpoint 的注入面，也不需要向 Skill CLI 传递 Pi 的 project-trust 决策（已废弃的 `session_start` + env 传递机制随 project 层一起移除）。
 
 写入使用随机临时文件、`wx`、`0600` 与 atomic rename；malformed settings fail closed；保留文件内其它 top-level key。取消为零写入。
+
+配置本体是 `version: 2`：单容器 `providers`（built-in 与 custom 同权——built-in 可省略 `api`，也可完全没有 row 而靠协议模板与标准 env 变量生效）+ 显式 `default: {provider, model}` + 可选 `outputDir`。`models` 只是已知模型与 alias 清单，供选择器与文件名使用，**不参与路由判定**。
+
+v1 文件在下一次读取时一次性迁移为 v2，原件先另存为同目录 `settings.json.v1.bak`；迁移对调用方不可见，持久化失败不致命（本次运行仍用内存结果）。三种情况明确不猜：custom 与 built-in 同名 ⇒ 不动文件；`version > 2` ⇒ 拒绝回写；旧 `defaultModel` 解析不出 route ⇒ 省略 `default`，等用户重选。
 
 ## CLI 契约
 
@@ -81,5 +87,6 @@ pack smoke 必须证明 tarball 含 extension、Skill、wrapper、CLI dist；pac
 
 - 包 README：`packages/pi-image-gen/README.md`
 - 统一配置流与专用存储：`byissue/issues/066-x-image-gen-unified-config-and-discovery.md`
+- v2 配置形状、迁移与两级管理面：`byissue/epics/006-o-image-gen-provider-model-management/spec.md`
 - 已关闭 agent surface 变更：`byissue/epics/004-x-image-gen-web-agent-surface/spec.md`
 - License：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`

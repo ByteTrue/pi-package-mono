@@ -51,22 +51,19 @@ export function describeNetworkError(error: unknown, provider: ResolvedProvider)
 
 /**
  * Returns a settings-path string that points to where the user should fix
- * the apiKey. For built-ins we name the env var; for customProviders we name
- * the JSON path.
+ * the apiKey. For built-ins we name the env var first, because that is the
+ * usual source; for custom providers we name the JSON path.
  */
 function providerLocator(provider: ResolvedProvider): string {
   if (provider.builtIn) {
     const envVar = ENV_VARS[provider.id as BuiltInProviderId] ?? `${provider.id.toUpperCase()}_API_KEY`;
     return `the ${envVar} env var (or pi-image-gen.providers.${provider.id}.apiKey in settings.json)`;
   }
-  return `pi-image-gen.customProviders.${provider.id}.apiKey in settings.json`;
+  return `pi-image-gen.providers.${provider.id}.apiKey in settings.json`;
 }
 
 function providerBaseUrlLocator(provider: ResolvedProvider): string {
-  if (provider.builtIn) {
-    return `pi-image-gen.providers.${provider.id}.baseUrl`;
-  }
-  return `pi-image-gen.customProviders.${provider.id}.baseUrl`;
+  return `pi-image-gen.providers.${provider.id}.baseUrl`;
 }
 export async function safeText(response: Response): Promise<string> {
   try {

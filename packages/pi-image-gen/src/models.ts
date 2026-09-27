@@ -84,6 +84,18 @@ export const BUILT_IN_MODELS: BuiltInModelEntry[] = [
   },
 ];
 
+/** Every image-API wire protocol a provider row may declare. */
+export const API_STYLES = ['openai', 'gemini', 'dashscope', 'openrouter', 'ark'] as const satisfies readonly ApiStyle[];
+
+/** Ordered list of built-in provider ids; the menu and validators share it. */
+export const BUILT_IN_PROVIDER_IDS = [
+  'openai',
+  'gemini',
+  'dashscope',
+  'ark',
+  'openrouter',
+] as const satisfies readonly BuiltInProviderId[];
+
 export const DEFAULT_BASE_URL: Record<BuiltInProviderId, string> = {
   openai: 'https://api.openai.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta',

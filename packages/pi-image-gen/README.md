@@ -31,7 +31,14 @@ Restart Pi and run:
 /image-gen
 ```
 
-Choose a built-in or custom provider, select a model, configure credentials, and set an output directory. Normal setup never requires editing JSON by hand.
+`/image-gen` opens three actions: **Manage providers**, **Set output directory**, and **Show effective configuration**. Normal setup never requires editing JSON by hand.
+
+**Manage providers** lists everything reachable — a row you configured, or a built-in that its standard environment variable already enables — and marks the one behind the current default. **Add provider…** runs the full wizard: protocol, endpoint, credential, headers, model, output directory. An existing provider opens a page where you can:
+
+- **Change default model…** — probes the endpoint, falls back to the known and declared lists, and writes only the default route. This is the path for swapping in a newly released model id without retyping a URL or key.
+- **Edit endpoint, credential, headers…** — each prompt keeps the stored value unless you type over it.
+- **Manage model list…** — add models, set or clear an alias, or remove entries.
+- **Delete provider** — removes the settings row. If it held the default route, that route is cleared too.
 
 ## Generate from Pi
 
@@ -41,7 +48,7 @@ Ask normally:
 
 For an edit or a consistent character/style, attach a local reference image or mention a previously generated path. The Skill invokes the bundled CLI and returns generated files as inline Markdown.
 
-The configured `defaultModel` is always used; the CLI does not accept a model override.
+The configured default route is always used; the CLI does not accept a model override.
 
 ## Providers
 
@@ -68,6 +75,8 @@ Credential choices include:
 
 Writes use an atomic `0600` path and refuse to overwrite malformed settings. Selecting **No API key** writes `apiKey: ""`, blocking lower-layer and standard-environment credentials. Selecting **No extra headers** writes `headers: {}`, blocking inherited headers.
 
+A file written by an earlier version is migrated once, on the next read. The original is kept as `settings.json.v1.bak` before the rewrite, and the rewrite never blocks generation — if it cannot be persisted, settings still load for that run. Two cases are deliberately not guessed: a custom provider named exactly like a built-in one leaves the file untouched until you rename it, and a default model that the old resolver could not route is dropped, so pick it again with `/image-gen`.
+
 Relative output directories resolve from the Pi session working directory. The default is `.pi/images`.
 
 <details>
@@ -75,15 +84,14 @@ Relative output directories resolve from the Pi session working directory. The d
 
 ```json
 {
-  "defaultModel": "my-sd/sd-3-large",
+  "version": 2,
+  "default": { "provider": "my-sd", "model": "sd-3-large" },
   "outputDir": ".pi/images",
   "providers": {
     "openai": {
       "baseUrl": "https://proxy.example.com/v1",
       "apiKey": "$OPENAI_API_KEY"
-    }
-  },
-  "customProviders": {
+    },
     "my-sd": {
       "api": "openai",
       "baseUrl": "https://api.example.com/v1",
@@ -93,6 +101,8 @@ Relative output directories resolve from the Pi session working directory. The d
   }
 }
 ```
+
+`version` is written for you. Built-in rows may omit `api` because the protocol comes from the built-in template; a custom row must declare it. `models` lists known ids and optional local aliases for the pickers — it does not gate which ids a provider accepts.
 
 `apiKey`, `baseUrl`, and header values support `$VAR`, `${VAR}`, and `${VAR:-fallback}` interpolation.
 

@@ -35,7 +35,7 @@ describe('generateImage', () => {
       { prompt: 'a cat', filename: 'cat-test' },
       {
         cwd,
-        settings: { defaultModel: 'gpt-image-2' },
+        settings: { default: { provider: 'openai', model: 'gpt-image-2' } },
         fetchImpl,
       },
     );
@@ -51,8 +51,8 @@ describe('generateImage', () => {
   it('downloads url-style results and writes them to disk', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
     const settings: ImageGenSettings = {
-      defaultModel: 'x-img',
-      customProviders: {
+      default: { provider: 'myprov', model: 'x-img' },
+      providers: {
         myprov: {
           api: 'openai',
           apiKey: 'k',
@@ -77,22 +77,22 @@ describe('generateImage', () => {
     expect(readFileSync(result.images[0]!.path)).toEqual(PNG_BYTES);
   });
 
-  it('raises if defaultModel is not configured', async () => {
+  it('raises if the default route is not configured', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
     await expect(generateImage({ prompt: 'hi' }, { cwd, settings: {} })).rejects.toThrow(
-      /defaultModel is not set/,
+      /default .* is not set/i,
     );
   });
 
-  it('raises with a helpful error if no provider can serve the model', async () => {
+  it('raises with a helpful error if the default points at an unknown provider', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
     delete process.env.GEMINI_API_KEY;
     await expect(
       generateImage(
         { prompt: 'x' },
-        { cwd, settings: { defaultModel: 'nano-banana' }, fetchImpl: fetch },
+        { cwd, settings: { default: { provider: 'no-such-provider', model: 'gemini-2.5-flash-image' } }, fetchImpl: fetch },
       ),
-    ).rejects.toThrow(/Unknown image model|no API key/i);
+    ).rejects.toThrow(/unknown provider/i);
   });
 
   it('aborts an in-flight provider request when signal fires', async () => {
@@ -116,7 +116,7 @@ describe('generateImage', () => {
       { prompt: 'x' },
       {
         cwd,
-        settings: { defaultModel: 'gpt-image-2' },
+        settings: { default: { provider: 'openai', model: 'gpt-image-2' } },
         fetchImpl,
         signal: ctrl.signal,
       },
@@ -149,7 +149,7 @@ describe('generateImage', () => {
       { prompt: 'make it green', image: [refPath], filename: 'edit-test' },
       {
         cwd,
-        settings: { defaultModel: 'gpt-image-2' },
+        settings: { default: { provider: 'openai', model: 'gpt-image-2' } },
         fetchImpl,
       },
     );
@@ -172,7 +172,7 @@ describe('generateImage', () => {
 
     const result = await generateImage(
       { prompt: 'cat' },
-      { cwd, settings: { defaultModel: 'gpt-image-2' }, fetchImpl },
+      { cwd, settings: { default: { provider: 'openai', model: 'gpt-image-2' } }, fetchImpl },
     );
     expect(result.images).toHaveLength(1);
     expect(readFileSync(result.images[0]!.path)).toEqual(PNG_BYTES);
@@ -208,7 +208,7 @@ describe('generateImage', () => {
 
     const result = await generateImage(
       { prompt: 'x' },
-      { cwd, settings: { defaultModel: 'gpt-image-2' }, fetchImpl: wrappedFetch },
+      { cwd, settings: { default: { provider: 'openai', model: 'gpt-image-2' } }, fetchImpl: wrappedFetch },
     );
     expect(result.images).toHaveLength(2);
   });
@@ -216,8 +216,8 @@ describe('generateImage', () => {
   it('routes OpenRouter to POST /api/v1/images (not /images/generations)', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
     const settings: ImageGenSettings = {
-      defaultModel: 'google/gemini-3.1-flash-image',
-      customProviders: {
+      default: { provider: 'or', model: 'google/gemini-3.1-flash-image' },
+      providers: {
         or: {
           api: 'openrouter',
           apiKey: 'or-test',
@@ -242,8 +242,8 @@ describe('generateImage', () => {
   it('OpenRouter image-to-image sends input_references in JSON body', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
     const settings: ImageGenSettings = {
-      defaultModel: 'google/gemini-3.1-flash-image',
-      customProviders: {
+      default: { provider: 'or', model: 'google/gemini-3.1-flash-image' },
+      providers: {
         or: {
           api: 'openrouter',
           apiKey: 'or-test',
