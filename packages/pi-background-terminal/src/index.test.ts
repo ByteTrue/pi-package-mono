@@ -57,6 +57,7 @@ describe("pi-background-terminal extension", () => {
       "session_shutdown",
       "session_start",
       "tool_call",
+      "tool_result",
     ]);
     // No renderer: Pi's default custom-message rendering already labels and boxes the content.
     expect(rendererTypes).toEqual([]);

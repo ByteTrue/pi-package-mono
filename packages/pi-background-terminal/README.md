@@ -17,7 +17,7 @@ Pi's built-in `bash` is the foreground executor — and this package never touch
 
 `background_run(command, timeout?)`:
 
-- **`timeout` defaults to 600 seconds** — a hard lifetime cap so nothing lingers forever. Pass a larger value (e.g. `86400`) for dev servers and watch modes.
+- **`timeout` defaults to 600 seconds, hard cap 3600** — a hard lifetime cap so nothing lingers forever; larger explicit values are clamped. Long-running services renew: when the timeout notification arrives, restart them with background_run.
 - Full stdout/stderr stream live to an output file (path in the result); the Agent reads it with Pi's built-in `read` only when needed.
 - In TUI/RPC sessions the exit notification fires normally. In `pi -p` the process exits with the turn, so a task started there dies before its exit can be reported — hands-off backgrounding belongs in interactive sessions (subagent children are killed by their own `session_shutdown`).
 
@@ -45,7 +45,7 @@ No built-in tool is overridden, shadowed, or registered under a built-in name.
 
 ## Staying out of the built-ins' way
 
-- `bash` (and `powershell`) keep their exact built-in behavior; the only touch is a `tool_call` hook injecting `timeout: 600` when a call passes none — a safety net for runaway foreground commands, not a coupling. Explicit timeouts are respected.
+- `bash` (and `powershell`) keep their exact built-in behavior; the only touches are two event hooks — a `tool_call` hook injecting `timeout: 600` when a call passes none and clamping explicit values above 600s down to it, and a `tool_result` hook appending one steering block ("long commands belong in background_run") to timeout errors. A safety net for runaway foreground commands, not a coupling.
 - The `background_run` path applies your `shellPath` / `shellCommandPrefix` settings (read through Pi's own `SettingsManager`, honoring project trust) and the same session environment the built-in tools set (`PI_*` variables plus the agent bin dir on `PATH`).
 - Uninstalling removes exactly the three tools above; the built-ins were never touched.
 

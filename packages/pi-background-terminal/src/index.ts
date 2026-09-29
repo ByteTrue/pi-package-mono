@@ -95,7 +95,7 @@ function formatExitMessage(task: BackgroundTask): string {
     task.status === "killed"
       ? "was stopped"
       : task.status === "timed_out"
-        ? `timed out after ${task.timeoutSeconds} seconds (restart with background_run and a larger timeout if it should run longer)`
+        ? `timed out after ${task.timeoutSeconds} seconds (restart with background_run to renew it)`
         : task.status === "failed"
           ? `failed: ${task.error ?? "unknown error"}`
           : `exited with code ${task.exitCode}`;
