@@ -36,4 +36,6 @@ created: 2026-09-17
 ## 发布
 
 - 版本 `0.8.1` → `0.9.0`（minor：bash 显式大 timeout 钳到 600、background_run 硬上限 3600 + 续期语义，均为行为变化；description 同步重写）。
-- 待执行：commit → push origin/main → tag `pi-background-terminal-v0.9.0` → release.yml（typecheck → npm test → OIDC Trusted Publishing）→ npm 验证 latest → 更新使用机器的全局包。
+- commit `334510a`（rebase 过 2cafa1d）推送 origin/main；tag `pi-background-terminal-v0.9.0` 触发 `release.yml`（run `36516240240`）：typecheck → npm test → OIDC Trusted Publishing 全部 ✓，provenance 入 transparency log（logIndex 2992501668）。
+- npm 已生效：`latest = 0.9.0`；tarball 反验 10 文件干净（钳制逻辑在包内，零测试泄漏）。
+- 本机全局包（`~/.pi/agent/npm`）已更新至 0.9.0；**另一台 Windows 机器需用户自行更新**（仍 0.8.1，写反的指引仍在教模型传大 timeout）。
