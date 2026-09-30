@@ -1,7 +1,7 @@
 import type { GenerateImageParams, ImageGenResult, ImageGenSettings } from './types.js';
 import { generateImage } from './generate.js';
 import { formatImageResult } from './format.js';
-import { imageGenSettingsPath, loadImageGenSettings } from './settings.js';
+import { describeImageGenSettingsPath, loadImageGenSettings } from './settings.js';
 import { ENV_VARS } from './models.js';
 import { configEnvironmentValues, resolveConfigString, resolveDefaultRoute } from './config.js';
 
@@ -134,7 +134,7 @@ export async function runImageGenCli(options: ImageGenCliOptions = {}): Promise<
     const lines = [
       `Default model: ${settings.default ? `${settings.default.provider}/${settings.default.model}` : 'not configured'}`,
       `Output directory: ${settings.outputDir ?? '.pi/images'}`,
-      `Config file: ${imageGenSettingsPath()}`,
+      `Config file: ${describeImageGenSettingsPath()}`,
     ];
     if ('error' in resolved) {
       if (settings.default) lines.push(`Route: ${resolved.error}`);

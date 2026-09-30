@@ -11,9 +11,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
+	describeConfigPath,
 	getActiveProviderName,
-	getConfigPath,
 	getProviderChain,
+	getWritableConfigPath,
 	readConfig,
 	readConfigResult,
 	resolveApiKey,
@@ -205,7 +206,7 @@ function formatShowConfig(config: WebConfig): string {
 	const chain = getProviderChain(config);
 	const lines = [
 		"Web tools config:",
-		`  config file: ${getConfigPath()}`,
+		`  config file: ${describeConfigPath()}`,
 		`  provider chain: ${chain.join(" -> ")}`,
 		`  active provider: ${active}`,
 		`  proxy: ${proxy}`,
@@ -242,7 +243,7 @@ async function configureProxy(
 	if (input.trim().toLowerCase() === "off") delete next.proxy;
 	else next.proxy = input.trim();
 	if (!writeConfig(next)) {
-		ctx.ui.notify(`Failed to save proxy to ${getConfigPath()}`, "error");
+		ctx.ui.notify(`Failed to save proxy to ${getWritableConfigPath()}`, "error");
 		return;
 	}
 	ctx.ui.notify(`${next.proxy ? `Proxy set to ${maskProxyUrl(next.proxy)}` : "Proxy cleared"}. Run /reload (or restart pi) to apply.`, "info");
@@ -270,7 +271,7 @@ async function configureBaseUrl(
 		baseUrls: { ...config.baseUrls, [meta.name]: input.trim() },
 	};
 	if (!writeConfig(next)) {
-		ctx.ui.notify(`Failed to save ${meta.label} URL to ${getConfigPath()}`, "error");
+		ctx.ui.notify(`Failed to save ${meta.label} URL to ${getWritableConfigPath()}`, "error");
 		return;
 	}
 	ctx.ui.notify(`Saved ${meta.label} URL and set as active provider`, "info");
@@ -310,7 +311,7 @@ async function configureProviderChain(
 		if (picked === "✓ Done") {
 			const next: WebConfig = { ...config, providers: [...selected] };
 			if (writeConfig(next)) ctx.ui.notify(`Provider chain saved: ${selected.join(" -> ")}`, "info");
-			else ctx.ui.notify(`Failed to save provider chain to ${getConfigPath()}`, "error");
+			else ctx.ui.notify(`Failed to save provider chain to ${getWritableConfigPath()}`, "error");
 			return;
 		}
 		const provider = selectable.find((candidate) => picked === labelOf(candidate));
@@ -374,7 +375,7 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 			if (meta.keyless || resolveApiKey(meta.name, config) !== undefined) {
 				const next: WebConfig = { ...config, providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)] };
 				if (writeConfig(next)) ctx.ui.notify(`Active provider set to ${meta.label}`, "info");
-				else ctx.ui.notify(`Failed to save config to ${getConfigPath()}`, "error");
+				else ctx.ui.notify(`Failed to save config to ${getWritableConfigPath()}`, "error");
 				return;
 			}
 			const hint = meta.signupUrl ? ` (get one at ${meta.signupUrl})` : "";
@@ -388,7 +389,7 @@ export function registerWebCommand(pi: ExtensionAPI): void {
 				providers: [meta.name, ...getProviderChain(config).filter((provider) => provider !== meta.name)],
 				apiKeys: { ...config.apiKeys, [meta.name]: input.trim() },
 			};
-			if (!writeConfig(toSave)) ctx.ui.notify(`Failed to save ${meta.label} key to ${getConfigPath()}`, "error");
+			if (!writeConfig(toSave)) ctx.ui.notify(`Failed to save ${meta.label} key to ${getWritableConfigPath()}`, "error");
 			else ctx.ui.notify(`Saved ${meta.label} key and set as active provider`, "info");
 		},
 	});

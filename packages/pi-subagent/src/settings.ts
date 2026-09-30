@@ -7,6 +7,10 @@ import { listBuiltinAgentNames } from "./builtin-agents.js";
 export const SETTINGS_KEY = "subagent";
 export const COMMAND_NAME = "subagent";
 
+const PKG_CONFIG_DIRNAME = "pi-pkg-cfg";
+const PKG_DIRNAME = "pi-subagent";
+const PKG_FILENAME = "settings.json";
+
 export type SettingsScope = "global" | "project";
 
 export interface SubagentRoleConfig {
@@ -43,32 +47,95 @@ function parseEnvMap(raw: unknown): Record<string, string> | undefined {
   return Object.keys(env).length > 0 ? env : undefined;
 }
 
-export function globalSettingsPath(): string {
-  return join(
-    process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
-    "settings.json",
-  );
+/** Where a layer's values live, and whether that is still Pi's settings.json. */
+export interface SettingsLocation {
+  path: string;
+  legacy: boolean;
 }
 
-export function projectSettingsPath(cwd: string): string {
-  return join(cwd, ".pi", "settings.json");
+type FileRead =
+  | { state: "missing" }
+  | { state: "invalid"; reason: "not-json" | "not-object" }
+  | { state: "valid"; value: Record<string, unknown> };
+
+function agentDir(): string {
+  return process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
 }
 
+/**
+ * This package's own file. $PI_PKG_CFG_DIR moves the global root for cross-profile
+ * setups; the project layer stays inside the project.
+ */
 export function settingsPathForScope(cwd: string, scope: SettingsScope): string {
-  return scope === "project" ? projectSettingsPath(cwd) : globalSettingsPath();
+  const root =
+    scope === "project"
+      ? join(cwd, ".pi", PKG_CONFIG_DIRNAME)
+      : process.env.PI_PKG_CFG_DIR?.trim() || join(agentDir(), PKG_CONFIG_DIRNAME);
+  return join(root, PKG_DIRNAME, PKG_FILENAME);
 }
 
-function readJsonFile(path: string): Record<string, unknown> | null {
-  if (!existsSync(path)) return null;
+/** Pi's own settings.json: where this section lived before the migration. */
+function legacySettingsPath(cwd: string, scope: SettingsScope): string {
+  return scope === "project" ? join(cwd, ".pi", "settings.json") : join(agentDir(), "settings.json");
+}
+
+function isFile(path: string): boolean {
   try {
-    const raw = readFileSync(path, "utf-8");
-    const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
+    return statSync(path).isFile();
   } catch {
-    return null;
+    return false;
   }
+}
+
+/** Anything on disk counts: a directory or unreadable path must still fail closed. */
+function pathExists(path: string): boolean {
+  try {
+    statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readFileStrict(path: string): FileRead {
+  if (!pathExists(path)) return { state: "missing" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return { state: "invalid", reason: "not-json" };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { state: "invalid", reason: "not-object" };
+  }
+  return { state: "valid", value: parsed as Record<string, unknown> };
+}
+
+function invalidJsonMessage(path: string, reason: "not-json" | "not-object"): string {
+  return reason === "not-json"
+    ? `${path} is not valid JSON. Fix it first; refusing to overwrite it.`
+    : `${path} is not a JSON object. Refusing to overwrite it.`;
+}
+
+/** Atomic single write: temp file in the same directory, then rename. */
+function writeSectionFile(path: string, section: Record<string, unknown>, mode: number): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const tempPath = `${path}.${randomUUID()}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(section, null, 2)}\n`, {
+    encoding: "utf-8",
+    mode,
+  });
+  renameSync(tempPath, path);
+}
+
+/** The stored shape: only known keys, and empty values never linger. */
+function toStoredSection(settings: SubagentSettings): Record<string, unknown> {
+  const section: Record<string, unknown> = {};
+  if (settings.defaultModel) section.defaultModel = settings.defaultModel;
+  if (settings.defaultThinking) section.defaultThinking = settings.defaultThinking;
+  if (settings.agents && Object.keys(settings.agents).length > 0) section.agents = settings.agents;
+  if (settings.env && Object.keys(settings.env).length > 0) section.env = settings.env;
+  return section;
 }
 
 function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unknown> | null): SubagentSettings {
@@ -138,14 +205,56 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
   return settings;
 }
 
+/**
+ * Where a layer's values currently live. A legacy section with settings is lifted
+ * into this package's own file in one atomic write, so later writes can never
+ * shadow the keys they did not touch. Unreadable legacy files stay in place and
+ * are reported as the live path — reads fail soft on them, writes refuse.
+ */
+export function settingsLocationForScope(cwd: string, scope: SettingsScope): SettingsLocation {
+  const target = settingsPathForScope(cwd, scope);
+  if (isFile(target)) return { path: target, legacy: false };
+
+  const legacy = legacySettingsPath(cwd, scope);
+  const legacyRead = readFileStrict(legacy);
+  if (legacyRead.state === "missing") return { path: target, legacy: false };
+  if (legacyRead.state === "invalid") return { path: legacy, legacy: true };
+
+  const settings = parseSubagentSection(legacyRead.value[SETTINGS_KEY], legacyRead.value);
+  if (Object.keys(settings).length === 0) return { path: target, legacy: false };
+
+  // Project override files stay read-only until the user explicitly writes one.
+  if (scope === "project") return { path: legacy, legacy: true };
+
+  try {
+    writeSectionFile(target, toStoredSection(settings), 0o600);
+  } catch {
+    return { path: legacy, legacy: true };
+  }
+  return { path: target, legacy: false };
+}
+
+/** For status lines: says out loud when Pi's settings.json is still the live file. */
+export function describeSettingsPathForScope(cwd: string, scope: SettingsScope): string {
+  const location = settingsLocationForScope(cwd, scope);
+  return location.legacy ? `${location.path} (legacy (read-only fallback))` : location.path;
+}
+
+function readLocationSettings(location: SettingsLocation): SubagentSettings {
+  const read = readFileStrict(location.path);
+  if (read.state !== "valid") return {};
+  // Our own file holds the section itself; Pi's settings.json nests it under "subagent".
+  return location.legacy
+    ? parseSubagentSection(read.value[SETTINGS_KEY], read.value)
+    : parseSubagentSection(read.value);
+}
+
 export function loadSubagentSettings(cwd: string, projectTrusted = true): SubagentSettings {
-  const globalObj = readJsonFile(globalSettingsPath());
-  const globalSettings = parseSubagentSection(globalObj?.[SETTINGS_KEY], globalObj);
+  const globalSettings = readLocationSettings(settingsLocationForScope(cwd, "global"));
 
   if (!projectTrusted) return globalSettings;
 
-  const projectObj = readJsonFile(projectSettingsPath(cwd));
-  const projectSettings = parseSubagentSection(projectObj?.[SETTINGS_KEY], projectObj);
+  const projectSettings = readLocationSettings(settingsLocationForScope(cwd, "project"));
 
   return {
     defaultModel: projectSettings.defaultModel ?? globalSettings.defaultModel,
@@ -167,37 +276,31 @@ export function updateSubagentSettings(
   updater: (current: SubagentSettings) => SubagentSettings,
 ): string {
   const targetPath = settingsPathForScope(cwd, scope);
-  const dir = dirname(targetPath);
-  mkdirSync(dir, { recursive: true });
-
-  const currentRoot = readJsonFile(targetPath) ?? {};
-  const currentSubagent = parseSubagentSection(currentRoot[SETTINGS_KEY]);
-  const updatedSubagent = updater(currentSubagent);
-
-  // Clean empty values
-  const cleanSubagent: Record<string, unknown> = {};
-  if (updatedSubagent.defaultModel) cleanSubagent.defaultModel = updatedSubagent.defaultModel;
-  if (updatedSubagent.defaultThinking) cleanSubagent.defaultThinking = updatedSubagent.defaultThinking;
-  if (updatedSubagent.agents && Object.keys(updatedSubagent.agents).length > 0) {
-    cleanSubagent.agents = updatedSubagent.agents;
-  }
-  if (updatedSubagent.env && Object.keys(updatedSubagent.env).length > 0) {
-    cleanSubagent.env = updatedSubagent.env;
+  const targetRead = readFileStrict(targetPath);
+  if (targetRead.state === "invalid") {
+    throw new Error(invalidJsonMessage(targetPath, targetRead.reason));
   }
 
-  const nextRoot: Record<string, unknown> = {
-    ...currentRoot,
-    [SETTINGS_KEY]: Object.keys(cleanSubagent).length > 0 ? cleanSubagent : undefined,
-  };
-  if (nextRoot[SETTINGS_KEY] === undefined) {
-    delete nextRoot[SETTINGS_KEY];
+  let current: SubagentSettings;
+  let mode = 0o600;
+  if (targetRead.state === "valid") {
+    current = parseSubagentSection(targetRead.value);
+    mode = statSync(targetPath).mode & 0o777;
+  } else {
+    // First write: carry the whole legacy section over in the same atomic write,
+    // otherwise the untouched keys would be shadowed the moment the file exists.
+    const legacyPath = legacySettingsPath(cwd, scope);
+    const legacyRead = readFileStrict(legacyPath);
+    if (legacyRead.state === "invalid") {
+      throw new Error(invalidJsonMessage(legacyPath, legacyRead.reason));
+    }
+    current =
+      legacyRead.state === "valid"
+        ? parseSubagentSection(legacyRead.value[SETTINGS_KEY], legacyRead.value)
+        : {};
   }
 
-  const tempPath = `${targetPath}.${randomUUID()}.tmp`;
-  const formatted = `${JSON.stringify(nextRoot, null, 2)}\n`;
-  writeFileSync(tempPath, formatted, "utf-8");
-  renameSync(tempPath, targetPath);
-
+  writeSectionFile(targetPath, toStoredSection(updater(current)), mode);
   return targetPath;
 }
 
@@ -219,7 +322,7 @@ export function listDiscoveredAgentNames(cwd: string): string[] {
 
   scanDir(join(cwd, ".pi", "agents"));
   const home = homedir();
-  scanDir(join(process.env.PI_CODING_AGENT_DIR ?? join(home, ".pi", "agent"), "agents"));
+  scanDir(join(agentDir(), "agents"));
   scanDir(join(home, ".pi", "agents"));
 
   // Include built-in roles, which ship as agent documents in the package.

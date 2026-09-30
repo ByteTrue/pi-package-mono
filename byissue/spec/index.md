@@ -18,7 +18,7 @@
 
 - `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
 - `pi-web-search` 保留高频 `web_search` / `web_fetch` 与完整 `/web` 配置面；一次搜索只联系一个 provider，失败后显式重试，fetch 固定走 SSRF-safe generic transport。
-- `pi-image-gen` 是低频 Skill + bundled CLI；`/image-gen` 继续在 TUI 内闭合 built-in/custom 首次配置，所有配置仍写 Pi `settings.json` 的 `pi-image-gen` 节。
+- `pi-image-gen` 是低频 Skill + bundled CLI；`/image-gen` 继续在 TUI 内闭合 built-in/custom 首次配置，所有配置写自己独立的 `<pkg-config 根>/pi-image-gen/settings.json`，从不碰 Pi 的 `settings.json`。
 - `pi-background-terminal` 提供纯后台执行 `background_run(command, timeout?)`：立即返回 task id + 输出文件路径，退出（自然/失败/timed_out）经 followUp+triggerTurn 自动唤醒 Agent（忙碌期缓冲合并）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值（如 86400）逃逸。内建 `bash`/`powershell` 零触碰（仅 tool_call hook 注入 600s 默认超时的安全网）。`background_status(id)`/`background_kill(id)` 管理后台任务，`/background` 提供用户菜单。任务经 Pi 的 tracked spawn 集合随进程同生共死（正常退出/信号/崩溃全路径）；session 结束清理进程树、输出流与文件，`/reload` 保留任务；输出文件 50MiB 上限；加载时扫除 >24h 孤儿日志。
 - **`pi-vision`**：解决“主力模型没有视觉能力却需要按图工作”的诉求。`image_ask` 保留模型主动提出精确问题的路径；0.2.0 新增 opt-in 附件预分析，把 `before_agent_start.images` 在首轮主模型调用前批量交给所选视觉模型。自动模式默认关闭，不处理 TUI 粘贴后形成的路径文本，并受 project trust、数量/总字节与 60 秒 deadline 约束。
 - 近期优先：五个扩展的维护、回归与按需发版。
@@ -38,7 +38,7 @@
 
 - **给 pi 装本地扩展**：`pi install /abs/path/to/packages/<pkg>` 或 `pi -e ...` 试跑。
 - **改搜索行为或安全边界**：先读 web-search 子 spec，再改 `packages/pi-web-search`；验证 `npm --workspace @bytetrue/pi-web-search test`。
-- **改 image-gen 配置/Skill/CLI**：先读 image-gen 子 spec；保持 TUI 配置闭环、`settings.json` 存储与无常驻 Agent tool。
+- **改 image-gen 配置/Skill/CLI**：先读 image-gen 子 spec；保持 TUI 配置闭环、专用 `settings.json` 存储与无常驻 Agent tool。
 - **改 models.json 管理语义**：先读 vendor 子 spec；日常行为由 package Skill + bundled script 定义，冷启动行为在 TUI，配置事务与模型来源语义仍在共享 core。
 - **改 background terminal**：先读 background-terminal 子 spec，再改 `packages/pi-background-terminal`；至少验证 typecheck、test、pack dry-run 与真实 Pi 回归。
 - **改浏览器配置/会话/Setup**：先读 [`pi-browser/`](pi-browser/index.md)，再改 `packages/pi-browser`；验证 `npm --workspace @bytetrue/pi-browser test`、typecheck、pack dry-run，并确认真实 Pi 里 `/browser` 各入口与真实 CLI 会话清理。
@@ -50,12 +50,12 @@
 
 | 包 | 支撑路径 | 配置位置 |
 |---|---|---|
-| `@bytetrue/pi-web-search` | agent 工具 `web_search`/`web_fetch`、`/web` | `~/.pi/byte-pi-web/config.json`（可用 `PI_CONFIG_DIR`） |
-| `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json` |
-| `@bytetrue/pi-image-gen` | `/image-gen`、按需 Skill `pi-image-gen`、bundled CLI；零常驻 Agent tool | `~/.pi/agent/settings.json`、active agent dir 或可信 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
+| `@bytetrue/pi-web-search` | agent 工具 `web_search`/`web_fetch`、`/web` | `<pkg-config 根>/pi-web-search/config.json`（根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`）；老位置 `~/.pi/byte-pi-web/config.json` 只读回退 |
+| `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json`（有意留在 agent dir 根：Pi 本体启动要读） |
+| `@bytetrue/pi-image-gen` | `/image-gen`、按需 Skill `pi-image-gen`、bundled CLI；零常驻 Agent tool | `<pkg-config 根>/pi-image-gen/settings.json`；老位置 `<agent dir>/pi-image-gen/settings.json` 只读回退 |
 | `@bytetrue/pi-background-terminal` | bash 覆盖（`waitSeconds`）+ `background_status`/`background_kill` + 用户菜单 `/background` | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
-| `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `settings.json` 的 `pi-vision.model` 与 `pi-vision.autoAnalyzeAttachments`（`/vision` 写全局层；可信 project 可覆盖） |
-| `@bytetrue/pi-subagent` | 工具 `subagent` / `subagent_status` / `subagent_stop`（单任务、纯后台、并行 = 同一条消息多条调用） | `settings.json` 的 `subagent.defaultModel` / `subagent.defaultThinking` / `subagent.agents[角色]` / `subagent.env`（子进程环境变量透传）；模型/思考强度只由用户配置与父会话继承决定，角色文档按需读 `.pi/agents/*.md` |
+| `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `<pkg-config 根>/pi-vision/settings.json` 的 `model` 与 `autoAnalyzeAttachments`（`/vision` 写全局层；可信 `<project>/.pi/pi-pkg-cfg/pi-vision/settings.json` 可覆盖且只读）；老位置 Pi `settings.json` 的 `pi-vision` 节只读回退 |
+| `@bytetrue/pi-subagent` | 工具 `subagent` / `subagent_status` / `subagent_stop`（单任务、纯后台、并行 = 同一条消息多条调用） | `<pkg-config 根>/pi-subagent/settings.json` 的 `defaultModel` / `defaultThinking` / `agents[角色]` / `env`（子进程环境变量透传）；project 层 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`；老位置 Pi `settings.json` 的 `subagent` 节只读回退；模型/思考强度只由用户配置与父会话继承决定，角色文档按需读 `.pi/agents/*.md` 与 `<agent dir>/agents/*.md` |
 | `@bytetrue/pi-browser` | 命令 `/browser`（Status / Configure / Settings / Sessions / Setup 命令面板）；无 agent tool | agent-browser 用户配置（`~/.agent-browser/config.json`，尊重 `AGENT_BROWSER_CONFIG`，写前备份）+ `<agent dir>/pi-browser/profiles/agent-browser` Chrome for Testing；官方 skill 经 `npx skills add vercel-labs/agent-browser -a pi -y -g` 由用户安装 |
 
 六包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
@@ -67,6 +67,9 @@
 - **epic**：有边界的大变化活规格；关闭后结论毕业到 project spec。
 - **issue**：一次可关闭的行动（feature / bug / chore / explore）。
 - **archive / legacy**：旧 `.codestable` 全量迁入的只读证据，不当作活状态机。
+- **pkg-config 根**：`$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`；本仓包私有配置的唯一写入位置（`pi-vendor` 的 `models.json` 是有意豁免）。定案见 `byissue/decisions/004-pkg-config-dir.md`。
+- **legacy 回退**：迁移前的位置只读、只回退、永不搬迁；新文件一存在老位置即永久不再参与读取。生效值来自老路径时，状态输出与报错写明 `legacy (read-only fallback): <path>`。
+- **整节迁移**：该层新文件缺失且老位置有数据时，先把老内容**完整**原子写进新文件再套本次改动；只搬要改的键会静默丢数据。首读迁移与交互写前迁移共用同一入口。
 
 ## 阅读路径
 
@@ -104,6 +107,7 @@
 - **包隔离**：proxy、fetch dispatcher 不改全局，避免多扩展互踩。
 - **background terminal 走 package-only**：复用 Pi 官方的 `createLocalBashOperations` 与内建 `read`，不重新实现 shell backend 或分页读取；不覆盖任何 Pi 原生工具，不把能力偷渡成 tmux 或 Pi core 依赖。
 - **配置 fail-closed 写路径**：运行时可读可 soft-fail；交互写配置必须先证明基底有效。
+- **包私有配置收在 `<pkg-config 根>`**：本仓包自己读写的文件进 `<agent dir>/pi-pkg-cfg/<包名>/`（vision / subagent 另有 local 的 `<project>/.pi/pi-pkg-cfg/<包名>/settings.json` 项目层，受信任闸约束）；Pi 本体按固定路径读的 `settings.json` / `models.json` / `mcp.json` / `auth.json` 留在 agent dir 根。**不为此新开共享包**——四个包各留约十行路径解析，互不依赖比抽公共运行时值；防漂移靠测试里的同一组场景断言。
 - **真相分层**：稳定结论进 project spec；一次执行进 issue；大变更线进 epic；旧流水与 gate JSON 进 archive。
 
 ## 证据索引（按需）

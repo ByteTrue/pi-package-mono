@@ -4,6 +4,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -17,20 +18,89 @@ export const SETTINGS_DIRNAME = 'pi-image-gen';
 export const SETTINGS_FILENAME = 'settings.json';
 export const SETTINGS_VERSION = 2;
 export const LEGACY_BACKUP_FILENAME = 'settings.json.v1.bak';
+const PKG_CONFIG_DIRNAME = 'pi-pkg-cfg';
 
 type JsonObject = Record<string, unknown>;
 
-function activeConfigDir(): string {
-  return resolve(
+/** <agent dir> = $PI_CODING_AGENT_DIR or ~/.pi/agent. */
+function agentDir(): string {
+  return resolve(process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent'));
+}
+
+/** Where writes go: $PI_PKG_CFG_DIR, else <agent dir>/pi-pkg-cfg. */
+function newSettingsPath(): string {
+  const root = process.env.PI_PKG_CFG_DIR?.trim() || join(agentDir(), PKG_CONFIG_DIRNAME);
+  return join(root, SETTINGS_DIRNAME, SETTINGS_FILENAME);
+}
+
+/**
+ * Where the file used to live: the same name directly under the active config
+ * dir. $PI_AGENT_HOME only ever located that older file; it no longer moves the
+ * live one.
+ */
+function legacySettingsPath(): string {
+  const base = resolve(
     process.env.PI_CODING_AGENT_DIR?.trim() ||
       process.env.PI_AGENT_HOME?.trim() ||
       join(homedir(), '.pi', 'agent'),
   );
+  return join(base, SETTINGS_DIRNAME, SETTINGS_FILENAME);
 }
 
-/** Dedicated package config file: <config dir>/pi-image-gen/settings.json. */
+export type SettingsLocation = { path: string; legacy: boolean };
+
+/**
+ * The file this run reads. The first look after an upgrade copies the older
+ * file into the new location — bytes and all, in one atomic write — so a v1
+ * file gets converted there (with its .v1.bak beside it) and a v2 file simply
+ * keeps working. When the copy cannot be written the older file stays in
+ * charge, flagged so callers can say so out loud. A file that is not JSON is
+ * never copied; it is reported in place.
+ */
+export function settingsLocation(): SettingsLocation {
+  const target = newSettingsPath();
+  if (isFile(target)) return { path: target, legacy: false };
+  const legacy = legacySettingsPath();
+  if (legacy === target || !isFile(legacy)) return { path: target, legacy: false };
+  try {
+    const text = readFileSync(legacy, 'utf8');
+    JSON.parse(text);
+    mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+    const temp = `${target}.pi-image-gen-${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temp, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      renameSync(temp, target);
+    } finally {
+      rmSync(temp, { force: true });
+    }
+    return { path: target, legacy: false };
+  } catch {
+    return { path: legacy, legacy: true };
+  }
+}
+
+/** Dedicated package config file: <pkg-config root>/pi-image-gen/settings.json. */
 export function imageGenSettingsPath(): string {
-  return join(activeConfigDir(), SETTINGS_DIRNAME, SETTINGS_FILENAME);
+  return settingsLocation().path;
+}
+
+/** Writes never touch the legacy path, so name that one for save failures. */
+export function writableImageGenSettingsPath(): string {
+  return newSettingsPath();
+}
+
+/** For status lines: says out loud when the older file is still the live one. */
+export function describeImageGenSettingsPath(): string {
+  const { path, legacy } = settingsLocation();
+  return legacy ? `${path} (legacy (read-only fallback))` : path;
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -164,12 +234,12 @@ function loadSettings(path: string, strict: boolean): ImageGenSettings {
 
 /** Runtime reads are fail-soft. */
 export function loadImageGenSettings(): ImageGenSettings {
-  return loadSettings(imageGenSettingsPath(), false);
+  return loadSettings(settingsLocation().path, false);
 }
 
 /** Strict read for an interactive write flow. */
 export function readImageGenSettingsLayer(): ImageGenSettings {
-  return loadSettings(imageGenSettingsPath(), true);
+  return loadSettings(settingsLocation().path, true);
 }
 
 /**
@@ -179,7 +249,7 @@ export function readImageGenSettingsLayer(): ImageGenSettings {
 export function updateImageGenSettings(
   mutate: (current: ImageGenSettings) => ImageGenSettings,
 ): string {
-  const path = imageGenSettingsPath();
+  const path = newSettingsPath();
   const current = readImageGenSettingsLayer();
   const next = mutate(structuredClone(current));
   writeAtomic(path, next);

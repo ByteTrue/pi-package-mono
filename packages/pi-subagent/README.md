@@ -42,6 +42,26 @@ Run `/subagent` in the Pi TUI to interactively:
 - **Configure specific roles**: Customize `explore`, `plan`, `general-purpose`, or any custom role with dedicated model and thinking overrides.
 - **Run `/subagent list` or `/subagent show`**: View effective configurations and discovered agent templates.
 
+## Settings Files
+
+Subagent configuration lives in this package's own file, not in pi's `settings.json`:
+
+- Global: `<pkg-config root>/pi-subagent/settings.json`, where `<pkg-config root>` is `$PI_PKG_CFG_DIR` or `<agent dir>/pi-pkg-cfg` (`<agent dir>` is `$PI_CODING_AGENT_DIR` or `~/.pi/agent`).
+- Project: `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`, only written when you pick the project scope in `/subagent` and the project is trusted.
+
+The file holds the section directly:
+
+```json
+{
+  "defaultModel": "bytetrueapi/gemini-3.7-flash",
+  "agents": {
+    "reviewer": { "model": "bytetrueapi/qwen3.8-max", "thinking": "high" }
+  }
+}
+```
+
+Upgrading from 0.9.x: an existing `subagent` section in pi's `settings.json` (or the older `subagents.agentOverrides` shape) is copied whole into the new file the first time it is read or written, and pi's `settings.json` is left untouched so you can roll back. A legacy file that is still the live one is reported as `legacy (read-only fallback): <path>`. Project-level sections in `<project>/.pi/settings.json` are read but never rewritten; they keep applying until you delete them.
+
 ## Tool Reference
 
 ### `subagent`
@@ -150,9 +170,9 @@ The Agent-facing tool deliberately does not expose model or thinking overrides. 
 
 The model priority chain is:
 
-1. `subagent.agents[role].model` — per-role binding (settings)
+1. `agents[role].model` — per-role binding (settings file)
 2. An agent document — `.pi/agents/<name>.md`, `<agentDir>/agents/<name>.md`, or the packaged built-in
-3. `subagent.defaultModel` — explicit subagent default (settings)
+3. `defaultModel` — explicit subagent default (settings file)
 4. Parent session's current fully qualified provider/model (inherited)
 5. The child `pi` process's own default
 

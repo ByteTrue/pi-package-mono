@@ -2,7 +2,7 @@
 
 ## 定位
 
-`@bytetrue/pi-vendor` 是 **AI-first** 的 Pi provider/model 配置包，维护 `$PI_CODING_AGENT_DIR/models.json`（默认 `~/.pi/agent/models.json`）。
+`@bytetrue/pi-vendor` 是 **AI-first** 的 Pi provider/model 配置包，维护 `$PI_CODING_AGENT_DIR/models.json`（默认 `~/.pi/agent/models.json`）。该文件有意留在 agent dir 根、不迁入各包私有的 `<agent dir>/pi-pkg-cfg/`：Pi 本体启动时按固定路径读它。
 
 日常 CRUD、审计与修复由随包分发的 `skills/pi-vendor/SKILL.md` 驱动，AI 使用普通 read/edit 工具做窄修改，并按需执行 bundled `scripts/vendor.mjs`。包不注册 AI tool，只提供 Skill 脚本与一个零模型也能进入的冷启动 TUI。Web 管理器、SecretRef/mask 协议、浏览器资产与 Web lifecycle 已删除。
 

@@ -40,17 +40,21 @@ import { tmpdir } from "node:os";
 // agent dir so a developer's live config can never leak into assertions —
 // without this, a test that reads the global layer passes or fails by machine.
 const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
+const ORIGINAL_PKG_CFG_DIR = process.env.PI_PKG_CFG_DIR;
 let hermeticAgentDir: string;
 
 beforeEach(() => {
   hermeticAgentDir = join(tmpdir(), `pi-subagent-global-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(hermeticAgentDir, { recursive: true });
   process.env.PI_CODING_AGENT_DIR = hermeticAgentDir;
+  delete process.env.PI_PKG_CFG_DIR;
 });
 
 afterEach(() => {
   if (ORIGINAL_AGENT_DIR === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = ORIGINAL_AGENT_DIR;
+  if (ORIGINAL_PKG_CFG_DIR === undefined) delete process.env.PI_PKG_CFG_DIR;
+  else process.env.PI_PKG_CFG_DIR = ORIGINAL_PKG_CFG_DIR;
   rmSync(hermeticAgentDir, { recursive: true, force: true });
 });
 

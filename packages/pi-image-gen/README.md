@@ -64,7 +64,9 @@ Custom providers select one of these wire protocols and supply their own endpoin
 
 ## Configuration
 
-`/image-gen` writes a dedicated package config file — `<config dir>/pi-image-gen/settings.json` (by default `~/.pi/agent/pi-image-gen/settings.json`); it never touches Pi's `settings.json`.
+`/image-gen` writes a dedicated package config file — `<pkg-config root>/pi-image-gen/settings.json`, where the root is `$PI_PKG_CFG_DIR` or `<agent dir>/pi-pkg-cfg` and `<agent dir>` is `$PI_CODING_AGENT_DIR` (`~/.pi/agent` by default). It never touches Pi's `settings.json`.
+
+Upgrading from 0.5.x: the older `<agent dir>/pi-image-gen/settings.json` is copied into the new root the first time the package reads it, and the original stays in place so downgrading still works. `PI_AGENT_HOME` now only locates that older file.
 
 Credential choices include:
 
@@ -75,7 +77,7 @@ Credential choices include:
 
 Writes use an atomic `0600` path and refuse to overwrite malformed settings. Selecting **No API key** writes `apiKey: ""`, blocking lower-layer and standard-environment credentials. Selecting **No extra headers** writes `headers: {}`, blocking inherited headers.
 
-A file written by an earlier version is migrated once, on the next read. The original is kept as `settings.json.v1.bak` before the rewrite, and the rewrite never blocks generation — if it cannot be persisted, settings still load for that run. Two cases are deliberately not guessed: a custom provider named exactly like a built-in one leaves the file untouched until you rename it, and a default model that the old resolver could not route is dropped, so pick it again with `/image-gen`.
+A file written in the v1 layout is migrated once, on the next read. The original is kept as `settings.json.v1.bak` beside the new file before the rewrite, and the rewrite never blocks generation — if it cannot be persisted, settings still load for that run. Two cases are deliberately not guessed: a custom provider named exactly like a built-in one leaves the file untouched until you rename it, and a default model that the old resolver could not route is dropped, so pick it again with `/image-gen`.
 
 Relative output directories resolve from the Pi session working directory. The default is `.pi/images`.
 
@@ -125,7 +127,7 @@ The bundled Skill sends one JSON object to `skills/pi-image-gen/scripts/image-ge
 `prompt` is required. `image`, `n` (1–8), `size`, `filename`, and `outputDir` are optional. Image inputs may be local paths or HTTP(S) URLs. The CLI never prints configured credentials.
 
 > [!NOTE]
-> The CLI resolves `PI_CODING_AGENT_DIR` / `PI_AGENT_HOME` the same way Pi does, so a redirected Pi config dir carries the image-gen config with it.
+> The CLI resolves `PI_PKG_CFG_DIR` / `PI_CODING_AGENT_DIR` the same way the extension does, so a redirected Pi config dir carries the image-gen config with it.
 
 ## Development
 

@@ -1,12 +1,14 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveDefaultRoute } from '../config.js';
 import {
+  describeImageGenSettingsPath,
   imageGenSettingsPath,
   loadImageGenSettings,
   readImageGenSettingsLayer,
+  settingsLocation,
   updateImageGenSettings,
 } from '../settings.js';
 
@@ -14,6 +16,7 @@ const ENV_KEYS = ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'DASHSCOPE_API_KEY', 'ARK_
 
 const originalHome = process.env.HOME;
 const originalDir = process.env.PI_CODING_AGENT_DIR;
+const originalPkgDir = process.env.PI_PKG_CFG_DIR;
 const originalUserProfile = process.env.USERPROFILE;
 const originalEnvKeys = new Map(ENV_KEYS.map((name) => [name, process.env[name]]));
 
@@ -24,6 +27,8 @@ afterEach(() => {
   else process.env.HOME = originalHome;
   if (originalDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = originalDir;
+  if (originalPkgDir === undefined) delete process.env.PI_PKG_CFG_DIR;
+  else process.env.PI_PKG_CFG_DIR = originalPkgDir;
   for (const [name, value] of originalEnvKeys) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -35,25 +40,33 @@ function isolated(): string {
   process.env.USERPROFILE = join(root, 'home');
   process.env.HOME = join(root, 'home');
   process.env.PI_CODING_AGENT_DIR = join(root, 'agent');
+  delete process.env.PI_PKG_CFG_DIR;
   for (const name of ENV_KEYS) delete process.env[name];
   return root;
 }
 
-function settingsDir(): string {
+/** Where 0.5.x wrote the file; the layout a v1/v2 upgrade starts from. */
+function oldSettingsDir(): string {
   const dir = join(process.env.PI_CODING_AGENT_DIR!, 'pi-image-gen');
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-function writeSettingsFile(text: string): string {
-  const dir = settingsDir();
-  const path = join(dir, 'settings.json');
+function writeLegacy(document: unknown): string {
+  const text = `${JSON.stringify(document, null, 2)}\n`;
+  writeFileSync(join(oldSettingsDir(), 'settings.json'), text);
+  return text;
+}
+
+function writeCurrent(text: string): string {
+  const path = currentSettingsPath();
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text);
   return text;
 }
 
-function writeLegacy(document: unknown): string {
-  return writeSettingsFile(`${JSON.stringify(document, null, 2)}\n`);
+function currentSettingsPath(): string {
+  return join(process.env.PI_CODING_AGENT_DIR!, 'pi-pkg-cfg', 'pi-image-gen', 'settings.json');
 }
 
 describe('image generation settings', () => {
@@ -61,7 +74,9 @@ describe('image generation settings', () => {
     isolated();
     updateImageGenSettings(() => ({ default: { provider: 'openai', model: 'gpt-image-2' } }));
     const path = imageGenSettingsPath();
-    expect(path).toBe(join(process.env.PI_CODING_AGENT_DIR!, 'pi-image-gen', 'settings.json'));
+    expect(path).toBe(
+      join(process.env.PI_CODING_AGENT_DIR!, 'pi-pkg-cfg', 'pi-image-gen', 'settings.json'),
+    );
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
       version: 2,
       default: { provider: 'openai', model: 'gpt-image-2' },
@@ -87,6 +102,48 @@ describe('image generation settings', () => {
     expect(next.default).toEqual({ provider: 'openai', model: 'gpt-image-2' });
     expect(next.outputDir).toBe('.pi/art');
     if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('moves a v2 file into the pkg-config root and leaves the original in place', () => {
+    isolated();
+    const original = writeLegacy({ version: 2, default: { provider: 'openai', model: 'gpt-image-2' } });
+
+    expect(settingsLocation()).toEqual({ path: currentSettingsPath(), legacy: false });
+    expect(readFileSync(currentSettingsPath(), 'utf8')).toBe(original);
+    expect(readFileSync(join(oldSettingsDir(), 'settings.json'), 'utf8')).toBe(original);
+  });
+
+  it('ignores the older file once the new one exists', () => {
+    isolated();
+    writeLegacy({ version: 2, default: { provider: 'openai', model: 'old' } });
+    writeCurrent(`${JSON.stringify({ version: 2, default: { provider: 'openai', model: 'new' } })}\n`);
+
+    expect(loadImageGenSettings().default).toEqual({ provider: 'openai', model: 'new' });
+  });
+
+  it('falls back to the older location when it cannot be copied forward', () => {
+    isolated();
+    const original = writeLegacy({ version: 2, default: { provider: 'openai', model: 'gpt-image-2' } });
+    mkdirSync(currentSettingsPath(), { recursive: true });
+
+    expect(settingsLocation()).toEqual({ path: join(oldSettingsDir(), 'settings.json'), legacy: true });
+    expect(describeImageGenSettingsPath()).toMatch(/\(legacy \(read-only fallback\)\)$/);
+    expect(loadImageGenSettings().default).toEqual({ provider: 'openai', model: 'gpt-image-2' });
+    expect(readFileSync(join(oldSettingsDir(), 'settings.json'), 'utf8')).toBe(original);
+  });
+
+  it('honors PI_PKG_CFG_DIR for the new root and PI_AGENT_HOME only for the older file', () => {
+    const root = isolated();
+    delete process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_PKG_CFG_DIR = join(root, 'shared');
+    process.env.PI_AGENT_HOME = join(root, 'home-agent');
+    const legacyPath = join(root, 'home-agent', 'pi-image-gen', 'settings.json');
+    mkdirSync(dirname(legacyPath), { recursive: true });
+    writeFileSync(legacyPath, `${JSON.stringify({ version: 2, default: { provider: 'openai', model: 'old' } })}\n`);
+
+    expect(imageGenSettingsPath()).toBe(join(root, 'shared', 'pi-image-gen', 'settings.json'));
+    expect(loadImageGenSettings().default).toEqual({ provider: 'openai', model: 'old' });
+    expect(readFileSync(join(root, 'shared', 'pi-image-gen', 'settings.json'), 'utf8')).toContain('"old"');
   });
 
   it('uses a tombstone to suppress the built-in env fallback', () => {
@@ -117,11 +174,20 @@ describe('image generation settings', () => {
 
   it('refuses to overwrite malformed settings', () => {
     isolated();
-    writeSettingsFile('{ broken');
+    writeCurrent('{ broken');
     expect(() => updateImageGenSettings(() => ({ default: { provider: 'x', model: 'y' } }))).toThrow(
       /refusing to overwrite/i,
     );
     expect(readFileSync(imageGenSettingsPath(), 'utf8')).toBe('{ broken');
+  });
+
+  it('reports a broken older file in place instead of copying it forward', () => {
+    isolated();
+    writeLegacy({ version: 2, providers: { corp: null } });
+    writeFileSync(join(oldSettingsDir(), 'settings.json'), '{ broken');
+    expect(() => readImageGenSettingsLayer()).toThrow(/not valid settings JSON/i);
+    expect(readFileSync(join(oldSettingsDir(), 'settings.json'), 'utf8')).toBe('{ broken');
+    expect(existsSync(currentSettingsPath())).toBe(false);
   });
 
   it('refuses to rewrite a file written by a newer version', () => {
@@ -152,11 +218,14 @@ describe('migration from the v1 layout', () => {
     });
     const path = imageGenSettingsPath();
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(settings);
-    expect(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, 'pi-image-gen', 'settings.json.v1.bak'), 'utf8')).toBe(original);
+    const backup = join(process.env.PI_CODING_AGENT_DIR!, 'pi-pkg-cfg', 'pi-image-gen', 'settings.json.v1.bak');
+    expect(readFileSync(backup, 'utf8')).toBe(original);
+    // The older location is left alone, so downgrading still finds its file.
+    expect(readFileSync(join(oldSettingsDir(), 'settings.json'), 'utf8')).toBe(original);
 
     // The second read is a plain v2 read; the backup still holds the v1 text.
     expect(loadImageGenSettings()).toEqual(settings);
-    expect(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, 'pi-image-gen', 'settings.json.v1.bak'), 'utf8')).toBe(original);
+    expect(readFileSync(backup, 'utf8')).toBe(original);
   });
 
   it('merges both v1 containers into one, keeping custom protocols', () => {
@@ -248,14 +317,16 @@ describe('migration from the v1 layout', () => {
     expect(loadImageGenSettings()).toEqual({});
     expect(() => readImageGenSettingsLayer()).toThrow(/invalid shape/i);
     expect(readFileSync(imageGenSettingsPath(), 'utf8')).toBe(original);
-    expect(existsSync(join(process.env.PI_CODING_AGENT_DIR!, 'pi-image-gen', 'settings.json.v1.bak'))).toBe(false);
+    expect(existsSync(join(process.env.PI_CODING_AGENT_DIR!, 'pi-pkg-cfg', 'pi-image-gen', 'settings.json.v1.bak'))).toBe(false);
   });
 
   it('migrates in memory even when the file cannot be rewritten', () => {
     isolated();
     // A directory in the backup slot makes persistence fail the same way on
     // every platform, unlike chmod, which Windows treats as advisory.
-    mkdirSync(join(settingsDir(), 'settings.json.v1.bak'));
+    mkdirSync(join(process.env.PI_CODING_AGENT_DIR!, 'pi-pkg-cfg', 'pi-image-gen', 'settings.json.v1.bak'), {
+      recursive: true,
+    });
     writeLegacy({ defaultModel: 'gpt-image-2', providers: { openai: { apiKey: 'k' } } });
     expect(loadImageGenSettings().default).toEqual({ provider: 'openai', model: 'gpt-image-2' });
     expect(readFileSync(imageGenSettingsPath(), 'utf8')).toContain('defaultModel');

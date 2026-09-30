@@ -22,7 +22,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm 
 - **按当前模型能力门控**：`session_start` 与 `model_select` 根据 `ctx.model.input` 同步 `image_ask` active tool；视觉模型移除它，非视觉模型恢复它，执行路径另有 guard 防止旧 prompt 或竞态调用。
 - **`tool_result` hook**：agent 撞上 `read` 那句"看不到图"的提示时，追加一句"改用 image_ask"的引导，不改原文、不碰 image part。当前模型本身支持图片时不介入（该提示压根不会出现）。
 - **附件自动预分析**：`/vision auto on` 明确开启后，text-only 主模型收到 `before_agent_start.images` 时，在首轮主模型调用前把整批附件和当前请求交给所选视觉模型；最多 4 张、解码后总计 20 MiB、固定 60 秒 deadline。成功与失败都注入隐藏上下文，失败明确禁止主模型假装看过图。视觉主模型不触发；未信任 project 配置不能开启外发。
-- **`/vision`**：列出 `models.json` 里 `input` 含 `image` 的模型，`ctx.ui.select` 选一个，或用 `auto on|off` 切换自动附件分析；原子写入 `pi-vision` 配置，保留其它字段与文件权限；写完重读一次生效值，被 project 级 settings 覆盖时警告而不是无声失败。
+- **`/vision`**：列出 `models.json` 里 `input` 含 `image` 的模型，`ctx.ui.select` 选一个，或用 `auto on|off` 切换自动附件分析；原子写入本包自己的 settings 文件，保留其它字段与文件权限；写完重读一次生效值，被 project 级配置覆盖时警告而不是无声失败。
 
 ## 它不负责什么
 
@@ -34,15 +34,17 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm 
 ## 统一语言
 
 - **vision-capable model**：`models.json` 里 `input` 数组包含 `"image"` 的模型；`pi --list-models` 的 `images` 列显示 `yes`。
-- **配置项 `pi-vision.model`**：`settings.json` 里 `"provider/model-id"` 形式的字符串，决定 `image_ask` 与自动预分析调用哪个视觉模型。
-- **配置项 `pi-vision.autoAnalyzeAttachments`**：布尔值；默认 `false`，只有显式开启才会把附件和当前请求发送给另一个 provider。project 层仅在 Pi 标记为 trusted 时参与覆盖，无效高优先级配置 fail closed。
+- **配置项 `model`**：本包 settings 文件里 `"provider/model-id"` 形式的字符串，决定 `image_ask` 与自动预分析调用哪个视觉模型。
+- **配置项 `autoAnalyzeAttachments`**：布尔值；默认 `false`，只有显式开启才会把附件和当前请求发送给另一个 provider。project 层仅在 Pi 标记为 trusted 时参与覆盖，无效高优先级配置 fail closed。
+- **pkg-config 根**：`$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`；本包全局配置在 `<根>/pi-vision/settings.json`，项目层在 `<project>/.pi/pi-pkg-cfg/pi-vision/settings.json`（只读，永不写用户仓库）。
+- **legacy（只读回退）**：老位置的 Pi `settings.json` 的 `pi-vision` 节与老项目文件 `<project>/.pi/settings.json`；新文件一存在即不再参与读取，老文件不被删改。
 
 ## 使用路径
 
 | 想完成的事 | 入口 |
 |---|---|
 | 选/换委托用的视觉模型 | `/vision` |
-| 手动配置，不走菜单 | `settings.json` 的 `{ "pi-vision": { "model": "provider/model-id" } }` |
+| 手动配置，不走菜单 | `<pkg-config 根>/pi-vision/settings.json` 的 `{ "model": "provider/model-id" }`（节本体，无外层键） |
 | 让 text-only 主模型自动获得本轮附件分析 | `/vision auto on`；关闭用 `/vision auto off` |
 | 问一张或几张本地图片 | agent 自己调 `image_ask(paths, question)`，不需要用户显式要求 |
 | 当前模型本身能看图 | `image_ask` 不出现在 active tools；`read` 与本包均不介入 |
@@ -51,7 +53,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm 
 ## 架构考量
 
 - **不做自己的 TUI 组件**：`/vision` 用 Pi 官方的 `ctx.ui.select`，不像 `pi-vendor` 那样自研分页 `SelectList`；当前候选数量下够用，真撞到模型多到撑爆屏幕再升级。
-- **配置写入不经 Pi 的 `SettingsManager`**：`Settings` 是封闭 interface 塞不下扩展字段，带 lockfile 的 `FileSettingsStorage` 也未从主入口导出；本包自己做 tmp+rename 原子写，保留原文件的字段与权限，JSON 损坏时拒绝覆盖。无锁的极小并发窗口（用户敲 `/vision` 与 Pi 自身同时写 settings）已知且接受，真观察到冲突再补锁。
+- **配置写入不经 Pi 的 `SettingsManager`**：`Settings` 是封闭 interface 塞不下扩展字段，带 lockfile 的 `FileSettingsStorage` 也未从主入口导出；本包自己做 tmp+rename 原子写，保留原文件的字段与权限，JSON 损坏时拒绝覆盖。写自家文件后不再与 Pi 自身写 settings 争同一文件，原「无锁并发窗口」随之消失。
 - **错误一律 `throw new Error`，不用 `AgentToolResult.isError`/`usage`**：这两个字段在 Pi 0.79.10（本 monorepo 声明的 peerDependency 下界）不存在，0.83 才有；沿用 `throw` 与 `pi-background-terminal` 的既有做法一致，且跨声明的版本范围可用。
 - **`sniffMime` 从 `pi-image-gen` 复制而非共享依赖**：遵守"四包互不依赖"的既有架构约定；复制时删掉本包用不到的 URL 下载、data-uri 解析。
 
@@ -60,7 +62,7 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm 
 **做**
 - `image_ask` 多图问答，三闸门错误优先于网络调用
 - `read` 撞墙时的一次性文字引导
-- `/vision` 零学习成本配置，安全写 settings.json；`auto on|off` 显式控制附件外发
+- `/vision` 零学习成本配置，安全写本包 settings 文件；`auto on|off` 显式控制附件外发
 - text-only 主模型的 opt-in 批量附件预分析，含数量/总字节/deadline/trust 边界
 - 按当前模型图片能力动态启停 `image_ask`，视觉模型不暴露代理工具
 

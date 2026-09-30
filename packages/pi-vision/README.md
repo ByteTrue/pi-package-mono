@@ -74,18 +74,18 @@ Trusted project settings may override the global configuration. An untrusted pro
 
 ## Settings
 
-`/vision` writes only the `pi-vision` section and preserves every other Pi setting:
+`/vision` keeps its own file and preserves every other key in it:
 
 ```json
 {
-  "pi-vision": {
-    "model": "provider/vision-model",
-    "autoAnalyzeAttachments": false
-  }
+  "model": "provider/vision-model",
+  "autoAnalyzeAttachments": false
 }
 ```
 
-The global file is normally `~/.pi/agent/settings.json`. A trusted project may override it with `<project>/.pi/settings.json`.
+The global file is `<pkg-config root>/pi-vision/settings.json`, where the root is `$PI_PKG_CFG_DIR` or `<agent dir>/pi-pkg-cfg` and `<agent dir>` is `$PI_CODING_AGENT_DIR` (`~/.pi/agent` by default). It never touches Pi's `settings.json`. A trusted project may override it with `<project>/.pi/pi-pkg-cfg/pi-vision/settings.json`; that project file is read-only, so nothing is ever written into your repository.
+
+Upgrading from 0.2.x: the `pi-vision` section of Pi's `settings.json` is lifted into the new file — whole section, in one write — the first time the package reads or writes it. Pi's file is left untouched so downgrading still works. A project `pi-vision` section in `<project>/.pi/settings.json` keeps working until you move or delete it, which is deliberate: a project override should outrank the global one. When a value comes from an old path, `/vision` and status output say `legacy (read-only fallback)` next to it.
 
 When the current main model already accepts images, `image_ask` is removed from active tools and the extension stays out of Pi's normal image path.
 

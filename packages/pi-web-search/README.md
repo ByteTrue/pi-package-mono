@@ -59,7 +59,9 @@ The TUI can select an active provider, configure an ordered fallback chain, ente
 | Jina | `JINA_API_KEY` | Search API |
 | Firecrawl | `FIRECRAWL_API_KEY` | Search API |
 
-Provider API-key and base-URL environment variables override stored provider values; a configured proxy overrides proxy environment variables. Configuration lives at `~/.pi/byte-pi-web/config.json`; set `PI_CONFIG_DIR` to move the base directory. Writes are atomic with mode `0600`, and malformed JSON is never overwritten.
+Provider API-key and base-URL environment variables override stored provider values; a configured proxy overrides proxy environment variables. Configuration lives at `<agent dir>/pi-pkg-cfg/pi-web-search/config.json`, where `<agent dir>` is `$PI_CODING_AGENT_DIR` or `~/.pi/agent`; set `PI_PKG_CFG_DIR` to put the whole root somewhere else. Writes are atomic with mode `0600`, and malformed JSON is never overwritten.
+
+Upgrading from pi-web-search 0.4.x: the older `~/.pi/byte-pi-web/config.json` is copied into the new location the first time the package reads it, and the original is left untouched so downgrading still works. `PI_CONFIG_DIR` now only locates that older file; it no longer moves the live one.
 
 ## Proxy behavior
 

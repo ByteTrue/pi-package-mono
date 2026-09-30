@@ -1,8 +1,17 @@
 /**
- * Self-contained config for ~/.pi/byte-pi-web/config.json.
+ * Self-contained config for <agent dir>/pi-pkg-cfg/pi-web-search/config.json.
+ *
+ * Where that is: \`$PI_PKG_CFG_DIR\` if set, else \`<agent dir>/pi-pkg-cfg\` where
+ * \`<agent dir>\` = \`$PI_CODING_AGENT_DIR\` or \`~/.pi/agent\`.
+ *
+ * The location used to be \`($PI_CONFIG_DIR or ~/.pi)/byte-pi-web/config.json\`. That
+ * older file is still read — and the whole of it is copied into the new location
+ * the first time we look — but it is never written, never deleted, and never
+ * moved, so downgrading to an older pi-web-search still finds its config. Once
+ * the new file exists the older one stops mattering entirely.
  *
  * Zero external deps. Fail-soft: malformed JSON or a schema violation degrades
- * to `{}` so a broken config never crashes startup — the default Exa MCP free
+ * to \`{}\` so a broken config never crashes startup — the default Exa MCP free
  * provider keeps working with no config at all.
  *
  * Key resolution per provider (first wins):
@@ -15,7 +24,7 @@
  *   3. provider's defaultBaseUrl from registry
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Static, Type } from "typebox";
@@ -41,16 +50,81 @@ export type WebConfigReadResult =
 	| { status: "missing" | "valid"; config: WebConfig }
 	| { status: "invalid"; error: string };
 
-function configDir(): string {
-	// Live under pi's own config dir (~/.pi), overridable via PI_CONFIG_DIR.
-	const base = process.env.PI_CONFIG_DIR?.trim() || join(homedir(), ".pi");
-	return join(base, "byte-pi-web");
+const PKG_CONFIG_DIRNAME = "pi-pkg-cfg";
+const PKG_DIRNAME = "pi-web-search";
+const PKG_FILENAME = "config.json";
+const LEGACY_DIRNAME = "byte-pi-web";
+
+function agentDir(): string {
+	return process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
 }
 
-const CONFIG_PATH = join(configDir(), "config.json");
+function pkgConfigRoot(): string {
+	return process.env.PI_PKG_CFG_DIR?.trim() || join(agentDir(), PKG_CONFIG_DIRNAME);
+}
+
+function newConfigPath(): string {
+	return join(pkgConfigRoot(), PKG_DIRNAME, PKG_FILENAME);
+}
+
+// PI_CONFIG_DIR only locates the pre-migration file now; it no longer decides
+// where writes go.
+function legacyConfigPath(): string {
+	const base = process.env.PI_CONFIG_DIR?.trim() || join(homedir(), ".pi");
+	return join(base, LEGACY_DIRNAME, PKG_FILENAME);
+}
+
+function isFile(path: string): boolean {
+	try {
+		return statSync(path).isFile();
+	} catch {
+		return false;
+	}
+}
+
+export type WebConfigLocation = { path: string; legacy: boolean };
+
+/**
+ * Where this run reads from. The first look after an upgrade copies the whole
+ * older file into the new location (one atomic write, same bytes); if that copy
+ * fails the older path stays in charge, flagged legacy so callers can say so.
+ */
+export function configLocation(): WebConfigLocation {
+	const target = newConfigPath();
+	if (isFile(target)) return { path: target, legacy: false };
+	const legacy = legacyConfigPath();
+	if (!isFile(legacy)) return { path: target, legacy: false };
+	try {
+		const body = readFileSync(legacy);
+		// Never carry a broken file forward — it is reported as invalid in place.
+		JSON.parse(body.toString("utf8"));
+		mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+		const tmp = `${target}.${process.pid}.tmp`;
+		writeFileSync(tmp, body, { mode: 0o600 });
+		renameSync(tmp, target);
+		return { path: target, legacy: false };
+	} catch {
+		return { path: legacy, legacy: true };
+	}
+}
 
 export function getConfigPath(): string {
-	return CONFIG_PATH;
+	return configLocation().path;
+}
+
+export function isLegacyConfigPath(): boolean {
+	return configLocation().legacy;
+}
+
+// For status lines: says out loud when the older file is still the live one.
+export function describeConfigPath(): string {
+	const { path, legacy } = configLocation();
+	return legacy ? `${path} (legacy (read-only fallback))` : path;
+}
+
+// Writes never touch the legacy path, so save failures must name this one.
+export function getWritableConfigPath(): string {
+	return newConfigPath();
 }
 
 function errorMessage(error: unknown): string {
@@ -58,22 +132,23 @@ function errorMessage(error: unknown): string {
 }
 
 export function readConfigResult(): WebConfigReadResult {
+	const { path } = configLocation();
 	let text: string;
 	try {
-		text = readFileSync(CONFIG_PATH, "utf8");
+		text = readFileSync(path, "utf8");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { status: "missing", config: {} as WebConfig };
-		return { status: "invalid", error: `Could not read ${CONFIG_PATH}: ${errorMessage(error)}` };
+		return { status: "invalid", error: `Could not read ${path}: ${errorMessage(error)}` };
 	}
 
 	let raw: unknown;
 	try {
 		raw = JSON.parse(text);
 	} catch {
-		return { status: "invalid", error: `Could not parse ${CONFIG_PATH}: invalid JSON` };
+		return { status: "invalid", error: `Could not parse ${path}: invalid JSON` };
 	}
 	if (!Value.Check(WebConfigSchema, raw)) {
-		return { status: "invalid", error: `${CONFIG_PATH} does not match the expected config schema` };
+		return { status: "invalid", error: `${path} does not match the expected config schema` };
 	}
 	return { status: "valid", config: raw as WebConfig };
 }
@@ -83,15 +158,17 @@ export function readConfig(): WebConfig {
 	return result.status === "invalid" ? ({} as WebConfig) : result.config;
 }
 
+// Always writes the new location: the legacy path is read-only by design.
 export function writeConfig(config: WebConfig): boolean {
+	const path = newConfigPath();
 	try {
-		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		const body = `${JSON.stringify(config, null, 2)}
 `;
-		const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
+		const tmp = `${path}.${process.pid}.tmp`;
 		// mode 0o600: may contain API keys. Atomic rename avoids half-written JSON.
 		writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
-		renameSync(tmp, CONFIG_PATH);
+		renameSync(tmp, path);
 		return true;
 	} catch {
 		return false;

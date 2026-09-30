@@ -2,7 +2,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
   loadSubagentSettings,
   updateSubagentSettings,
-  settingsPathForScope,
+  describeSettingsPathForScope,
   listDiscoveredAgentNames,
   type SettingsScope,
   type SubagentSettings,
@@ -33,8 +33,8 @@ function trunc(s: string, w: number): string {
 }
 
 async function chooseScope(ctx: ExtensionCommandContext): Promise<SettingsScope | undefined> {
-  const globalLabel = `Global — ${settingsPathForScope(ctx.cwd, "global")}`;
-  const projectLabel = `Project — ${settingsPathForScope(ctx.cwd, "project")}`;
+  const globalLabel = `Global — ${describeSettingsPathForScope(ctx.cwd, "global")}`;
+  const projectLabel = `Project — ${describeSettingsPathForScope(ctx.cwd, "project")}`;
   const options = [globalLabel];
   if (ctx.isProjectTrusted()) {
     options.push(projectLabel);
@@ -147,13 +147,14 @@ function showConfig(ctx: ExtensionCommandContext): void {
     "=== Subagent Configuration ===",
     `Default Model:    ${settings.defaultModel ?? "inherit parent session"}`,
     `Default Thinking: ${settings.defaultThinking ?? "inherit parent session"}`,
+    `Settings file:    ${describeSettingsPathForScope(ctx.cwd, "global")}`,
     "",
-    "Configured Roles (settings.json):",
+    "Configured Roles:",
   ];
 
   const configuredRoles = Object.entries(settings.agents ?? {});
   if (configuredRoles.length === 0) {
-    lines.push("  (no roles explicitly configured in settings.json)");
+    lines.push("  (no roles explicitly configured)");
   } else {
     for (const [name, cfg] of configuredRoles) {
       lines.push(

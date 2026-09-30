@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,9 +35,17 @@ function readJson(path: string): WebConfig {
 	}
 }
 
+// Mirrors where config.ts looks: the pkg-config root first, then the older path.
 function realConfigPath(): string {
-	const base = process.env.PI_CONFIG_DIR?.trim() || join(homedir(), ".pi");
-	return join(base, "byte-pi-web", "config.json");
+	const root = process.env.PI_PKG_CFG_DIR?.trim() || join(agentDir(), "pi-pkg-cfg");
+	const current = join(root, "pi-web-search", "config.json");
+	if (existsSync(current)) return current;
+	const legacyBase = process.env.PI_CONFIG_DIR?.trim() || join(homedir(), ".pi");
+	return join(legacyBase, "byte-pi-web", "config.json");
+}
+
+function agentDir(): string {
+	return process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
 }
 
 function requestedProviders(keyConfig: WebConfig): string[] {
@@ -68,19 +76,19 @@ function providerSkipReason(name: string, keyConfig: WebConfig): string | undefi
 }
 
 liveDescribe("live pi web_search provider e2e", () => {
-	let tmpPiConfigDir = "";
+	let tmpPkgConfigDir = "";
 	let configPath = "";
-	let originalPiConfigDir: string | undefined;
+	let originalPkgConfigDir: string | undefined;
 	let tool: any;
 	const realConfig = readJson(realConfigPath());
 	const keyConfig = readJson(KEY_FILE);
 	const providers = requestedProviders(keyConfig);
 
 	beforeAll(async () => {
-		originalPiConfigDir = process.env.PI_CONFIG_DIR;
-		tmpPiConfigDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
-		process.env.PI_CONFIG_DIR = tmpPiConfigDir;
-		configPath = join(tmpPiConfigDir, "byte-pi-web", "config.json");
+		originalPkgConfigDir = process.env.PI_PKG_CFG_DIR;
+		tmpPkgConfigDir = mkdtempSync(join(tmpdir(), "pi-web-e2e-"));
+		process.env.PI_PKG_CFG_DIR = tmpPkgConfigDir;
+		configPath = join(tmpPkgConfigDir, "pi-web-search", "config.json");
 		mkdirSync(dirname(configPath), { recursive: true });
 		writeFileSync(configPath, JSON.stringify(providerConfig(providers[0] ?? "exa-free", keyConfig, realConfig), null, 2), "utf8");
 
@@ -94,9 +102,9 @@ liveDescribe("live pi web_search provider e2e", () => {
 	}, 30_000);
 
 	afterAll(() => {
-		if (originalPiConfigDir === undefined) delete process.env.PI_CONFIG_DIR;
-		else process.env.PI_CONFIG_DIR = originalPiConfigDir;
-		if (tmpPiConfigDir) rmSync(tmpPiConfigDir, { recursive: true, force: true });
+		if (originalPkgConfigDir === undefined) delete process.env.PI_PKG_CFG_DIR;
+		else process.env.PI_PKG_CFG_DIR = originalPkgConfigDir;
+		if (tmpPkgConfigDir) rmSync(tmpPkgConfigDir, { recursive: true, force: true });
 	});
 
 	for (const provider of providers) {

@@ -15,7 +15,7 @@ package 不注册常驻 Agent tool，也不注册生命周期钩子。
 - `Manage providers` 列出所有可达 provider（有 settings row 的，或仅靠标准 env key 生效的 built-in，后者标 `(env)`），并给当前默认路由所属者标 `— default`；`Add provider…` 是唯一走完整向导（协议、base URL、credential、headers、模型、output directory）的入口。
 - 单个 provider 详情页做四件事：`Change/Set as default model…`（复用已存 route 探测模型列表，失败降级为已知/已声明模型或手输，确认后只写 `default`；已有非空 `models` 列表时 upsert 并保留 alias，否则不物化列表）、`Edit endpoint, credential, headers…`（逐项 keep-by-default，可改 custom provider 的协议，不碰路由）、`Manage model list…`（加模型 / 设或清 alias / 删条目，会在无清单时物化）、`Delete provider`（删除 row；若它持有 `default` 则一并清空；built-in 无 row 时只通知不写盘）。
 - 支持轻量安全的目标端点模型探测（Model Discovery，默认 5s 超时与 fail-soft 降级）：在配置好 Key 与 URL 后自动探测兼容 `/models` 端点的可用模型列表并优先高亮候选生图模型。
-- 配置写入专用文件 `<config dir>/pi-image-gen/settings.json`（随 `PI_CODING_AGENT_DIR` / `PI_AGENT_HOME` 重定向，默认 `~/.pi/agent/pi-image-gen/settings.json`），顶层即配置本体；不读写 Pi 的 `settings.json`。
+- 配置写入专用文件 `<pkg-config 根>/pi-image-gen/settings.json`（根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`，`<agent dir>` = `$PI_CODING_AGENT_DIR` 或 `~/.pi/agent`），顶层即配置本体；不读写 Pi 的 `settings.json`。
 - literal key 使用遮罩输入；也支持标准 env、任意 `$ENV_VAR` 和无 key 本地 route。
 - TUI 选择 `No API key` / `No extra headers` 时分别持久化 `apiKey: ""` / `headers: {}` tombstone，以显式阻断 lower layer 与标准 env fallback。
 - 已损坏或嵌套 shape 非法的 settings runtime fail-soft 为无配置；交互写入 fail-closed，绝不覆盖原文件。
@@ -26,7 +26,7 @@ package 不注册常驻 Agent tool，也不注册生命周期钩子。
 
 ## 配置边界
 
-读取与写入都只针对专用文件：`$PI_CODING_AGENT_DIR/pi-image-gen/settings.json`，否则 `$PI_AGENT_HOME/pi-image-gen/settings.json`，否则 `~/.pi/agent/pi-image-gen/settings.json`。
+写入只针对专用文件 `<pkg-config 根>/pi-image-gen/settings.json`（根 = `$PI_PKG_CFG_DIR`，否则 `<agent dir>/pi-pkg-cfg`）。读取同样优先新位置；新位置缺失而老位置仍有文件时才回退，`PI_CODING_AGENT_DIR` → `PI_AGENT_HOME` → `~/.pi/agent` 逐级定位老文件，读到即整份复制进新位置，原件不动。老位置仍生效时报 `legacy (read-only fallback)`。
 
 没有 project 层：配置永不落在项目目录里，因此不存在未受信仓库覆盖 endpoint 的注入面，也不需要向 Skill CLI 传递 Pi 的 project-trust 决策（已废弃的 `session_start` + env 传递机制随 project 层一起移除）。
 
@@ -34,7 +34,7 @@ package 不注册常驻 Agent tool，也不注册生命周期钩子。
 
 配置本体是 `version: 2`：单容器 `providers`（built-in 与 custom 同权——built-in 可省略 `api`，也可完全没有 row 而靠协议模板与标准 env 变量生效）+ 显式 `default: {provider, model}` + 可选 `outputDir`。`models` 只是已知模型与 alias 清单，供选择器与文件名使用，**不参与路由判定**。
 
-v1 文件在下一次读取时一次性迁移为 v2，原件先另存为同目录 `settings.json.v1.bak`；迁移对调用方不可见，持久化失败不致命（本次运行仍用内存结果）。三种情况明确不猜：custom 与 built-in 同名 ⇒ 不动文件；`version > 2` ⇒ 拒绝回写；旧 `defaultModel` 解析不出 route ⇒ 省略 `default`，等用户重选。
+v1 文件在下一次读取时一次性迁移为 v2，原件先另存为同目录 `settings.json.v1.bak`（老文件先整份搬进新位置，所以备份落在新位置旁边）；迁移对调用方不可见，持久化失败不致命（本次运行仍用内存结果）。三种情况明确不猜：custom 与 built-in 同名 ⇒ 不动文件；`version > 2` ⇒ 拒绝回写；旧 `defaultModel` 解析不出 route ⇒ 省略 `default`，等用户重选。
 
 ## CLI 契约
 
@@ -62,7 +62,7 @@ stdin：一个不超过 1 MiB 的 JSON object：
 - 不注册 `image_generate` 或其它 Agent tool，不注册生命周期钩子。
 - 不提供 CLI model override。
 - 不新增 wire protocol。
-- 不把配置写进 Pi 的 `settings.json`；不使用 env-only 或 CLI-only 配置。
+- 不把配置写进 Pi 的 `settings.json`；不使用 env-only 或 CLI-only 配置；`PI_AGENT_HOME` 只用于定位老文件，不再决定写入位置。
 - 不让 Skill/CLI 取代 TUI 配置面。
 
 ## 关键考量

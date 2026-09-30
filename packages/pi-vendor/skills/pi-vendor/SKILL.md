@@ -11,7 +11,7 @@ description: >
 
 # Pi Vendor
 
-Manage Pi's `models.json` with normal read/edit tools. The bundled script has exactly four AI-facing read-only queries:
+Manage Pi's `models.json` with normal read/edit tools. It lives at the agent dir root (`$PI_CODING_AGENT_DIR/models.json`, default `~/.pi/agent/models.json`) on purpose: Pi itself reads it at startup, so it is not part of the `pi-pkg-cfg` directory that holds the other `@bytetrue` packages' private config. The bundled script has exactly four AI-facing read-only queries:
 
 ```sh
 node '<absolute-skill-directory>/scripts/vendor.mjs' catalog '<keyword>' ['<limit>']

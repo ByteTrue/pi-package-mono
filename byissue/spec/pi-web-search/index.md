@@ -11,7 +11,7 @@
 - **`web_fetch`**：无论 search provider 是谁，raw 与 extracted 都只走 package 的 SSRF-safe generic transport。
 - **完整 TUI 配置**：安装后无需读 GitHub 或手写 JSON，即可在 `/web` 配 provider、key、base URL、proxy；`/web --show` 查看脱敏状态。
 - **代理凭据显示**：proxy URL 可含 userinfo 供 transport 使用，但 `/web --show`、provider menu、placeholder 与 notification 只显示脱敏 scheme/host/port。
-- **配置**：`~/.pi/byte-pi-web/config.json`（`PI_CONFIG_DIR` 可覆盖）；env key/base URL 优先于文件。
+- **配置**：`<pkg-config 根>/pi-web-search/config.json`，根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`（`<agent dir>` = `$PI_CODING_AGENT_DIR` 或 `~/.pi/agent`）；env key/base URL 优先于文件。老位置 `~/.pi/byte-pi-web/config.json`（`PI_CONFIG_DIR` 可覆盖）只读回退：首次读取时逐字节复制进新位置，原件不动。
 - **代理**：package-scoped transport，不调用 `setGlobalDispatcher`。
 - **安全与预算**：URL 禁止 embedded credentials；direct route 在 DNS、redirect、connect-time 守 SSRF 边界；显式 proxy 模式仍拒绝 private hostname/IP literal，但 proxy 是目标 DNS 的受信边界；search provider body 2 MiB，generic fetch decoded body 10 MiB；每次 provider attempt 15 秒；结果字段与总量有 UTF-8 预算；超限取消 stream。
 - **写入安全**：配置原子写 `0600`；损坏配置不被 `/web` 覆盖；旧 `autoFallback` / 单数 `provider` 字段自 0.4.0 起不再读取或迁移。

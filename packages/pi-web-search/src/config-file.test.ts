@@ -1,21 +1,35 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let root: string;
 
 function configPath(): string {
+	return join(root, "pi-pkg-cfg", "pi-web-search", "config.json");
+}
+
+function legacyPath(): string {
 	return join(root, "byte-pi-web", "config.json");
 }
 
+function writeAt(path: string, raw: string): void {
+	mkdirSync(join(path, ".."), { recursive: true });
+	writeFileSync(path, raw, "utf8");
+}
+
 function writeRawConfig(raw: string): void {
-	mkdirSync(join(root, "byte-pi-web"), { recursive: true });
-	writeFileSync(configPath(), raw, "utf8");
+	writeAt(configPath(), raw);
+}
+
+function writeLegacyConfig(raw: string): void {
+	writeAt(legacyPath(), raw);
 }
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "pi-web-config-"));
+	vi.stubEnv("PI_PKG_CFG_DIR", join(root, "pi-pkg-cfg"));
+	vi.stubEnv("PI_CODING_AGENT_DIR", join(root, "agent"));
 	vi.stubEnv("PI_CONFIG_DIR", root);
 	vi.resetModules();
 });
@@ -24,6 +38,69 @@ afterEach(() => {
 	vi.unstubAllEnvs();
 	vi.restoreAllMocks();
 	rmSync(root, { recursive: true, force: true });
+});
+
+describe("config location", () => {
+	it("reads and writes the pkg-config root, not the older path", async () => {
+		const { getConfigPath, getWritableConfigPath, writeConfig } = await import("./config.js");
+
+		expect(getConfigPath()).toBe(configPath());
+		expect(getWritableConfigPath()).toBe(configPath());
+		expect(writeConfig({ providers: ["bing"] })).toBe(true);
+		expect(JSON.parse(readFileSync(configPath(), "utf8"))).toEqual({ providers: ["bing"] });
+		expect(existsSync(legacyPath())).toBe(false);
+	});
+
+	it("falls back to the agent dir when PI_PKG_CFG_DIR is unset", async () => {
+		vi.stubEnv("PI_PKG_CFG_DIR", "");
+		vi.resetModules();
+		const { getConfigPath } = await import("./config.js");
+
+		expect(getConfigPath()).toBe(join(root, "agent", "pi-pkg-cfg", "pi-web-search", "config.json"));
+	});
+
+	it("uses the default agent dir when PI_CODING_AGENT_DIR is unset too", async () => {
+		vi.stubEnv("PI_PKG_CFG_DIR", "");
+		vi.stubEnv("PI_CODING_AGENT_DIR", "");
+		vi.resetModules();
+		const { getConfigPath } = await import("./config.js");
+
+		expect(getConfigPath()).toBe(join(homedir(), ".pi", "agent", "pi-pkg-cfg", "pi-web-search", "config.json"));
+	});
+
+	it("copies a legacy file over byte-for-byte and leaves the original in place", async () => {
+		const original = `${JSON.stringify({ providers: ["tavily"], apiKeys: { tavily: "legacy-key" }, futureField: true }, null, 2)}\n`;
+		writeLegacyConfig(original);
+		const { getConfigPath, isLegacyConfigPath, readConfigResult } = await import("./config.js");
+
+		expect(readConfigResult()).toEqual({
+			status: "valid",
+			config: { providers: ["tavily"], apiKeys: { tavily: "legacy-key" }, futureField: true },
+		});
+		expect(isLegacyConfigPath()).toBe(false);
+		expect(getConfigPath()).toBe(configPath());
+		expect(readFileSync(configPath(), "utf8")).toBe(original);
+		expect(readFileSync(legacyPath(), "utf8")).toBe(original);
+	});
+
+	it("ignores the legacy file once the new one exists", async () => {
+		writeLegacyConfig(JSON.stringify({ providers: ["tavily"] }));
+		writeRawConfig(JSON.stringify({ providers: ["bing"] }));
+		const { readConfigResult } = await import("./config.js");
+
+		expect(readConfigResult()).toEqual({ status: "valid", config: { providers: ["bing"] } });
+	});
+
+	it("reads a broken legacy file in place instead of copying it forward", async () => {
+		writeLegacyConfig('{"providers":["tavily"');
+		const { getConfigPath, isLegacyConfigPath, readConfig, readConfigResult } = await import("./config.js");
+
+		expect(readConfigResult()).toMatchObject({ status: "invalid" });
+		expect(readConfig()).toEqual({});
+		expect(isLegacyConfigPath()).toBe(true);
+		expect(getConfigPath()).toBe(legacyPath());
+		expect(existsSync(configPath())).toBe(false);
+	});
 });
 
 describe("readConfigResult", () => {
@@ -102,6 +179,23 @@ describe("/web provider selection", () => {
 		const visible = notify.mock.calls.flat().join(" ");
 		expect(visible).toContain("http://****:****@proxy.example:8080");
 		expect(visible).not.toMatch(/proxy-user|proxy-secret/);
+	});
+
+	it("names the legacy path when a copy cannot be written", async () => {
+		// A file where the new root should be: mkdir fails, so the older file
+		// stays in charge and must be reported as such.
+		writeAt(join(root, "pi-pkg-cfg"), "not a directory");
+		writeLegacyConfig(JSON.stringify({ providers: ["bing"] }));
+		const { registerWebCommand } = await import("./tools.js");
+		let command: { handler(args: string, ctx: unknown): Promise<void> } | undefined;
+		registerWebCommand({
+			registerCommand: (_name: string, definition: typeof command) => { command = definition; },
+		} as never);
+		const notify = vi.fn();
+		await command!.handler("--show", { hasUI: true, ui: { notify } });
+		const visible = notify.mock.calls.flat().join(" ");
+
+		expect(visible).toContain(`${legacyPath()} (legacy (read-only fallback))`);
 	});
 
 	it("masks proxy credentials in menu, placeholder, and save notification", async () => {

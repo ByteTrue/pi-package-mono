@@ -1,7 +1,5 @@
 import { fauxAssistantMessage, type ImageContent } from "@earendil-works/pi-ai";
 import type { BeforeAgentStartEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_ANALYZE_TIMEOUT_MS,
@@ -10,7 +8,13 @@ import {
   runAutoAnalyze,
 } from "./auto-analyze.js";
 import type { CompleteFn } from "./image-ask.js";
-import { makeCtx, makeModel, makeSettingsSandbox } from "./test-helpers.js";
+import {
+  legacyProjectSettingsFile,
+  makeCtx,
+  makeModel,
+  makeSettingsSandbox,
+  writeLegacySettings,
+} from "./test-helpers.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x02]);
@@ -99,13 +103,10 @@ describe("runAutoAnalyze", () => {
 
   it("ignores project-local opt-in when the project is not trusted", async () => {
     const { cwd } = makeSettingsSandbox();
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(
-      join(cwd, ".pi", "settings.json"),
-      JSON.stringify({
-        "pi-vision": { model: "vendor/qwen-plus", autoAnalyzeAttachments: true },
-      }),
-    );
+    writeLegacySettings(legacyProjectSettingsFile(cwd), {
+      model: "vendor/qwen-plus",
+      autoAnalyzeAttachments: true,
+    });
     const ctx = makeCtx({
       cwd,
       projectTrusted: false,

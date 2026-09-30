@@ -1,8 +1,19 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { makeCtx, makeModel, makeSettingsSandbox } from "./test-helpers.js";
 import {
+  globalSettingsFile,
+  legacyProjectSettingsFile,
+  legacySettingsFile,
+  makeCtx,
+  makeModel,
+  makeSettingsSandbox,
+  projectSettingsFile,
+  writeLegacySettings,
+  writeSettings,
+} from "./test-helpers.js";
+import {
+  describeGlobalSettingsPath,
   readAutoAnalyzeAttachments,
   readConfiguredModelRef,
   resolveVisionModel,
@@ -22,16 +33,37 @@ describe("vision settings readers", () => {
     expect(readConfiguredModelRef(cwd, true)).toBe("vendor/qwen-plus");
   });
 
+  it("reads an unmigrated section out of Pi's settings.json", () => {
+    const { agentDir, cwd } = makeSettingsSandbox({ model: "vendor/legacy" }, { legacy: true });
+
+    expect(readConfiguredModelRef(cwd, true)).toBe("vendor/legacy");
+    // Reading it lifted the section into the package's own file, one write, no clobber.
+    expect(JSON.parse(readFileSync(globalSettingsFile(agentDir), "utf8"))).toEqual({
+      model: "vendor/legacy",
+    });
+  });
+
   it("lets trusted project settings win over global", () => {
     const { cwd } = makeSettingsSandbox({ model: "vendor/global" });
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(
-      join(cwd, ".pi", "settings.json"),
-      JSON.stringify({ "pi-vision": { model: "vendor/project" } }),
-    );
+    writeLegacySettings(legacyProjectSettingsFile(cwd), { model: "vendor/project" });
 
     expect(readConfiguredModelRef(cwd, true)).toBe("vendor/project");
     expect(readConfiguredModelRef(cwd, false)).toBe("vendor/global");
+  });
+
+  it("reads the package's own project file without migrating it", () => {
+    const { cwd } = makeSettingsSandbox({ model: "vendor/global" });
+    writeSettings(projectSettingsFile(cwd), { model: "vendor/project" });
+
+    expect(readConfiguredModelRef(cwd, true)).toBe("vendor/project");
+    expect(readConfiguredModelRef(cwd, false)).toBe("vendor/global");
+  });
+
+  it("prefers a changed own global file over the legacy section", () => {
+    const { agentDir, cwd } = makeSettingsSandbox({ model: "vendor/legacy" }, { legacy: true });
+    writeSettings(globalSettingsFile(agentDir), { model: "vendor/own" });
+
+    expect(readConfiguredModelRef(cwd, true)).toBe("vendor/own");
   });
 
   it("returns undefined when nothing is configured", () => {
@@ -42,18 +74,14 @@ describe("vision settings readers", () => {
 
   it("survives malformed settings json instead of throwing", () => {
     const { agentDir, cwd } = makeSettingsSandbox();
-    writeFileSync(join(agentDir, "settings.json"), "{ not json");
+    writeFileSync(legacySettingsFile(agentDir), "{ not json");
 
     expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
   });
 
   it("layers the automatic-analysis opt-in through trusted project settings", () => {
     const { cwd } = makeSettingsSandbox({ autoAnalyzeAttachments: true });
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(
-      join(cwd, ".pi", "settings.json"),
-      JSON.stringify({ "pi-vision": { autoAnalyzeAttachments: false } }),
-    );
+    writeLegacySettings(legacyProjectSettingsFile(cwd), { autoAnalyzeAttachments: false });
 
     expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
     expect(readAutoAnalyzeAttachments(cwd, false)).toBe(true);
@@ -64,13 +92,10 @@ describe("vision settings readers", () => {
       model: "vendor/global",
       autoAnalyzeAttachments: true,
     });
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(
-      join(cwd, ".pi", "settings.json"),
-      JSON.stringify({
-        "pi-vision": { model: null, autoAnalyzeAttachments: "yes" },
-      }),
-    );
+    writeLegacySettings(legacyProjectSettingsFile(cwd), {
+      model: null,
+      autoAnalyzeAttachments: "yes",
+    });
 
     expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
     expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
@@ -84,7 +109,22 @@ describe("vision settings readers", () => {
         autoAnalyzeAttachments: true,
       });
       mkdirSync(join(cwd, ".pi"), { recursive: true });
-      writeFileSync(join(cwd, ".pi", "settings.json"), contents);
+      writeFileSync(legacyProjectSettingsFile(cwd), contents);
+
+      expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
+      expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
+    },
+  );
+
+  it.each(["{ not json", "[]", "42"])(
+    "fails closed when the package's own project file is invalid: %s",
+    (contents) => {
+      const { cwd } = makeSettingsSandbox({
+        model: "vendor/global",
+        autoAnalyzeAttachments: true,
+      });
+      mkdirSync(join(cwd, ".pi", "pi-pkg-cfg", "pi-vision"), { recursive: true });
+      writeFileSync(projectSettingsFile(cwd), contents);
 
       expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
       expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
@@ -100,6 +140,25 @@ describe("vision settings readers", () => {
 
     expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
     expect(readAutoAnalyzeAttachments(cwd, true)).toBe(false);
+  });
+
+  it("fails closed when an unreadable legacy global file exists", () => {
+    const { agentDir, cwd } = makeSettingsSandbox();
+    mkdirSync(legacySettingsFile(agentDir), { recursive: true });
+
+    expect(readConfiguredModelRef(cwd, true)).toBeUndefined();
+  });
+
+  it("falls back to the legacy section when the package's own root cannot be created", () => {
+    const { agentDir, cwd } = makeSettingsSandbox({ model: "vendor/legacy" }, { legacy: true });
+    // A plain file where the package's config directory should go: mkdirSync fails,
+    // so the migration write cannot land and the section stays live where it is.
+    writeFileSync(join(agentDir, "pi-pkg-cfg"), "");
+
+    expect(readConfiguredModelRef(cwd, true)).toBe("vendor/legacy");
+    expect(describeGlobalSettingsPath()).toBe(
+      `${legacySettingsFile(agentDir)} (legacy (read-only fallback))`,
+    );
   });
 });
 

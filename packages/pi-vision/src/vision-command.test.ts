@@ -1,8 +1,16 @@
 import { chmodSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { mkdirSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { makeCommandCtx, makeCtx, makeModel, makeSettingsSandbox } from "./test-helpers.js";
+import {
+  globalSettingsFile,
+  legacyProjectSettingsFile,
+  legacySettingsFile,
+  makeCommandCtx,
+  makeCtx,
+  makeModel,
+  makeSettingsSandbox,
+  writeLegacySettings,
+  writeSettings,
+} from "./test-helpers.js";
 import { runVisionCommand } from "./vision-command.js";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -14,8 +22,8 @@ afterEach(() => {
 
 const VISION = [makeModel("vendor", "qwen-plus"), makeModel("vendor", "gemini-flash")];
 
-function readSettings(agentDir: string): Record<string, any> {
-  return JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
+function readSettings(file: string): Record<string, any> {
+  return JSON.parse(readFileSync(file, "utf8"));
 }
 
 describe("runVisionCommand", () => {
@@ -28,7 +36,7 @@ describe("runVisionCommand", () => {
 
     expect(ui.selectOptions).toEqual(["vendor/qwen-plus", "vendor/gemini-flash"]);
     expect(ui.selectTitle).toContain("not set yet");
-    expect(readSettings(agentDir)["pi-vision"]).toEqual({ model: "vendor/gemini-flash" });
+    expect(readSettings(globalSettingsFile(agentDir))).toEqual({ model: "vendor/gemini-flash" });
     expect(ui.notifications.at(-1)).toMatchObject({ type: "info" });
     expect(ui.notifications.at(-1)!.message).toContain("vendor/gemini-flash");
   });
@@ -48,60 +56,57 @@ describe("runVisionCommand", () => {
 
     await runVisionCommand(ctx);
 
-    expect(readSettings(agentDir)["pi-vision"]).toEqual({ model: "vendor/qwen-plus" });
+    expect(readSettings(globalSettingsFile(agentDir))).toEqual({ model: "vendor/qwen-plus" });
   });
 
-  it("keeps every other setting and the file permissions", async () => {
+  it("leaves Pi's settings.json untouched and keeps the file permissions", async () => {
     const { agentDir, cwd } = makeSettingsSandbox();
-    const file = join(agentDir, "settings.json");
-    writeFileSync(
-      file,
-      JSON.stringify({ defaultModel: "claude-opus-5", packages: ["npm:pi-subagents"] }, null, 2),
-    );
-    chmodSync(file, 0o600);
+    const piFile = legacySettingsFile(agentDir);
+    const piContents = JSON.stringify({ defaultModel: "claude-opus-5", packages: ["npm:pi-subagents"] }, null, 2);
+    writeFileSync(piFile, piContents);
+    const own = globalSettingsFile(agentDir);
+    writeSettings(own, {});
+    chmodSync(own, 0o600);
     const { ctx } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[0]);
 
     await runVisionCommand(ctx);
 
-    const after = readSettings(agentDir);
-    expect(after.defaultModel).toBe("claude-opus-5");
-    expect(after.packages).toEqual(["npm:pi-subagents"]);
-    expect(after["pi-vision"]).toEqual({ model: "vendor/qwen-plus" });
-    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(readFileSync(piFile, "utf8")).toBe(piContents);
+    expect(readSettings(own)).toEqual({ model: "vendor/qwen-plus" });
+    if (process.platform !== "win32") expect(statSync(own).mode & 0o777).toBe(0o600);
   });
 
-  it("keeps unrelated keys inside its own section", async () => {
-    const { agentDir, cwd } = makeSettingsSandbox({ model: "vendor/old", somethingElse: 42 });
+  it("lifts an unmigrated section out of Pi's settings.json in one write", async () => {
+    const { agentDir, cwd } = makeSettingsSandbox({ model: "vendor/old", somethingElse: 42 }, { legacy: true });
+    const piFile = legacySettingsFile(agentDir);
+    const piContents = readFileSync(piFile, "utf8");
     const { ctx } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[1]);
 
     await runVisionCommand(ctx);
 
-    expect(readSettings(agentDir)["pi-vision"]).toEqual({
+    expect(readSettings(globalSettingsFile(agentDir))).toEqual({
       model: "vendor/gemini-flash",
       somethingElse: 42,
     });
+    expect(readFileSync(piFile, "utf8")).toBe(piContents);
   });
 
-  it("refuses to overwrite a settings file that is not valid JSON", async () => {
+  it("refuses to overwrite Pi's settings.json when it is not valid JSON", async () => {
     const { agentDir, cwd } = makeSettingsSandbox();
-    const file = join(agentDir, "settings.json");
-    writeFileSync(file, '{ "defaultModel": "claude" ,,, ');
+    const piFile = legacySettingsFile(agentDir);
+    writeFileSync(piFile, '{ "defaultModel": "claude" ,,, ');
     const { ctx, ui } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[0]);
 
     await runVisionCommand(ctx);
 
-    expect(readFileSync(file, "utf8")).toBe('{ "defaultModel": "claude" ,,, ');
+    expect(readFileSync(piFile, "utf8")).toBe('{ "defaultModel": "claude" ,,, ');
     expect(ui.notifications.at(-1)).toMatchObject({ type: "error" });
     expect(ui.notifications.at(-1)!.message).toContain("not valid JSON");
   });
 
   it("warns when a project settings file overrides what was just saved", async () => {
     const { cwd } = makeSettingsSandbox();
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(
-      join(cwd, ".pi", "settings.json"),
-      JSON.stringify({ "pi-vision": { model: "vendor/gemini-flash" } }),
-    );
+    writeLegacySettings(legacyProjectSettingsFile(cwd), { model: "vendor/gemini-flash" });
     const { ctx, ui } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[0]);
 
     await runVisionCommand(ctx);
@@ -121,7 +126,7 @@ describe("runVisionCommand", () => {
 
     expect(ui.selectOptions).toBeUndefined();
     expect(ui.notifications.at(-1)).toMatchObject({ type: "error" });
-    expect(() => readSettings(agentDir)).toThrow();
+    expect(() => readSettings(globalSettingsFile(agentDir))).toThrow();
   });
 
   it("enables automatic attached-image analysis only after a model is configured", async () => {
@@ -131,7 +136,7 @@ describe("runVisionCommand", () => {
     await runVisionCommand(ctx, "auto on");
 
     expect(ui.selectOptions).toBeUndefined();
-    expect(readSettings(agentDir)["pi-vision"]).toEqual({
+    expect(readSettings(globalSettingsFile(agentDir))).toEqual({
       model: "vendor/qwen-plus",
       autoAnalyzeAttachments: true,
     });
@@ -139,8 +144,23 @@ describe("runVisionCommand", () => {
 
     await runVisionCommand(ctx, "auto off");
 
-    expect(readSettings(agentDir)["pi-vision"].autoAnalyzeAttachments).toBe(false);
+    expect(readSettings(globalSettingsFile(agentDir)).autoAnalyzeAttachments).toBe(false);
     expect(ui.notifications.at(-1)?.message).toContain("disabled");
+  });
+
+  it("keeps the configured model when only toggling automatic analysis", async () => {
+    const { agentDir, cwd } = makeSettingsSandbox(
+      { model: "vendor/qwen-plus", autoAnalyzeAttachments: true },
+      { legacy: true },
+    );
+    const { ctx } = makeCommandCtx(makeCtx({ cwd, models: VISION }), (o) => o[0]);
+
+    await runVisionCommand(ctx, "auto off");
+
+    expect(readSettings(globalSettingsFile(agentDir))).toEqual({
+      model: "vendor/qwen-plus",
+      autoAnalyzeAttachments: false,
+    });
   });
 
   it("refuses to enable automatic analysis without a configured model", async () => {
@@ -149,7 +169,7 @@ describe("runVisionCommand", () => {
 
     await runVisionCommand(ctx, "auto on");
 
-    expect(() => readSettings(agentDir)).toThrow();
+    expect(() => readSettings(globalSettingsFile(agentDir))).toThrow();
     expect(ui.notifications.at(-1)).toMatchObject({ type: "error" });
     expect(ui.notifications.at(-1)?.message).toContain("No vision model configured");
   });

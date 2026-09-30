@@ -17,7 +17,7 @@ import {
 } from './models.js';
 import { promptSecret } from './secret-input.js';
 import {
-  imageGenSettingsPath,
+  describeImageGenSettingsPath,
   loadImageGenSettings,
   updateImageGenSettings,
 } from './settings.js';
@@ -442,7 +442,7 @@ async function addProvider(
     `Credential: ${credentialOf(connection, existing)}`,
     `Headers: ${headersOf(connection)}`,
     `Output: ${outputDir}`,
-    `Target: ${imageGenSettingsPath()}`,
+    `Target: ${describeImageGenSettingsPath()}`,
   ].join('\n');
   if (!(await ctx.ui.confirm(builtIn ? 'Save image model configuration?' : 'Save custom image model?', summary))) {
     return;
@@ -499,7 +499,7 @@ async function setDefaultModel(
     `Model: ${pick.modelId}`,
     `Base URL: ${route.baseUrl}`,
     `Credential: ${describeCredential(effective.providers?.[entry.id]?.apiKey)}`,
-    `Target: ${imageGenSettingsPath()}`,
+    `Target: ${describeImageGenSettingsPath()}`,
   ].join('\n');
   if (!(await ctx.ui.confirm('Change default image model?', summary))) return;
 
@@ -544,7 +544,7 @@ async function editProviderSettings(
     `Base URL: ${connection.baseUrl.kind === 'set' ? connection.baseUrl.value : route.baseUrl}`,
     `Credential: ${credentialOf(connection, existing)}`,
     `Headers: ${headersOf(connection)}`,
-    `Target: ${imageGenSettingsPath()}`,
+    `Target: ${describeImageGenSettingsPath()}`,
   ].join('\n');
   if (!(await ctx.ui.confirm('Save provider settings?', summary))) return;
 
@@ -589,7 +589,7 @@ async function commitModelList(
     detail,
     `Provider: ${entry.id}`,
     `Model list: ${models.map((model) => modelLabel(model.id, modelAliases(models, model.id))).join(', ') || '(none)'}`,
-    `Target: ${imageGenSettingsPath()}`,
+    `Target: ${describeImageGenSettingsPath()}`,
   ].join('\n');
   if (!(await ctx.ui.confirm(title, summary))) return;
   const path = updateImageGenSettings((current) => {
@@ -696,7 +696,7 @@ async function deleteProvider(
     isDefault
       ? 'Default route: cleared — generation stops until you pick another model.'
       : 'Default route: unchanged.',
-    `Target: ${imageGenSettingsPath()}`,
+    `Target: ${describeImageGenSettingsPath()}`,
   ].join('\n');
   if (!(await ctx.ui.confirm('Delete provider?', summary))) return;
 
@@ -755,7 +755,7 @@ function showConfiguration(ctx: ExtensionCommandContext): void {
   const lines = [
     `Default model: ${settings.default ? `${settings.default.provider}/${settings.default.model}` : 'not configured'}`,
     `Output directory: ${settings.outputDir ?? '.pi/images'}`,
-    `Config file: ${imageGenSettingsPath()}`,
+    `Config file: ${describeImageGenSettingsPath()}`,
   ];
   if ('error' in resolved) {
     if (settings.default) lines.push(`Route: ${resolved.error}`);
@@ -774,7 +774,7 @@ async function setOutputDirectory(
 ): Promise<void> {
   const outputDir = await promptOutputDir(ctx, effective.outputDir);
   if (!outputDir) return;
-  if (!(await ctx.ui.confirm('Save output directory?', `${outputDir}\n${imageGenSettingsPath()}`))) return;
+  if (!(await ctx.ui.confirm('Save output directory?', `${outputDir}\n${describeImageGenSettingsPath()}`))) return;
   const path = updateImageGenSettings((current) => ({ ...current, outputDir }));
   ctx.ui.notify(`Output directory saved in ${path}.`, 'info');
 }

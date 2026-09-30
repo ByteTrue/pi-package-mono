@@ -18,7 +18,7 @@ The package uses an on-demand Skill for routine work and keeps `/vendor` as a sm
 pi install npm:@bytetrue/pi-vendor
 ```
 
-Restart or reload Pi. Configuration lives at `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.json` by default.
+Restart or reload Pi. Configuration lives at `$PI_CODING_AGENT_DIR/models.json`, or `~/.pi/agent/models.json` by default. It deliberately stays at the agent dir root rather than moving into the `pi-pkg-cfg` subdirectory used by the other `@bytetrue` packages — Pi itself reads it at startup.
 
 ## Ask Pi
 

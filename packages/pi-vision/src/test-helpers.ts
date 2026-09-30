@@ -7,7 +7,41 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+
+const PKG = ["pi-pkg-cfg", "pi-vision", "settings.json"] as const;
+
+/** The package's own global config file: <agent dir>/pi-pkg-cfg/pi-vision/settings.json. */
+export function globalSettingsFile(agentDir: string): string {
+  return join(agentDir, ...PKG);
+}
+
+/** Pi's shared settings.json — where the pi-vision section used to live. */
+export function legacySettingsFile(agentDir: string): string {
+  return join(agentDir, "settings.json");
+}
+
+/** The package's own project config file: <cwd>/.pi/pi-pkg-cfg/pi-vision/settings.json. */
+export function projectSettingsFile(cwd: string): string {
+  return join(cwd, ".pi", ...PKG);
+}
+
+/** Pi's project settings.json — where a project pi-vision section used to live. */
+export function legacyProjectSettingsFile(cwd: string): string {
+  return join(cwd, ".pi", "settings.json");
+}
+
+/** Writes a legacy nested section into a Pi settings.json (global or project). */
+export function writeLegacySettings(file: string, section: Record<string, unknown>): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ "pi-vision": section }, null, 2));
+}
+
+/** Writes the package's own config file: the section is the document's root object. */
+export function writeSettings(file: string, section: Record<string, unknown>): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(section, null, 2));
+}
 
 export function makeModel(provider: string, id: string, vision = true): Model<Api> {
   return {
@@ -48,17 +82,29 @@ export function makeCtx(options: FakeCtxOptions = {}): ExtensionContext {
   } as unknown as ExtensionContext;
 }
 
-/** Isolated agent dir + cwd so tests never read or write the real ~/.pi. */
-export function makeSettingsSandbox(section?: Record<string, unknown>): { agentDir: string; cwd: string } {
+/**
+ * Isolated agent dir + cwd so tests never read or write the real ~/.pi. A section is
+ * written to the package's own file; pass `legacy` to plant it in Pi's settings.json
+ * instead, the way an unmigrated install looks.
+ */
+export function makeSettingsSandbox(
+  section?: Record<string, unknown>,
+  options: { legacy?: boolean } = {},
+): { agentDir: string; cwd: string } {
   const root = mkdtempSync(join(tmpdir(), "pi-vision-test-"));
   const agentDir = join(root, "agent");
   const cwd = join(root, "project");
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(cwd, { recursive: true });
   if (section) {
-    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ "pi-vision": section }));
+    if (options.legacy) {
+      writeLegacySettings(legacySettingsFile(agentDir), section);
+    } else {
+      writeSettings(globalSettingsFile(agentDir), section);
+    }
   }
   process.env.PI_CODING_AGENT_DIR = agentDir;
+  delete process.env.PI_PKG_CFG_DIR;
   return { agentDir, cwd };
 }
 

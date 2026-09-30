@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
   COMMAND_NAME,
+  describeProjectSettingsPath,
   listVisionModelRefs,
-  projectSettingsPath,
   readAutoAnalyzeAttachments,
   readConfiguredModelRef,
   resolveVisionModel,
@@ -40,7 +40,7 @@ export async function runVisionCommand(ctx: ExtensionCommandContext, args = ""):
 
     if (readAutoAnalyzeAttachments(ctx.cwd, projectTrusted) !== enabled) {
       ctx.ui.notify(
-        `Saved auto mode to ${path}, but ${projectSettingsPath(ctx.cwd)} still overrides it.`,
+        `Saved auto mode to ${path}, but ${describeProjectSettingsPath(ctx.cwd)} still overrides it.`,
         "warning",
       );
       return;
@@ -84,7 +84,7 @@ export async function runVisionCommand(ctx: ExtensionCommandContext, args = ""):
   const effective = readConfiguredModelRef(ctx.cwd, projectTrusted);
   if (effective !== picked) {
     ctx.ui.notify(
-      `Saved ${picked} to ${path}, but ${projectSettingsPath(ctx.cwd)} still overrides it with ${effective}.`,
+      `Saved ${picked} to ${path}, but ${describeProjectSettingsPath(ctx.cwd)} still overrides it with ${effective}.`,
       "warning",
     );
     return;
