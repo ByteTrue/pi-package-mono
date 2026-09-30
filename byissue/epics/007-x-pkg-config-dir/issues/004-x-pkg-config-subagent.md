@@ -66,3 +66,10 @@ closed: 2026-09-30
 - **验证**：3 files / 54 tests 全绿（含新增 `settings.test.ts` 16 用例，脚本内 hermetic agent dir + `PI_PKG_CFG_DIR` 隔离）；project 作用域真机验证 `Project — <cwd>/.pi/settings.json (legacy (read-only fallback))`、整节搬入、老文件未变、global 未创建；发布版 0.9.1 降级仍读老节。与上游 0.10.0（角色改名、`subagent.env`）合并后 `toStoredSection` 保留 `env` 键。
 - **回写**：`byissue/spec/pi-subagent/index.md` 与 `byissue/spec/index.md`（issue 005 已改）。
 - **遗留**：无。
+
+## 发布记录（2026-09-30）
+
+- 与 issue 001/002/003 一起，随提交 `4dbaba7` 发布：`0.10.0` → `0.11.0`（0.10.0 为上游 `e9ad63f` 的角色改名 + `subagent.env` 透传；本次迁移在其之上）。
+- tag `pi-subagent-v0.11.0` 触发 release.yml 运行 `36689206753` 全绿，provenance `logIndex=3014947910`。
+- registry 侧核对：`dist-tags.latest` = `0.11.0`；`gitHead` = `4dbaba7033a0850b338b62156f5b2bfcf3e270c6`；tarball 11 文件 / unpacked 119397 B / `shasum fa34313c12cd0830c01854285fc97427b9616f06`（`agents/` 三个角色文档随包）。
+- **发布版真机验证**（解包 tarball 后在隔离沙箱里跑）：`describeSettingsPathForScope(cwd,"global")` = `<agent dir>/pi-pkg-cfg/pi-subagent/settings.json`、`(cwd,"project")` = `<cwd>/.pi/pi-pkg-cfg/pi-subagent/settings.json`；老 `settings.json` 的 `subagent` 节（含 `defaultModel` / `defaultThinking` / `agents` / `env`）整节读出并整节带入新文件，写入时 `env` 保留；老文件未动。

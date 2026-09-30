@@ -61,3 +61,11 @@ closed: 2026-09-30
 - **验证**：包测试 12 passed + 1 skipped files / 115 passed + 9 skipped（9 skipped 为既有 live E2E 网络依赖，本次 diff 未碰）；typecheck exit 0；真机老→新 `sha256 5769d849...` 两端一致、老文件全程未变；发布版 0.4.1 降级仍读老路径。
 - **回写**：约定本体在 `byissue/decisions/004-pkg-config-dir.md`；落点描述在 `byissue/spec/index.md` 架构落点表与 `byissue/spec/pi-web-search/index.md`（issue 005 已改）。
 - **遗留**：无。
+
+## 发布记录（2026-09-30）
+
+- 与 issue 002/003/004 一起，随提交 `4dbaba7`（`refactor: unify package-private config under <agent dir>/pi-pkg-cfg, release four packages`）发布：`0.4.1` → `0.5.0`。
+- tag `pi-web-search-v0.5.0`（轻量 tag，指向 `4dbaba7`）触发 release.yml 运行 `36689161334` 全绿（`npm ci` → typecheck → test → publish），Trusted Publishing OIDC，provenance transparency log `logIndex=3014939588`。
+- registry 侧核对：`dist-tags.latest` = `0.5.0`；`gitHead` = `4dbaba7033a0850b338b62156f5b2bfcf3e270c6`；tarball 22 文件 / unpacked 169666 B / `shasum 300919cb82dc8f380f6ffd1039fd60a303ecd5e2`；attestations 已挂（`https://registry.npmjs.org/-/npm/v1/attestations/@bytetrue%2fpi-web-search@0.5.0`）。
+- **发布版真机验证**（解包 tarball 后在隔离 `$PI_CODING_AGENT_DIR` 沙箱里跑）：`getConfigPath()` = `<agent dir>/pi-pkg-cfg/pi-web-search/config.json`、`isLegacyConfigPath()` = false；老文件 `byte-pi-web/config.json` 被逐字节复制到新位置（0600）且原地未动。
+- 注：本次改动之前的老版本 `0.4.1` 仍读老路径（issue 关闭前的降级验证），二者不冲突。

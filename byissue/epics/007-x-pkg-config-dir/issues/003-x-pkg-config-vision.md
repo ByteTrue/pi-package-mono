@@ -62,3 +62,11 @@ closed: 2026-09-30
 - **验证**：6 files / 87 tests 全绿（含新增「新根建不出来 → 回退 legacy」用例）；Q25 整节迁移真机复现——`/vision auto off` 后 `model` 未丢；发布版 0.2.3 降级仍读老节。
 - **回写**：`byissue/spec/pi-vision/index.md` 与 `byissue/spec/index.md`（issue 005 已改）。
 - **遗留**：无。
+
+## 发布记录（2026-09-30）
+
+- 与 issue 001/002/004 一起，随提交 `4dbaba7` 发布：`0.2.3` → `0.3.0`。
+- tag `pi-vision-v0.3.0` 触发 release.yml 运行 `36689084473`：**第一次 attempt 失败**，原因是 `packages/pi-background-terminal/src/background-command.test.ts > lists a running command, opens its output, then returns through the menus` 一处断言失败（`expected "vi.fn()" to be called with arguments: [ StringContaining "Output", …(1) ]`）——该包属本次未改动的既有 flaky 用例；`gh run rerun --failed` 后 attempt 2 全绿。
+- provenance `logIndex=3014996781`；registry 侧：`dist-tags.latest` = `0.3.0`、`gitHead` = `4dbaba7033a0850b338b62156f5b2bfcf3e270c6`、tarball 9 文件 / unpacked 110427 B / `shasum 375a84a7a210f487debf7488820000b94a2209f9`。
+- **发布版真机验证**（解包 tarball 后在隔离沙箱里跑）：`describeGlobalSettingsPath()` = 新位置、`describeProjectSettingsPath(cwd)` = `<cwd>/.pi/pi-pkg-cfg/pi-vision/settings.json`；老 Pi `settings.json` 的 `pi-vision` 节 `{model, autoAnalyzeAttachments:true}` 被整节读出；`writeAutoAnalyzeAttachments(false)` 落盘后新文件同时含 `model`（保留）与 `autoAnalyzeAttachments:false` —— **Q25 整节迁移在发布版上成立**；老文件未动。
+- 遗留（既有、非本次引入）：release.yml 的 `npm test` 会跑全仓，`pi-background-terminal` 那条 flaky 用例能让任意包的发布挂掉。

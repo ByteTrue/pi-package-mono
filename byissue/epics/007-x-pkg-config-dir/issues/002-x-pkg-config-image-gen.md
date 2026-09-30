@@ -61,3 +61,10 @@ closed: 2026-09-30
 - **验证**：12 files / 125 tests 全绿；真机 343B v1 → 386B v2（`providers.img`、`default{provider:"img",model:"gpt-image-2.5"}`）+ `settings.json.v1.bak` `sha256 c448d706...`；发布版 0.5.0 降级仍读老文件。
 - **回写**：`byissue/spec/pi-image-gen/index.md` 与 `byissue/spec/index.md`（issue 005 已改）。
 - **遗留**：无。跑老版本会就地重写老文件为新版形状并生成 `.v1.bak`——老版本自身行为，非本次引入。
+
+## 发布记录（2026-09-30）
+
+- 与 issue 001/003/004 一起，随提交 `4dbaba7` 发布：`0.5.0` → `0.6.0`。
+- tag `pi-image-gen-v0.6.0` 触发 release.yml 运行 `36689183749` 全绿，provenance `logIndex=3014945531`。
+- registry 侧核对：`dist-tags.latest` = `0.6.0`；`gitHead` = `4dbaba7033a0850b338b62156f5b2bfcf3e270c6`；tarball 70 文件 / unpacked 213236 B / `shasum 703ea24092622cea120f35e37eed314dcb70adb9`。
+- **发布版真机验证**（解包 tarball 后在隔离沙箱里跑）：`settingsLocation()` = `<agent dir>/pi-pkg-cfg/pi-image-gen/settings.json`；喂一份 v1 老文件（`version:1` + `defaultModel` + `customProviders`）后 `loadImageGenSettings().default` = `{provider:"img",model:"gpt-image-2.5"}`，`updateImageGenSettings` 落成 v2（`providers.img` 保留 `api`/`baseUrl`/`apiKey`）并生成 `settings.json.v1.bak`；老文件 `version` 仍为 1、未被改写。

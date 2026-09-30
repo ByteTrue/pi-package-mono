@@ -34,7 +34,7 @@ pi-vision 与 pi-subagent 把配置写进 Pi 本体的 `settings.json`：每次�
 
 - 跨包一致性测试的形态：倾向「每个包用同一张场景表（同一 env → 同一根；覆盖优先级；legacy 标注）」，尚无独立 harness。
 - 老位置保留多久：当前无删除计划；等四个新位置在真实使用中稳定后再决定是否值得做一次性清理提示。
-- 发布节奏：四包各自 minor 发版还是攒成一次，未定。
+- 发布节奏：四包各自 minor 发版还是攒成一次——**关后已定：四包一次发**（提交 `4dbaba7`，四个 tag `pi-web-search-v0.5.0` / `pi-image-gen-v0.6.0` / `pi-vision-v0.3.0` / `pi-subagent-v0.11.0`，均为 minor；发布记录见各 issue）。
 
 ## 必须守住
 
