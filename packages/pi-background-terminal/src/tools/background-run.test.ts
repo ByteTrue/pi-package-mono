@@ -40,16 +40,23 @@ describe("background_run tool", () => {
     await manager.clearSession(SESSION);
   });
 
-  it("applies the 600s default lifetime; an explicit timeout wins", async () => {
+  it("applies the 600s default lifetime; explicit timeouts win up to the 3600s hard cap, above which they are clamped", async () => {
     const result = await call(tool(), { command: "echo x" }, SESSION);
     const id = result.content[0]?.text.match(/(bg_[0-9a-f]+)/)?.[1];
     await vi.waitFor(() => expect(manager.get(id!, SESSION)?.status).not.toBe("running"), { timeout: 5000 });
     expect(manager.get(id!, SESSION)?.timeoutSeconds).toBe(600);
 
-    const result2 = await call(tool(), { command: "echo y", timeout: 86400 }, SESSION);
+    const result2 = await call(tool(), { command: "echo y", timeout: 1800 }, SESSION);
     const id2 = result2.content[0]?.text.match(/(bg_[0-9a-f]+)/)?.[1];
     await vi.waitFor(() => expect(manager.get(id2!, SESSION)?.status).not.toBe("running"), { timeout: 5000 });
-    expect(manager.get(id2!, SESSION)?.timeoutSeconds).toBe(86400);
+    expect(manager.get(id2!, SESSION)?.timeoutSeconds).toBe(1800);
+
+    // 0.8.x taught 86400 for dev servers — now clamped to the hard cap.
+    const result3 = await call(tool(), { command: "echo z", timeout: 86400 }, SESSION);
+    const id3 = result3.content[0]?.text.match(/(bg_[0-9a-f]+)/)?.[1];
+    await vi.waitFor(() => expect(manager.get(id3!, SESSION)?.status).not.toBe("running"), { timeout: 5000 });
+    expect(manager.get(id3!, SESSION)?.timeoutSeconds).toBe(3600);
+    expect(result3.content[0]?.text).toContain("Hard timeout: 3600s");
     await manager.clearSession(SESSION);
   });
 

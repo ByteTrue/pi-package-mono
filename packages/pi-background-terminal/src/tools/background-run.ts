@@ -13,6 +13,18 @@ import { manager } from "../background/manager.js";
 export const DEFAULT_LIFETIME_SECONDS = 600;
 
 /**
+ * Hard cap on a background task's total lifetime, explicit timeout included (seconds).
+ * Rationale: background tasks are cleared on session_shutdown, so no task outlives its
+ * session anyway — the cap bounds how long a *zombie* task may burn resources inside a
+ * live session. 3600s covers any local build/test suite; dev servers renew: the
+ * timed_out notification tells the agent to restart with background_run, which is a
+ * cheap, explicit renew loop instead of a silent forever-run. A "larger" escape hatch
+ * (0.8.x taught 86400) was phantom protection — sessions rarely last that long, and it
+ * left a 24-hour zombie ceiling (real incident class, 2026-09: see ff 099).
+ */
+export const HARD_CAP_LIFETIME_SECONDS = 3600;
+
+/**
  * `background_run` — a pure background executor. It never waits, never returns command
  * output inline; it starts the command and returns a task id immediately. The exit
  * (natural, failed, or timed-out) wakes the agent with a follow-up.
@@ -23,8 +35,9 @@ export const DEFAULT_LIFETIME_SECONDS = 600;
  * run hands-off: builds, test suites, dev servers, watch modes.
  *
  * Dual inheritance from the 077/078 work, minus the wait path:
- * - timeout defaults to 600s total lifetime unless the model passes a larger value
- *   (e.g. 86400 for dev servers) — the escape hatch lives in the description;
+ * - timeout defaults to 600s total lifetime; explicit values are honored up to the
+ *   3600s hard cap, above which they are clamped — and a timed-out dev server renews
+ *   by restarting (the wake-up message says so);
  * - the exit notification (followUp + triggerTurn) fires exactly once per task.
  *
  * This being a pure background tool, print/json sessions (pi -p, subagent children)
@@ -41,7 +54,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "background_run",
     label: "Run Command in Background",
-    description: `Starts a shell command in the background and returns immediately with a task id; the command keeps running on its own. Use it for work that should run hands-off — builds, test suites, dev servers, watch mode. When you need the output to decide your next step, use bash instead. After it starts, continue with other work or end your turn: its exit — natural, failed, or timed-out — arrives as a new message that starts your next turn. That notification is how you wait. The command is hard-killed after timeout seconds (${DEFAULT_LIFETIME_SECONDS}s by default; pass a larger value like 86400 for dev servers and watch modes). Full output streams to a file (path in the result); use read on that path.`,
+    description: `Starts a shell command in the background and returns immediately with a task id; the command keeps running on its own. Use it for work that should run hands-off — builds, test suites, dev servers, watch mode. When you need the output to decide your next step, use bash instead. After it starts, continue with other work or end your turn: its exit — natural, failed, or timed-out — arrives as a new message that starts your next turn. That notification is how you wait. The command is hard-killed after timeout seconds (default ${DEFAULT_LIFETIME_SECONDS}, hard cap ${HARD_CAP_LIFETIME_SECONDS} — larger values are clamped). A dev server that hits the cap is renewed by restarting it with background_run; the timeout notification tells you when. Full output streams to a file (path in the result); use read on that path.`,
     promptSnippet: `Start a command in the background; its exit arrives later as a new message. Use bash when you need the result now.`,
     // Positive-first wording (decision 001): each line says what to do; the wait model is stated
     // explicitly because a bare "do not poll" left a vacuum the model filled with `sleep`.
@@ -49,8 +62,8 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
       "Use background_run for work that should run hands-off — builds, test suites, dev servers, watch mode — anything you can leave running while you do other things",
       "When you need a command's output to decide your next step, use bash — it blocks and returns the output",
       "After background_run returns, the command is already running: continue with other work or end your turn. Its exit arrives as a new message that starts your next turn — that notification is how you wait. background_status is for a one-off look at partial output",
-      "timeout (default 600) is a hard lifetime cap — pass a large value (e.g. 86400) for dev servers and watch modes",
-      "bash/powershell are hard-killed after 600s when no timeout is passed (this extension injects it); when you need the result of a longer command, pass a larger timeout to bash",
+      "timeout is a hard lifetime cap (default 600s, hard cap 3600s — larger values are clamped); pass a larger value for dev servers and watch modes, and restart with background_run when the timeout notification arrives to renew them",
+      "bash/powershell are hard-killed after 600s (this extension injects the default and caps explicit values at 600); when a command needs longer, run it with background_run and a larger timeout instead of blocking on bash",
     ],
     parameters: Type.Object({
       command: Type.String({ minLength: 1, description: "The shell command to run in the background" }),
@@ -58,7 +71,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
         Type.Number({
           minimum: 0.001,
           maximum: 2147483,
-          description: `Hard lifetime cap in seconds. Defaults to ${DEFAULT_LIFETIME_SECONDS}; pass a larger value (e.g. 86400) for dev servers and watch modes.`,
+          description: `Hard lifetime cap in seconds. Defaults to ${DEFAULT_LIFETIME_SECONDS}; clamped to ${HARD_CAP_LIFETIME_SECONDS} — restart with background_run on the timeout notification to renew long-running services.`,
         }),
       ),
     }),
@@ -69,7 +82,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
       if (cached?.key !== key) {
         cached = { key, settings: resolveShellOptions(ctx.cwd, ctx.isProjectTrusted()) };
       }
-      const timeoutSeconds = params.timeout ?? DEFAULT_LIFETIME_SECONDS;
+      const timeoutSeconds = Math.min(params.timeout ?? DEFAULT_LIFETIME_SECONDS, HARD_CAP_LIFETIME_SECONDS);
       const task = manager.start(params.command, ctx.cwd, ctx.sessionManager.getSessionId(), {
         timeoutSeconds,
         operations: createLocalBashOperations({ shellPath: cached.settings.shellPath }),
