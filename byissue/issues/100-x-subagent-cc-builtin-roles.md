@@ -103,3 +103,10 @@ closed: 2026-09-30
 **沉淀**：新增 `byissue/notes/011-billion-context-proxy-registers-acp-tools-in-children.md`（换代后的代理侧架构、工具注册不依赖模型流量、`BILLION_CONTEXT_PLUGIN` 开关语义、`pi --tools` 是替换型 allowlist）；`byissue/spec/pi-subagent/index.md` 角色列表段补了正文来源与版权边界（改编自 `@tintinweb/pi-subagents` MIT，不是逐字复制 Claude Code）。
 
 **遗留（已确认不属本 issue）**：`reviewer` 能力净损失 → 用户定为 code-review skill；`plan` 与 ByIssue 规划权威源边界 → 待裁决；`researcher` 的 web 研究能力随角色消失。
+
+## 发布记录（2026-09-30）
+
+- 与 `101`（`subagent.env` 透传）合并发布：`0.9.1` → `0.10.0`；tag `pi-subagent-v0.10.0`，运行 `36673502458` 全绿，带 provenance（`logIndex=3012708628`）。
+- npm 上 `dist-tags.latest` = `0.10.0`；tarball 11 文件，`agents/{explore,general-purpose,plan}.md` 三个新角色文档齐全。
+- **本次改动在线上生效已实测确认**（`/reload` 之后）：`subagent({agent:"scout"})` 返回 `Unknown agent role "scout". Available roles: explore, plan. Omit 'agent' for the default general-purpose child, or use one of the roles above.`；子代理 `sub_9b654eb54f47` 的工具名清单恰为 13 个且 ACP 工具数为 0（对照旧模块 18 个 / 5 个 ACP）。
+- 详细发布记录见 `byissue/issues/101-x-subagent-env-passthrough.md`。

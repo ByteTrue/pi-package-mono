@@ -105,3 +105,14 @@ BILLION_CONTEXT_PLUGIN=0  → 12 个工具，ACP 0 个
 **交付**：`packages/pi-subagent` 0.10.0（与 Issue 100 同一笔提交，未发布）。
 
 **Advisor 评审后的补强**：交前补了信任门测试（项目 env 在 `projectTrusted=false` 时整段丢弃，含 `NODE_OPTIONS` 注入面）、空 map 不清空全局测试、`resolveRunCfg` 两条 return 各自带 env 的测试，并修正了本文件里关于强制转换的错误理由。
+
+## 发布记录（2026-09-30）
+
+- 与 `100`（Claude Code 三角色）合并发布：`0.9.1` → `0.10.0`。
+- 提交 `e9ad63f`（`!` 标破坏性：删角色后传旧名硬报错）；同分支后续 `26e0349`（Windows `/tmp` 与 `python3` note）、`849f207`（合并 origin）、`5fe4845`（note 重编号 010→011 / 011→012）。
+- tag `pi-subagent-v0.10.0`（指向 `5fe4845`）触发 release.yml（Trusted Publishing OIDC，pubn `publish Signed provenance statement`，transparency log `logIndex=3012708628`）。运行 `36673502458` 全绿（`npm ci` → typecheck → test → publish）。
+- npm registry 确认：`dist-tags.latest` = `0.10.0`；`gitHead` = `5fe4845efe333e13867b51ac0757d90b7345ea45`。
+- 解包 tarball 核对：11 文件；`agents/{explore,general-purpose,plan}.md` 齐全、`scout/researcher/reviewer` **已不在包内**；`src/index.ts` 含 `buildChildEnv`（2 处）、`DEFAULT_AGENT_NAME`、`Omit 'agent' for the default general-purpose child`；三个 agent 文档与 README 搜旧角色名 = **0 命中**。
+- 本地安装已同步：`pi update npm:@bytetrue/pi-subagent` → `~/.pi/agent/npm/.../@bytetrue/pi-subagent` **0.10.0**。
+
+发布前复现了 release.yml 的全部步骤（`npm ci` → `npm run typecheck --workspaces --if-present` → `npm test`，后台任务 `bg_c37f8753c602066d`，全绿；单跑 `packages/pi-subagent` = 38 passed）。
