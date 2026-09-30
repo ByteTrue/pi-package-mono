@@ -210,7 +210,7 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
     if (pickedRole === customOption) {
       const input = await ctx.ui.input(
         "Role Name",
-        "Example: scout, reviewer, researcher",
+        "Example: explore, plan, general-purpose",
       );
       if (input === undefined || !input.trim()) continue;
       roleName = input.trim().toLowerCase();
@@ -378,7 +378,7 @@ export async function runSubagentCommand(
           ? `👀 View Active Subagents (${runningCount} running)`
           : "👀 View Subagent Tasks";
       const actionDefault = "⚙️ Configure Default Subagent Model & Thinking";
-      const actionRole = "🎭 Configure an Agent Role (e.g. scout, reviewer)";
+      const actionRole = "🎭 Configure an Agent Role (e.g. explore, plan)";
       const actionShow = "📋 Show Current Configuration";
 
       const choices = [

@@ -19,6 +19,28 @@ export interface SubagentSettings {
   defaultModel?: string;
   defaultThinking?: string;
   agents?: Record<string, SubagentRoleConfig>;
+  /**
+   * Extra environment variables for every child pi process. Project values win
+   * over global ones. This is a plain pass-through: the extension never inspects
+   * or special-cases a name, so a child can be given any extension's switch
+   * (for example disabling a proxy in children) without this package knowing
+   * about that extension.
+   */
+  env?: Record<string, string>;
+}
+
+function parseEnvMap(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const name = key.trim();
+    if (!name) continue;
+    // Only strings are accepted. Numbers/booleans would be coerced silently and
+    // a child that reads a switch as "0" would be surprised by `0` becoming "0.0".
+    if (typeof value !== "string") continue;
+    env[name] = value;
+  }
+  return Object.keys(env).length > 0 ? env : undefined;
 }
 
 export function globalSettingsPath(): string {
@@ -63,6 +85,7 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
   if (typeof s?.defaultThinking === "string" && s.defaultThinking.trim()) {
     settings.defaultThinking = s.defaultThinking.trim();
   }
+  settings.env = parseEnvMap(s?.env);
 
   const agentsMap: Record<string, SubagentRoleConfig> = {};
 
@@ -110,6 +133,7 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
   if (Object.keys(agentsMap).length > 0) {
     settings.agents = agentsMap;
   }
+  if (!settings.env) delete settings.env;
 
   return settings;
 }
@@ -129,6 +153,10 @@ export function loadSubagentSettings(cwd: string, projectTrusted = true): Subage
     agents: {
       ...(globalSettings.agents ?? {}),
       ...(projectSettings.agents ?? {}),
+    },
+    env: {
+      ...(globalSettings.env ?? {}),
+      ...(projectSettings.env ?? {}),
     },
   };
 }
@@ -152,6 +180,9 @@ export function updateSubagentSettings(
   if (updatedSubagent.defaultThinking) cleanSubagent.defaultThinking = updatedSubagent.defaultThinking;
   if (updatedSubagent.agents && Object.keys(updatedSubagent.agents).length > 0) {
     cleanSubagent.agents = updatedSubagent.agents;
+  }
+  if (updatedSubagent.env && Object.keys(updatedSubagent.env).length > 0) {
+    cleanSubagent.env = updatedSubagent.env;
   }
 
   const nextRoot: Record<string, unknown> = {

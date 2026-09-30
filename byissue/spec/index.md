@@ -9,7 +9,7 @@
 3. **图像生成**（`@bytetrue/pi-image-gen`）：`/image-gen` 在 TUI 内完整配置，Agent 仅在需要时加载 Skill 并调用 bundled CLI；不注册常驻生成 tool。
 4. **背景终端**（`@bytetrue/pi-background-terminal`）：纯后台执行——`background_run` 立即返回 task id，退出时 followUp 唤醒（含退出码+末行）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值逃逸。内建 `bash` 是前台执行器（零触碰，仅 600s 安全网 hook）。选择轴是"要不要结果"：需要输出 → bash；脱手跑 → background_run。
 5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
-6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：单工具 `subagent`，支持单任务/并行/串联链式运行子任务，带实时 TUI 差分卡片与 Token/费用统计。
+6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：三个工具 `subagent` / `subagent_status` / `subagent_stop`，在隔离子进程会话里跑一个子任务；纯后台——调用即返回，结果以新消息送达，并行靠模型在同一条消息里发多个调用（无链式入参）。
 7. **浏览器协助配置**（`@bytetrue/pi-browser`）：`/browser` 菜单只协助 agent-browser——展示安装 CLI、下载 Chrome for Testing、安装官方 skill 的命令，写入 Pi 专用持久 Profile/session/namespace 与闲置回收配置，并提供会话查看与清理；不注册 agent 工具，不替用户执行安装。
 
 仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
@@ -55,7 +55,7 @@
 | `@bytetrue/pi-image-gen` | `/image-gen`、按需 Skill `pi-image-gen`、bundled CLI；零常驻 Agent tool | `~/.pi/agent/settings.json`、active agent dir 或可信 `<cwd>/.pi/settings.json` 的 `pi-image-gen` 节 |
 | `@bytetrue/pi-background-terminal` | bash 覆盖（`waitSeconds`）+ `background_status`/`background_kill` + 用户菜单 `/background` | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
 | `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `settings.json` 的 `pi-vision.model` 与 `pi-vision.autoAnalyzeAttachments`（`/vision` 写全局层；可信 project 可覆盖） |
-| `@bytetrue/pi-subagent` | 工具 `subagent`（单任务、并行、链式执行 + TUI 差分卡片） | 无独立持久配置；模型/思考强度只由用户配置与父会话继承决定，按需读取 `.pi/agents/*.md` |
+| `@bytetrue/pi-subagent` | 工具 `subagent` / `subagent_status` / `subagent_stop`（单任务、纯后台、并行 = 同一条消息多条调用） | `settings.json` 的 `subagent.defaultModel` / `subagent.defaultThinking` / `subagent.agents[角色]` / `subagent.env`（子进程环境变量透传）；模型/思考强度只由用户配置与父会话继承决定，角色文档按需读 `.pi/agents/*.md` |
 | `@bytetrue/pi-browser` | 命令 `/browser`（Status / Configure / Settings / Sessions / Setup 命令面板）；无 agent tool | agent-browser 用户配置（`~/.agent-browser/config.json`，尊重 `AGENT_BROWSER_CONFIG`，写前备份）+ `<agent dir>/pi-browser/profiles/agent-browser` Chrome for Testing；官方 skill 经 `npx skills add vercel-labs/agent-browser -a pi -y -g` 由用户安装 |
 
 六包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。

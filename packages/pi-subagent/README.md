@@ -7,10 +7,10 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 ## Features
 
 - **⚡️ Zero Bloat & Minimal Context**: Three lightweight tool schemas (~200 tokens) replace heavy multi-thousand-token multi-agent frameworks.
-- **🎭 Built-in Golden Roles**: `scout`, `researcher`, and `reviewer` ship as ordinary agent documents in `agents/` — copy one into `.pi/agents/` to customise it.
-  - `scout`: Fast read-only codebase reconnaissance (`read, grep, find`, lowest thinking level).
-  - `researcher`: Autonomous web & technical documentation research (`read, grep, find, web_search, web_fetch`, inherits the parent session's thinking level).
-  - `reviewer`: Disciplined adversarial code review and test validation (`read, grep, find, bash`, highest thinking level).
+- **🎭 Built-in Golden Roles**: `explore`, `plan`, and `general-purpose` ship as ordinary agent documents in `agents/` — copy one into `.pi/agents/` to customise it. The role design mirrors Claude Code's built-in subagents, ported from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) (MIT).
+  - `explore`: Fast read-only code search and reconnaissance (`read, grep, find, ls, bash`, lowest thinking level).
+  - `plan`: Read-only implementation planning; ends every report with a `### Critical Files for Implementation` list.
+  - `general-purpose`: Full toolset for multi-step work — what omitting `agent` already gives you, available as an explicit role name.
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
 - **🚀 Always Non-blocking**: The tool call returns a task id immediately; the parent turn is never held. The complete output is delivered as a follow-up message that starts the next turn.
@@ -20,7 +20,7 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
   - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect progress or output, or stop running tasks.
   - **Fuzzy Model Search**: Model picker with real-time text filter and wrap-around keyboard navigation (Up at top loops to bottom).
   - **Back Navigation**: Pressing `Esc` in any sub-menu smoothly returns to the parent menu level.
-  - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `scout`, `researcher`, `reviewer` or custom).
+  - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `explore`, `plan`, `general-purpose` or custom).
 
 ## Installation
 
@@ -39,7 +39,7 @@ pi -e packages/pi-subagent/src/index.ts
 Run `/subagent` in the Pi TUI to interactively:
 - **View Active Subagents**: Browse all active/recent subagent tasks in the current session, view output, stop running tasks, or see resume instructions.
 - **Set default subagent model and thinking level**: Use real-time fuzzy search to pick models across all configured providers with wrap-around cursor movement (`Esc` to go back).
-- **Configure specific roles**: Customize `scout`, `researcher`, `reviewer`, or any custom role with dedicated model and thinking overrides.
+- **Configure specific roles**: Customize `explore`, `plan`, `general-purpose`, or any custom role with dedicated model and thinking overrides.
 - **Run `/subagent list` or `/subagent show`**: View effective configurations and discovered agent templates.
 
 ## Tool Reference
@@ -55,7 +55,7 @@ Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, s
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `task` | `string` | **Yes** | The task instruction / prompt. |
-| `agent` | `string` | No | Optional role. **Omit it for a general-purpose child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`). Built-ins: `scout` (read-only recon), `researcher` (web/doc research), `reviewer` (code review & tests); any custom `.pi/agents/<name>.md` works too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to the general-purpose child. |
+| `agent` | `string` | No | Optional role. **Omit it for a general-purpose child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`). Built-ins: `explore` (fast read-only search), `plan` (read-only implementation planning), `general-purpose` (full tools, multi-step work); any custom `.pi/agents/<name>.md` works too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to the general-purpose child. |
 | `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `cwd` | `string` | No | Optional working directory for the task. |
 | `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
@@ -74,16 +74,16 @@ A built-in role, when one matches exactly:
 
 ```json
 {
-  "agent": "reviewer",
-  "task": "Review packages/pi-subagent/src/index.ts for potential edge cases"
+  "agent": "plan",
+  "task": "Plan how to add retry handling to packages/pi-subagent/src/index.ts"
 }
 ```
 
 Parallel fanout is just several calls in one message:
 
 ```json
-[{ "agent": "scout", "task": "Locate relevant test and config files" },
- { "agent": "reviewer", "task": "Perform adversarial review on the located files" }]
+[{ "agent": "explore", "task": "Locate relevant test and config files" },
+ { "agent": "plan", "task": "Draft the implementation plan for the located files" }]
 ```
 
 ### `subagent_status`
@@ -105,10 +105,10 @@ Stop a running subagent task by id. Idempotent: stopping an already-finished tas
 
 #### Built-in roles
 
-The child is general-purpose by default: omitting `agent` inherits your model, thinking level, and pi's default toolset. The built-in roles — `scout`, `researcher`, `reviewer` — are opt-in presets for jobs that match them exactly. They are ordinary agent documents shipped in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy one out to customise it:
+The child is general-purpose by default: omitting `agent` inherits your model, thinking level, and pi's default toolset. The built-in roles — `explore`, `plan`, `general-purpose` — mirror Claude Code's built-in subagents (design ported from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents), MIT): two are strictly read-only, one is the full-toolset catch-all. They are ordinary agent documents shipped in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy one out to customise it:
 
 ```bash
-mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/scout.md .pi/agents/scout.md
+mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/explore.md .pi/agents/explore.md
 ```
 
 ```markdown
@@ -118,6 +118,31 @@ model: your-provider/your-model
 ```
 
 A document replaces the built-in entirely, so keep the fields you still want — `tools` in particular. Omitting `tools` leaves the child on pi's default set (`read, bash, edit, write`).
+
+#### Extension tools and role documents
+
+`--tools` is an **allowlist that replaces the default selection**, so a role that names its own `tools:` receives only those names — extension tools are not added on top. The built-in `explore` and `plan` documents deliberately name only pi's read-only core (`read, grep, find, ls, bash`); they do **not** bake in another extension's tool names. `general-purpose` omits `tools:` entirely, so that child inherits pi's full default set, extension tools included.
+
+If you want a read-only child to also carry an extension's tool (for example the context tools from [billion-context-pi](https://github.com/ranxianglei/billion-context-pi)), add them through settings rather than editing a packaged document: an older billion-context-pi's `/acp-subagents <package-dir>` writes a combined tool list to `subagents.agentOverrides.<role>.tools`, which this extension reads as a per-role override. Note that an override **replaces** the document's `tools:`, so it must list the role's full baseline, not just the additions.
+
+#### Environment pass-through
+
+The reverse is just as common: an extension registers tools into *every* pi process, including children, where they may not work. `subagent.env` passes extra environment variables to every child, so you can switch such an extension off for children without this package knowing anything about it.
+
+```json
+{
+  "subagent": {
+    "env": {
+      "BILLION_CONTEXT_PLUGIN": "0"
+    }
+  }
+}
+```
+
+- Read from both `.pi/settings.json` (project) and `~/.pi/agent/settings.json` (global); project keys win on conflict, unset keys are kept from global.
+- Values must be strings — numbers and booleans are ignored rather than silently coerced, so a switch that tests for `"0"` cannot be handed a `0`.
+- `PI_SUBAGENT_CHILD` is applied **after** your values and is not overridable: it is this extension's recursion guard, and a child that lost it would load this extension again and recurse.
+- This is a plain pass-through. Unrelated to the env, the child still inherits the parent's environment as before.
 
 #### Model and Thinking Resolution
 
@@ -131,10 +156,14 @@ The model priority chain is:
 4. Parent session's current fully qualified provider/model (inherited)
 5. The child `pi` process's own default
 
-Thinking follows the same user-controlled chain: role settings, agent document, subagent default, then the parent session. scout asks for the lowest available thinking level and reviewer the highest; researcher sets none, so it inherits the parent session.
+Thinking follows the same user-controlled chain: role settings, agent document, subagent default, then the parent session. `explore` asks for the lowest available thinking level; `plan` and `general-purpose` set none, so they inherit the parent session.
 
 Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
 
 ## License
 
 MIT
+
+### Attribution
+
+The built-in agent prompts in `agents/` (`explore`, `plan`, `general-purpose`) are adapted from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents), which is MIT licensed — Copyright (c) 2026 tintinweb. That project in turn mirrors the role design of Claude Code's built-in subagents.

@@ -60,6 +60,8 @@ export interface PiRunConfig {
   resumeSession?: string;
   timeoutMs?: number;
   maxTurns?: number;
+  /** Extra environment variables for the child process (settings `subagent.env`). */
+  env?: Record<string, string>;
 }
 
 // ── Lazy-load pi-tui with safe string truncation fallback ──────────────
@@ -705,24 +707,34 @@ export function findAgentDefinition(cwd: string, agentName?: string): { config: 
  * name must not silently degrade to the general-purpose child: the caller asked
  * for specific tools/thinking and would get a different agent without knowing.
  * The error lists the available roles so the caller can correct itself.
+ *
+ * Omitting `agent` does NOT mean "no prompt": the child is the default
+ * general-purpose agent, and its document supplies the baseline system prompt.
+ * A caller who wants a bare pi child can still omit the field — the template is
+ * the contract, not an extra hop.
  */
+export const DEFAULT_AGENT_NAME = "general-purpose";
+
 export function resolveAgentRole(
   cwd: string,
   agentName?: string,
   subagentSettings?: SubagentSettings,
 ): AgentConfig {
   const name = typeof agentName === "string" ? agentName.trim() : "";
-  if (!name) return {};
+  // No role named: use the general-purpose document as the default template.
+  // It inherits the parent model/thinking and names no tools, so this is exactly
+  // the behaviour the omitted-agent path had, plus the baseline prompt.
+  if (!name) return findAgentDefinition(cwd, DEFAULT_AGENT_NAME).config;
   const { config, found } = findAgentDefinition(cwd, name);
   if (found) return config;
   // A role explicitly configured in settings is still real even without a
   // document: it carries the role's model/thinking overrides.
   const settings = subagentSettings ?? loadSubagentSettings(cwd, true);
   if (settings.agents && Object.prototype.hasOwnProperty.call(settings.agents, name)) return {};
-  const known = listDiscoveredAgentNames(cwd);
+  const known = listDiscoveredAgentNames(cwd).filter((r) => r !== DEFAULT_AGENT_NAME);
   throw new Error(
     `Unknown agent role "${name}". Available roles: ${known.join(", ") || "(none)"}. ` +
-      `Omit 'agent' for a general-purpose child, or use one of the roles above.`,
+      `Omit 'agent' for the default general-purpose child, or use one of the roles above.`,
   );
 }
 
@@ -785,6 +797,7 @@ export function resolveRunCfg(
       resumeSession: resumeSession || undefined,
       timeoutMs,
       maxTurns,
+      env: subagentSettings?.env,
     };
   }
   return {
@@ -796,6 +809,7 @@ export function resolveRunCfg(
     resumeSession: resumeSession || undefined,
     timeoutMs,
     maxTurns,
+    env: subagentSettings?.env,
   };
 }
 
@@ -997,6 +1011,20 @@ function formatPiOutput(stdout: string, stderr: string): string {
     : raw;
 }
 
+/**
+ * Environment for a child pi process: the parent's environment, plus the user's
+ * `subagent.env` pass-through. `PI_SUBAGENT_CHILD` is applied last on purpose —
+ * it is this extension's recursion guard and must not be overridable from
+ * settings, or a child would load this extension again and recurse.
+ */
+export function buildChildEnv(cfg: PiRunConfig): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ...cfg.env,
+    PI_SUBAGENT_CHILD: "1",
+  };
+}
+
 // ── Subprocess runner ─────────────────────────────────────────────────
 export function runPi(
   cwd: string,
@@ -1016,10 +1044,7 @@ export function runPi(
       return;
     }
     const inv = resolvePiCli();
-    const childEnv = {
-      ...process.env,
-      PI_SUBAGENT_CHILD: "1",
-    };
+    const childEnv = buildChildEnv(cfg);
     const targetCwd = cfg.cwd || cwd;
     state.cwd = targetCwd;
     const cli = spawn(inv.command, [...inv.args, ...buildPiArgs(cfg)], {
@@ -1580,13 +1605,13 @@ export default function subagentExtension(pi: {
     name: "subagent",
     label: "Subagent",
     description:
-      "Delegate ONE self-contained task to an isolated child agent session. The child is general-purpose by default: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), so any self-contained job you would otherwise do inline fits. Pass 'agent' only when a built-in role matches better: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests). The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.",
+      "Delegate ONE self-contained task to an isolated child agent session. The child is general-purpose by default: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), so any self-contained job you would otherwise do inline fits. Two built-in roles narrow that child when a job matches: 'explore' (fast read-only search — you only need the conclusion, not the file dumps) and 'plan' (read-only implementation planning that ends with a critical-files list). The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.",
     promptSnippet:
-      "Delegate a self-contained job to a child agent — general-purpose by default, or a built-in role (scout / researcher / reviewer) when one matches; the call returns at once and the result arrives later as a new message.",
+      "Delegate a self-contained job to a child agent — general-purpose by default, or the 'explore' / 'plan' role when one matches; the call returns at once and the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
     promptGuidelines: [
       "Delegate any self-contained job to subagent so you stay free to keep working or hand control back to the user",
-      "Omit 'agent' for a general-purpose child (inherits your model, thinking level, and default tools); pass 'agent' only when a built-in role or a custom .pi/agents document matches the job exactly",
+      "Omit 'agent' for the general-purpose child (inherits your model, thinking level, and default tools); pass 'agent' only when the 'explore' or 'plan' role, or a custom .pi/agents document, matches the job exactly",
       "After a subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
     ],
     parameters: {
@@ -1599,7 +1624,7 @@ export default function subagentExtension(pi: {
         agent: {
           type: "string",
           description:
-            "Optional agent role. Omit it for a general-purpose child that inherits your model, thinking level, and default tools. Built-in roles: 'scout' (read-only recon), 'researcher' (web/doc research), 'reviewer' (code review & tests); any custom .pi/agents/<name>.md works too. A name that matches no document is rejected with the list of available roles.",
+            "Optional agent role. Omit it for a general-purpose child that inherits your model, thinking level, and default tools. Built-in roles: 'explore' (fast read-only search, lowest thinking) and 'plan' (read-only implementation planning, ends with a critical-files list); any custom .pi/agents/<name>.md works too. A name that matches no document is rejected with the list of available roles.",
         },
         tools: {
           type: "array",

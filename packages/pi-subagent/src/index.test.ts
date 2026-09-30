@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import subagentExtension from "./index.js";
 import {
   parseJsonEvent,
   applyEvent,
   resolveRunCfg,
   buildPiArgs,
+  buildChildEnv,
   parseAgentFile,
   findAgentDefinition,
   resolveAgentRole,
@@ -33,6 +34,25 @@ import {
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+
+// The global settings layer is the user's real ~/.pi/agent/settings.json unless
+// PI_CODING_AGENT_DIR points elsewhere. Every test runs against an empty temp
+// agent dir so a developer's live config can never leak into assertions —
+// without this, a test that reads the global layer passes or fails by machine.
+const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
+let hermeticAgentDir: string;
+
+beforeEach(() => {
+  hermeticAgentDir = join(tmpdir(), `pi-subagent-global-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(hermeticAgentDir, { recursive: true });
+  process.env.PI_CODING_AGENT_DIR = hermeticAgentDir;
+});
+
+afterEach(() => {
+  if (ORIGINAL_AGENT_DIR === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = ORIGINAL_AGENT_DIR;
+  rmSync(hermeticAgentDir, { recursive: true, force: true });
+});
 
 describe("pi-subagent unit tests", () => {
   it("parses json events correctly", () => {
@@ -160,52 +180,74 @@ describe("pi-subagent unit tests", () => {
   });
 
   it("resolves built-in roles from the package's agent documents", () => {
-    const scout = findAgentDefinition(process.cwd(), "scout");
-    expect(scout.found).toBe(true);
-    expect(scout.config.tools).toEqual(["read", "grep", "find"]);
-    expect(scout.config.thinking).toBe("minimal");
-    expect(scout.config.systemPrompt).toContain("scouting subagent");
+    const explore = findAgentDefinition(process.cwd(), "explore");
+    expect(explore.found).toBe(true);
+    expect(explore.config.tools).toEqual(["read", "grep", "find", "ls", "bash"]);
+    expect(explore.config.thinking).toBe("minimal");
+    expect(explore.config.systemPrompt).toContain("file search specialist");
 
-    const researcher = findAgentDefinition(process.cwd(), "researcher");
-    expect(researcher.found).toBe(true);
-    expect(researcher.config.tools).toEqual(["read", "grep", "find", "web_search", "web_fetch"]);
-    // No built-in thinking default: researcher inherits the parent session's level.
-    expect(researcher.config.thinking).toBeUndefined();
+    const plan = findAgentDefinition(process.cwd(), "plan");
+    expect(plan.found).toBe(true);
+    expect(plan.config.tools).toEqual(["read", "grep", "find", "ls", "bash"]);
+    expect(plan.config.thinking).toBeUndefined();
+    expect(plan.config.systemPrompt).toContain("Critical Files for Implementation");
+    // The read-only roles must not be able to modify the tree.
+    expect(plan.config.tools).not.toContain("edit");
+    expect(explore.config.tools).not.toContain("write");
 
-    const reviewer = findAgentDefinition(process.cwd(), "reviewer");
-    expect(reviewer.found).toBe(true);
-    expect(reviewer.config.tools).toEqual(["read", "grep", "find", "bash"]);
-    expect(reviewer.config.thinking).toBe("max");
+    const gp = findAgentDefinition(process.cwd(), "general-purpose");
+    expect(gp.found).toBe(true);
+    // No `tools:` line: the child inherits pi's full default set.
+    expect(gp.config.tools).toBeUndefined();
+    // Nor model/thinking: omitting `agent` must stay full inheritance, so an
+    // edit that pins these in the document would silently retune every
+    // agentless call. The document is a prompt template, nothing more.
+    expect(gp.config.model).toBeUndefined();
+    expect(gp.config.thinking).toBeUndefined();
+    expect(gp.config.systemPrompt).toContain("do not re-delegate");
+  });
+
+  it("uses the general-purpose document as the template when no role is named", () => {
+    const omitted = resolveAgentRole(process.cwd(), undefined, {});
+    const gp = findAgentDefinition(process.cwd(), "general-purpose");
+    expect(omitted).toEqual(gp.config);
+    // The default template must not narrow the toolset or pin model/thinking.
+    expect(omitted.tools).toBeUndefined();
+    expect(omitted.model).toBeUndefined();
+    expect(omitted.thinking).toBeUndefined();
+    expect(omitted.systemPrompt).toBeTruthy();
+    // Blank/whitespace names take the same path rather than erroring.
+    expect(resolveAgentRole(process.cwd(), "   ", {})).toEqual(gp.config);
   });
 
   it("lets a user agent document shadow a same-named built-in role", () => {
     const dir = join(tmpdir(), `pi-subagent-agents-${Date.now()}`);
     mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
     writeFileSync(
-      join(dir, ".pi", "agents", "scout.md"),
-      "---\nmodel: cheap/model\nthinking: low\ntools: read, grep\n---\n\nCustom scout prompt.\n",
+      join(dir, ".pi", "agents", "explore.md"),
+      "---\nmodel: cheap/model\nthinking: low\ntools: read, grep\n---\n\nCustom explore prompt.\n",
     );
     try {
-      const scout = findAgentDefinition(dir, "scout");
-      expect(scout.found).toBe(true);
-      expect(scout.config.model).toBe("cheap/model");
-      expect(scout.config.thinking).toBe("low");
-      expect(scout.config.tools).toEqual(["read", "grep"]);
-      expect(scout.config.systemPrompt).toBe("Custom scout prompt.");
+      const explore = findAgentDefinition(dir, "explore");
+      expect(explore.found).toBe(true);
+      expect(explore.config.model).toBe("cheap/model");
+      expect(explore.config.thinking).toBe("low");
+      expect(explore.config.tools).toEqual(["read", "grep"]);
+      expect(explore.config.systemPrompt).toBe("Custom explore prompt.");
 
       // Sibling built-ins stay untouched.
-      const reviewer = findAgentDefinition(dir, "reviewer");
-      expect(reviewer.config.thinking).toBe("max");
-      expect(reviewer.config.tools).toEqual(["read", "grep", "find", "bash"]);
+      const plan = findAgentDefinition(dir, "plan");
+      expect(plan.config.thinking).toBeUndefined();
+      expect(plan.config.tools).toEqual(["read", "grep", "find", "ls", "bash"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("inherits the parent session's thinking level, off included", () => {
-    const { config } = findAgentDefinition(process.cwd(), "researcher");
+    const { config } = findAgentDefinition(process.cwd(), "plan");
     for (const level of ["minimal", "medium", "max", "off"]) {
-      const cfg = resolveRunCfg({ agent: "researcher" }, config, level, "p/m", {});
+      const cfg = resolveRunCfg({ agent: "plan" }, config, level, "p/m", {});
       expect(cfg.thinking).toBe(level);
       expect(cfg.model).toBe(`p/m:${level}`);
       expect(buildPiArgs(cfg)).toContain(`p/m:${level}`);
@@ -281,6 +323,175 @@ describe("pi-subagent unit tests", () => {
     }
   });
 
+  it("passes settings subagent.env through to children, project winning over global", () => {
+    const testDir = join(tmpdir(), `pi-subagent-env-${Date.now()}`);
+    mkdirSync(join(testDir, ".pi"), { recursive: true });
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    const globalDir = join(tmpdir(), `pi-subagent-env-global-${Date.now()}`);
+    mkdirSync(globalDir, { recursive: true });
+
+    try {
+      writeFileSync(
+        join(globalDir, "settings.json"),
+        JSON.stringify({
+          subagent: {
+            env: { SHARED: "global", GLOBAL_ONLY: "1", KEPT: "yes" },
+          },
+        }),
+      );
+      process.env.PI_CODING_AGENT_DIR = globalDir;
+      writeFileSync(
+        join(testDir, ".pi", "settings.json"),
+        JSON.stringify({
+          subagent: {
+            env: { SHARED: "project", PROJECT_ONLY: "2", BAD_NUMBER: 3, BAD_NULL: null, "": "dropped" },
+          },
+        }),
+      );
+
+      const loaded = loadSubagentSettings(testDir, true);
+      expect(loaded.env).toEqual({
+        SHARED: "project",
+        GLOBAL_ONLY: "1",
+        KEPT: "yes",
+        PROJECT_ONLY: "2",
+      });
+
+      // The env reaches the child process and cannot be shadowed by anything else
+      // in the run config.
+      const cfg = resolveRunCfg({}, {}, undefined, undefined, loaded);
+      const childEnv = buildChildEnv(cfg);
+      expect(childEnv.PROJECT_ONLY).toBe("2");
+      expect(childEnv.SHARED).toBe("project");
+      expect(childEnv.PI_SUBAGENT_CHILD).toBe("1");
+    } finally {
+      if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = agentDir;
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+      if (existsSync(globalDir)) rmSync(globalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps subagent.env when the /subagent menu rewrites settings", () => {
+    const testDir = join(tmpdir(), `pi-subagent-env-keep-${Date.now()}`);
+    mkdirSync(join(testDir, ".pi"), { recursive: true });
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    const globalDir = join(tmpdir(), `pi-subagent-env-keep-global-${Date.now()}`);
+    mkdirSync(globalDir, { recursive: true });
+
+    try {
+      // Isolate the global layer: the real one may carry subagent.env too.
+      process.env.PI_CODING_AGENT_DIR = globalDir;
+      writeFileSync(
+        join(testDir, ".pi", "settings.json"),
+        JSON.stringify({ subagent: { env: { MY_SWITCH: "0" }, defaultModel: "m1" } }),
+      );
+      // The menu's updater spreads `current`, so a role edit must not drop env.
+      updateSubagentSettings(testDir, "project", (cur) => ({
+        ...cur,
+        agents: { explore: { model: "explore-model" } },
+      }));
+
+      const loaded = loadSubagentSettings(testDir, true);
+      expect(loaded.env).toEqual({ MY_SWITCH: "0" });
+      expect(loaded.defaultModel).toBe("m1");
+      expect(loaded.agents?.explore?.model).toBe("explore-model");
+    } finally {
+      if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = agentDir;
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+      if (existsSync(globalDir)) rmSync(globalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("lets settings env shadow the parent but never the recursion guard", () => {
+    const cfg = resolveRunCfg(
+      {},
+      {},
+      undefined,
+      undefined,
+      // A user pointing the guard at "0" would let children load this extension
+      // and recurse; the guard is set after the settings spread for that reason.
+      { env: { PI_SUBAGENT_CHILD: "0", BILLION_CONTEXT_PLUGIN: "0" } },
+    );
+    const childEnv = buildChildEnv(cfg);
+    expect(childEnv.BILLION_CONTEXT_PLUGIN).toBe("0");
+    expect(childEnv.PI_SUBAGENT_CHILD).toBe("1");
+  });
+
+  it("drops project subagent.env entirely when the project is not trusted", () => {
+    const testDir = join(tmpdir(), `pi-subagent-env-untrusted-${Date.now()}`);
+    mkdirSync(join(testDir, ".pi"), { recursive: true });
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    const globalDir = join(tmpdir(), `pi-subagent-env-untrusted-global-${Date.now()}`);
+    mkdirSync(globalDir, { recursive: true });
+
+    try {
+      writeFileSync(
+        join(globalDir, "settings.json"),
+        JSON.stringify({ subagent: { env: { FROM_GLOBAL: "1" } } }),
+      );
+      process.env.PI_CODING_AGENT_DIR = globalDir;
+      // A repo-supplied NODE_OPTIONS is the exact injection this gate must stop.
+      writeFileSync(
+        join(testDir, ".pi", "settings.json"),
+        JSON.stringify({ subagent: { env: { NODE_OPTIONS: "--require /tmp/evil.js" } } }),
+      );
+
+      // Same files, only the trust bit differs.
+      expect(loadSubagentSettings(testDir, true).env).toEqual({
+        FROM_GLOBAL: "1",
+        NODE_OPTIONS: "--require /tmp/evil.js",
+      });
+      expect(loadSubagentSettings(testDir, false).env).toEqual({ FROM_GLOBAL: "1" });
+    } finally {
+      if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = agentDir;
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+      if (existsSync(globalDir)) rmSync(globalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let an empty project env map clear the global one", () => {
+    const testDir = join(tmpdir(), `pi-subagent-env-empty-${Date.now()}`);
+    mkdirSync(join(testDir, ".pi"), { recursive: true });
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    const globalDir = join(tmpdir(), `pi-subagent-env-empty-global-${Date.now()}`);
+    mkdirSync(globalDir, { recursive: true });
+
+    try {
+      writeFileSync(
+        join(globalDir, "settings.json"),
+        JSON.stringify({ subagent: { env: { FROM_GLOBAL: "1" } } }),
+      );
+      process.env.PI_CODING_AGENT_DIR = globalDir;
+      // `{}` parses to undefined (no opinion), it is not an explicit wipe.
+      writeFileSync(
+        join(testDir, ".pi", "settings.json"),
+        JSON.stringify({ subagent: { env: {} } }),
+      );
+
+      expect(loadSubagentSettings(testDir, true).env).toEqual({ FROM_GLOBAL: "1" });
+    } finally {
+      if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = agentDir;
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+      if (existsSync(globalDir)) rmSync(globalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("carries subagent.env on both resolveRunCfg return paths", () => {
+    const settings = { env: { SWITCH: "0" } };
+    // Branch 1: a model plus a thinking level bakes into `${model}:${thinking}`.
+    expect(resolveRunCfg({}, { model: "p/m", thinking: "high" }, "low", undefined, settings).env).toEqual({
+      SWITCH: "0",
+    });
+    // Branch 2: the plain fallback return.
+    expect(resolveRunCfg({}, { model: "p/m" }, undefined, undefined, settings).env).toEqual({ SWITCH: "0" });
+    // No configured env stays absent rather than becoming {}.
+    expect(resolveRunCfg({}, {}, undefined, undefined, undefined).env).toBeUndefined();
+  });
+
   it("ignores root-level pi defaults but keeps legacy subagents.agentOverrides fallback", () => {
     const testDir = join(tmpdir(), `pi-subagent-fallback-${Date.now()}`);
     mkdirSync(join(testDir, ".pi"), { recursive: true });
@@ -297,6 +508,7 @@ describe("pi-subagent unit tests", () => {
               reviewer: {
                 model: "bytetrueapi/qwen3.8-max",
                 thinking: "high",
+                tools: ["read", "grep", "find", "bash", "compress", "decompress", "search_context", "acp_status"],
               },
             },
           },
@@ -310,6 +522,10 @@ describe("pi-subagent unit tests", () => {
       expect(loaded.defaultThinking).toBeUndefined();
       expect(loaded.agents?.reviewer?.model).toBe("bytetrueapi/qwen3.8-max");
       expect(loaded.agents?.reviewer?.thinking).toBe("high");
+      // billion-context-pi's `/acp-subagents` writes a tools override here. It must
+      // survive parsing: role tools beat the agent document's own `tools:` line.
+      expect(loaded.agents?.reviewer?.tools).toContain("compress");
+      expect(loaded.agents?.reviewer?.tools).toContain("bash");
     } finally {
       if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
     }
@@ -346,13 +562,24 @@ You are an expert researcher. Read references carefully.
   });
 
   it("resolves a known role and rejects an unknown one with the available list (issue 097)", () => {
-    expect(resolveAgentRole(process.cwd(), undefined)).toEqual({});
-    expect(resolveAgentRole(process.cwd(), "scout").tools).toEqual(["read", "grep", "find"]);
+    // Omitting `agent` uses the general-purpose document as the default template.
+    const defaultCfg = resolveAgentRole(process.cwd(), undefined);
+    expect(defaultCfg.systemPrompt).toContain("do not re-delegate");
+    expect(defaultCfg.tools).toBeUndefined();
+    // Whitespace-only is treated the same as omitted.
+    expect(resolveAgentRole(process.cwd(), "   ").systemPrompt).toContain("do not re-delegate");
+    expect(resolveAgentRole(process.cwd(), "explore").tools).toEqual([
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "bash",
+    ]);
     expect(() => resolveAgentRole(process.cwd(), "definitely-not-a-role")).toThrow(
       /Unknown agent role "definitely-not-a-role"/,
     );
     expect(() => resolveAgentRole(process.cwd(), "definitely-not-a-role")).toThrow(
-      /Omit 'agent' for a general-purpose child/,
+      /Omit 'agent' for the default general-purpose child/,
     );
   });
 
@@ -513,7 +740,7 @@ You are an expert researcher. Read references carefully.
     // (issue 096).
     expect(String(main.description)).toContain("general-purpose by default");
     expect(String(main.promptSnippet)).toContain("general-purpose by default");
-    expect((main.promptGuidelines as string[]).join("\n")).toContain("Omit 'agent' for a general-purpose child");
+    expect((main.promptGuidelines as string[]).join("\n")).toContain("Omit 'agent' for the general-purpose child");
     const agentParam = props.agent as JsonObject;
     expect(String(agentParam.description)).toContain("Omit it for a general-purpose child");
   });
