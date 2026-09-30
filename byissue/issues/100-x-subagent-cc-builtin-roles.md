@@ -16,7 +16,7 @@ closed: 2026-09-30
 ## 范围
 
 - 包含：`agents/*.md` 三个文档、`src/index.ts` 的角色解析与四处模型可见文本、`src/command.ts` 两处示例、README、`index.test.ts`、`package.json` + `package-lock.json` 版本
-- 不包含：`reviewer` 的替代（决定做成 skill，见「遗留」）、`/acp-subagents` 相关机制
+- 不包含：`reviewer` 的替代（另择 skill 项目处理，见「遗留」）、`/acp-subagents` 相关机制
 
 ## 背景与证据
 
@@ -66,20 +66,20 @@ closed: 2026-09-30
   - 第 21–24 行：内置角色列表已整段重写为 `explore` / `plan` / `general-purpose`，并写明 `general-purpose` 是不传 `agent` 的默认模板、可用角色列表会过滤默认角色
   - 第 47 行：已改为 `agents/{explore,plan,general-purpose}.md`，思考档描述改为 `explore` 最低 / 其余随父会话
   - 第 61 行：使用路径表格已改为 `explore\|plan`
-  - 另：定位段与第 17 行的「代码审查」措辞已删（`reviewer` 已不存在，能力改走用户自建 agent 文档）
+  - 另：定位段与第 17 行的「代码审查」措辞已删（`reviewer` 已不存在，能力取代方式见「遗留」）
 - 提交与发布：`0.10.0` 已 bump，未 commit / 未发布（需用户授权）；参考 096 的发布路径（tag `pi-subagent-v0.10.0` 触发 release.yml，Trusted Publishing OIDC + provenance）
 - **与 Issue 101 一并提交**（工作区同时含 env 透传改动）
 - 已随本次提交落地的量化证据：`npx vitest run` **37 passed**、`npx tsc --noEmit` 干净
 
 ## 遗留
 
-- **`reviewer` 能力净损失**：它是唯一「可跑 `bash` 验证」的对抗性审查角色，CC 三角色无对应物（CC 的 Explore 明确把自己排除在 review 之外）。**决定**：做成 code-review skill，不加第四个角色。
+- **`reviewer` 能力净损失**（**已了结，出仓**）：它是唯一「可跑 `bash` 验证」的对抗性审查角色，CC 三角色无对应物（CC 的 Explore 明确把自己排除在 review 之外）。**用户裁决（2026-09-30）**：做成 code-review **skill**、不在此仓库做、也不加第四个角色——"那是纯 skill 项目做的事情，和我们这个 pi 扩展仓库没关系"。故本包内不再承接该能力的替代，也不为它留 TODO。
 - **`plan` 与 ByIssue 的规划权威源**：~~未在其 description 里写适用边界 —— 待用户裁决~~ → **用户裁决（2026-09-30）：不冲突，无需处理。** 理由：本包是通用基础设施、公开发布，多数使用者没有 ByIssue；「简单项目 → plan → 执行」是主用例而非退化用例；`subagent({agent:"plan"})` 是显式 opt-in、无自动派发，不存在与 ByIssue 争夺权威的机制。残留性质（ByIssue 会话里调 `plan` 的产出是临时草稿、不落 `byissue/`）属调用时的用户选择，不由包去约束。
 - **`researcher` 的 web 研究能力**：随角色删除；`general-purpose` 全工具可用但仍具备 web_search/web_fetch，能力未消失，只是不再有专用角色。
 
 ## 关闭结论
 
-**判断：可关。** 目标（三角色 + `general-purpose` 降为默认模板）全部落地；范围未暗扩——`reviewer` 的替代与 `plan` 的边界裁决都留在「遗留」，没往本 issue 里塞。
+**判断：可关。** 目标（三角色 + `general-purpose` 降为默认模板）全部落地；范围未暗扩——`reviewer` 的替代已裁决为出仓（skill 项目）、`plan` 的边界已裁决为不冲突，两者都留在「遗留」，没往本 issue 里塞。
 
 **验证摘要**：
 
@@ -102,7 +102,7 @@ closed: 2026-09-30
 
 **沉淀**：新增 `byissue/notes/011-billion-context-proxy-registers-acp-tools-in-children.md`（换代后的代理侧架构、工具注册不依赖模型流量、`BILLION_CONTEXT_PLUGIN` 开关语义、`pi --tools` 是替换型 allowlist）；`byissue/spec/pi-subagent/index.md` 角色列表段补了正文来源与版权边界（改编自 `@tintinweb/pi-subagents` MIT，不是逐字复制 Claude Code）。
 
-**遗留（已确认不属本 issue）**：`reviewer` 能力净损失 → 用户定为 code-review skill；`plan` 与 ByIssue 规划权威源边界 → **用户裁决不冲突（见「遗留」）**；`researcher` 的 web 研究能力随角色消失。
+**遗留（已确认不属本 issue）**：`reviewer` 能力净损失 → **用户裁决出仓**（另立 skill 项目做 code-review，本仓库不承接）；`plan` 与 ByIssue 规划权威源边界 → **用户裁决不冲突（见「遗留」）**；`researcher` 的 web 研究能力随角色消失。
 
 ## 发布记录（2026-09-30）
 
