@@ -100,6 +100,6 @@ closed: 2026-09-30
 
 **生命周期注意（非实现缺陷）**：本 issue 的改动落地后用户未再 `/reload`，因此当时正在跑的 pi 进程仍是旧模块——此时线上会话的工具 description 仍列 `scout/researcher/reviewer` 且仍接受这些名字。用带标记的错误文案做行为探针（改源码文案后调 `subagent({agent:"nope"})`）返回的仍是旧文案，据此确认了这一点。`/reload` 后才实际生效（同 notes/009 的 reload 语义）。
 
-**沉淀**：新增 `byissue/notes/010-billion-context-proxy-registers-acp-tools-in-children.md`（换代后的代理侧架构、工具注册不依赖模型流量、`BILLION_CONTEXT_PLUGIN` 开关语义、`pi --tools` 是替换型 allowlist）；`byissue/spec/pi-subagent/index.md` 角色列表段补了正文来源与版权边界（改编自 `@tintinweb/pi-subagents` MIT，不是逐字复制 Claude Code）。
+**沉淀**：新增 `byissue/notes/011-billion-context-proxy-registers-acp-tools-in-children.md`（换代后的代理侧架构、工具注册不依赖模型流量、`BILLION_CONTEXT_PLUGIN` 开关语义、`pi --tools` 是替换型 allowlist）；`byissue/spec/pi-subagent/index.md` 角色列表段补了正文来源与版权边界（改编自 `@tintinweb/pi-subagents` MIT，不是逐字复制 Claude Code）。
 
 **遗留（已确认不属本 issue）**：`reviewer` 能力净损失 → 用户定为 code-review skill；`plan` 与 ByIssue 规划权威源边界 → 待裁决；`researcher` 的 web 研究能力随角色消失。

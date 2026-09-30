@@ -100,7 +100,7 @@ BILLION_CONTEXT_PLUGIN=0  → 12 个工具，ACP 0 个
 | 线上进程 | 未 reload 时仍跑旧模块（`subagent.env` 未参与），需 `/reload` 才生效 |
 | `spawn(` 全项目扫描 | 仅 `src/index.ts:1050` 一处，`buildChildEnv` 也只在那里调用 |
 
-**回写位置**：`byissue/spec/pi-subagent/index.md` 新增第 6 条「子进程环境变量透传」（合并顺序、守卫不可覆盖、只收字符串、空 map 语义、`buildChildEnv` 单点）；`byissue/spec/index.md` 的包映射表该行配置列补上了 `subagent.defaultModel` / `defaultThinking` / `agents[角色]` / `env`。**沉淀**：`byissue/notes/010-billion-context-proxy-registers-acp-tools-in-children.md` 记下了这个开关针对的外部事实（为什么必须在**子进程** env 里关、而不是父进程）。
+**回写位置**：`byissue/spec/pi-subagent/index.md` 新增第 6 条「子进程环境变量透传」（合并顺序、守卫不可覆盖、只收字符串、空 map 语义、`buildChildEnv` 单点）；`byissue/spec/index.md` 的包映射表该行配置列补上了 `subagent.defaultModel` / `defaultThinking` / `agents[角色]` / `env`。**沉淀**：`byissue/notes/011-billion-context-proxy-registers-acp-tools-in-children.md` 记下了这个开关针对的外部事实（为什么必须在**子进程** env 里关、而不是父进程）。
 
 **交付**：`packages/pi-subagent` 0.10.0（与 Issue 100 同一笔提交，未发布）。
 
