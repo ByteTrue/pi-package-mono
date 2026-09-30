@@ -16,7 +16,7 @@ closed: 2026-09-30
 ## 范围
 
 - 包含：`agents/*.md` 三个文档、`src/index.ts` 的角色解析与四处模型可见文本、`src/command.ts` 两处示例、README、`index.test.ts`、`package.json` + `package-lock.json` 版本
-- 不包含：`reviewer` 的替代（决定做成 skill，见「遗留」）、`plan` 与 ByIssue 规划权威源的边界说明、`/acp-subagents` 相关机制
+- 不包含：`reviewer` 的替代（决定做成 skill，见「遗留」）、`/acp-subagents` 相关机制
 
 ## 背景与证据
 
@@ -48,7 +48,7 @@ closed: 2026-09-30
 
 - **可能影响**：所有不带 `agent` 的调用从此会带上 `general-purpose` 的前言（含「只报 essentials」「不要转包给你自己的子代理」两条纪律）。这是**行为变更**，非纯重构。
 - **明确不碰**：`--tools` 替换语义、`settings.agentOverrides` legacy 路径、模型/思考优先级链、`PI_SUBAGENT_CHILD` 防递归。
-- **需要用户确认**：`plan` 与 ByIssue 规划权威源的边界（见「遗留」）。
+- **规划权威源（用户裁决：不冲突，无需处理）**：见「遗留」中该条。
 
 ## 验证
 
@@ -74,7 +74,7 @@ closed: 2026-09-30
 ## 遗留
 
 - **`reviewer` 能力净损失**：它是唯一「可跑 `bash` 验证」的对抗性审查角色，CC 三角色无对应物（CC 的 Explore 明确把自己排除在 review 之外）。**决定**：做成 code-review skill，不加第四个角色。
-- **`plan` 与 ByIssue 的规划权威源**：`byissue/` 把规划权威定在 Issue/Epic 文件；`plan` 角色只产出计划文本、不落盘。未在其 description 里写适用边界 —— **待用户裁决**。
+- **`plan` 与 ByIssue 的规划权威源**：~~未在其 description 里写适用边界 —— 待用户裁决~~ → **用户裁决（2026-09-30）：不冲突，无需处理。** 理由：本包是通用基础设施、公开发布，多数使用者没有 ByIssue；「简单项目 → plan → 执行」是主用例而非退化用例；`subagent({agent:"plan"})` 是显式 opt-in、无自动派发，不存在与 ByIssue 争夺权威的机制。残留性质（ByIssue 会话里调 `plan` 的产出是临时草稿、不落 `byissue/`）属调用时的用户选择，不由包去约束。
 - **`researcher` 的 web 研究能力**：随角色删除；`general-purpose` 全工具可用但仍具备 web_search/web_fetch，能力未消失，只是不再有专用角色。
 
 ## 关闭结论
@@ -102,7 +102,7 @@ closed: 2026-09-30
 
 **沉淀**：新增 `byissue/notes/011-billion-context-proxy-registers-acp-tools-in-children.md`（换代后的代理侧架构、工具注册不依赖模型流量、`BILLION_CONTEXT_PLUGIN` 开关语义、`pi --tools` 是替换型 allowlist）；`byissue/spec/pi-subagent/index.md` 角色列表段补了正文来源与版权边界（改编自 `@tintinweb/pi-subagents` MIT，不是逐字复制 Claude Code）。
 
-**遗留（已确认不属本 issue）**：`reviewer` 能力净损失 → 用户定为 code-review skill；`plan` 与 ByIssue 规划权威源边界 → 待裁决；`researcher` 的 web 研究能力随角色消失。
+**遗留（已确认不属本 issue）**：`reviewer` 能力净损失 → 用户定为 code-review skill；`plan` 与 ByIssue 规划权威源边界 → **用户裁决不冲突（见「遗留」）**；`researcher` 的 web 研究能力随角色消失。
 
 ## 发布记录（2026-09-30）
 
