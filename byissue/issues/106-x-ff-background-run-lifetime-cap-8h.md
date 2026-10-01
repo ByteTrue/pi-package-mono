@@ -36,6 +36,15 @@ created: 2026-10-01
 - `grep -rn '3600' packages/pi-background-terminal`：仅剩注释里的历史说明。
 - 未做：真实 Pi 回归（模型是否会因上限变大而不续期——短时间内不会触发）；发布（tag `pi-background-terminal-v0.11.0`）待授权。
 
+## 发布（2026-10-01，用户 m00109 授权）
+
+- 提交链：`3016995` feat → `45f52bf` docs(byissue) → `bc385fd` release(pi-background-terminal) 0.11.0。
+- 推送前先跑全仓 gate：`npm run typecheck --workspaces --if-present` + `npm test` 退出码 0（本地一次 push 遇 `Recv failure: Connection was reset`，重试成功；tag 指向 `bc385fd`）。
+- `git tag pi-background-terminal-v0.11.0` → `git push origin <tag>` 触发 `.github/workflows/release.yml`。
+- Actions run `36903936395` 全绿：`npm ci` → workspace typecheck → `npm test` → OIDC 发布（publish 到 registry.npmjs.org，provenance 已签，logIndex 3038861034）。
+- npm 落库核验：`0.11.0` 已是 latest，`gitHead` `bc385fdd326f2b41c08e68cbe6a063baee3448ec` 与 tag 一致。
+- 遗留：本机 Pi 需 reload 才加载 0.11.0。
+
 ## 对 byissue/ 的影响
 
 - spec 已同步（见上）；ff 099 作为历史记录保留原样，两者关系在 spec:19 里写明。
