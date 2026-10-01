@@ -16,7 +16,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 ### background_run（纯后台）
 
 - `background_run(command, timeout?)`：schema 自定义（timeout 上限 2147483 对齐内建）；立即返回 `Started in background: <id> / Output file: <path> / Hard timeout: Ns. You will be notified when it exits; until then the output file is partial.`。
-- **`timeout` 缺省 600s，硬上限 3600s**（总寿命硬杀；显式值超过上限被钳到 3600；`timed_out` 可观测并入通知，通知携带续期提示——dev server 到点被杀后用 background_run 重启即续期）。上限理由：任务随 session_shutdown 清理，本来活不过会话，上限钳的是会话内僵尸任务的资源浪费天花板；3600s 覆盖任何本地 build/test，dev server 靠通知-重启循环续期。
+- **`timeout` 缺省 600s，硬上限 28800s（8h）**（总寿命硬杀；显式值超过上限被钳到 28800；`timed_out` 可观测并入通知，通知携带续期提示——dev server 到点被杀后用 background_run 重启即续期）。上限理由：任务随 session_shutdown 清理，本来活不过会话，上限钳的是会话内僵尸任务的资源浪费天花板。上限取 8h 而非 1h：续期不是免费的——dev server 每次被杀都要重启并重连它的消费者（浏览器/客户端），这一成本在单个工作会话里就已经发生（2026-10-01 用户口径）；8h 跨越任何工作会话，上限只为真正被遗忘的任务而触发，天花板本身仍在（0.8.x 教的 86400 对 dev server 等于不设上限，见 ff 099）。
 - **无等待路径**：不内联返回输出、无 waitSeconds、无 demote 竞态。print/JSON 会话无需特判——fire-and-forget 在所有 mode 行为一致，任务随进程死。
 - 尊重用户 `shellPath`/`shellCommandPrefix`（`SettingsManager.create`，尊重项目信任态，损坏 fail-open）；注入 `PI_*` 会话环境 + agent-bin PATH 前置（复刻内建 `getShellEnv()` 语义；上游导出后切换——upgrade trigger 在代码注释）。
 - promptGuidelines 五条引导，按 decision 001 正向优先措辞：hands-off → background_run；need the result now → bash；启动后继续做别的或结束回合，退出以新消息开启下一回合（"that notification is how you wait"），`background_status` 只用于一次性查看部分输出；dev server 传大 timeout；bash/powershell 无 timeout 时被 300s 硬杀（本扩展注入，显式值亦钳到 300），需要更长命令改用 background_run 而非给 bash 传大 timeout。返回文本同样以动作收尾（continue with other work or end your turn now）。`timed_out` 唤醒消息附带恢复提示；background_status 运行中任务的 tail 标注 "still running"（防部分输出误读）。
@@ -60,7 +60,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 |---|---|
 | 需要结果才能继续（含慢命令） | 内建 `bash`（阻塞，300s hook 兜底） |
 | 脱手跑（build/测试套件/长任务） | `background_run(command)`（600s 默认寿命） |
-| dev server / watch mode | `background_run(command, timeout: 3600)`，超时通知到达后重启续期 |
+| dev server / watch mode | `background_run(command, timeout: 28800)`，超时通知到达后重启续期（8h 内通常不到点） |
 | 查看一个后台任务 | `background_status(id)` |
 | 阅读完整输出 | `read` 读取返回的文件路径 |
 | 停止一个任务 | `background_kill(id)` |
@@ -97,6 +97,7 @@ npm --workspace @bytetrue/pi-background-terminal pack --dry-run
 
 - README：`packages/pi-background-terminal/README.md`
 - 纯后台定调：`byissue/issues/079-x-bg-terminal-pure-background.md`（含验证与变异记录）
+- 寿命硬上限 3600s → 28800s（8h）：`byissue/issues/106-x-ff-background-run-lifetime-cap-8h.md`（099 的上限理由被续期/重连成本推翻）
 - 解耦翻转：`byissue/issues/078-x-bg-terminal-decouple-run-tool.md`
 - 双默认/one-shot/文件上限/PATH 复刻机制：`byissue/issues/077-x-bg-terminal-dual-defaults.md`
 - 单入口设计与"名字撒谎"批判（079 通过删除快路径使其失效、恢复诚实名）：`byissue/talks/005-background-terminal-bash-waitseconds.md`
