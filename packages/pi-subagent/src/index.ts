@@ -1601,17 +1601,28 @@ export default function subagentExtension(pi: {
     },
   });
 
+  // Roles are discovered at registration so the model sees the actual choices
+  // when filling the agent argument (issue 105). Roles added mid-session surface
+  // through the resolveAgentRole error, which lists the current roles.
+  const builtinRoleGlosses: Record<string, string> = {
+    explore: "fast read-only search, lowest thinking",
+    plan: "read-only planning ending with a critical-files list",
+  };
+  const availableRoles = listDiscoveredAgentNames(process.cwd())
+    .filter((name) => name !== DEFAULT_AGENT_NAME)
+    .map((name) => (builtinRoleGlosses[name] ? `${name} (${builtinRoleGlosses[name]})` : name))
+    .join(", ");
+
   pi.registerTool?.({
     name: "subagent",
     label: "Subagent",
     description:
-      "Delegate ONE self-contained task to an isolated child agent session. The child is general-purpose by default: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), so any self-contained job you would otherwise do inline fits. Two built-in roles narrow that child when a job matches: 'explore' (fast read-only search — you only need the conclusion, not the file dumps) and 'plan' (read-only implementation planning that ends with a critical-files list). The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.",
+      "Delegate ONE self-contained task to an isolated child agent session that runs in the background. Omit 'agent' for a general-purpose default child that inherits your model, thinking level, and pi's default tools. Roles are dynamic — built-in 'explore' (fast read-only search) and 'plan' (read-only planning ending with a critical-files list), plus any custom .pi/agents documents; use one when it matches the task. The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. Make multiple subagent calls in one message to run tasks in parallel; use subagent_status to check one and subagent_stop to stop one.",
     promptSnippet:
-      "Delegate a self-contained job to a child agent — general-purpose by default, or the 'explore' / 'plan' role when one matches; the call returns at once and the result arrives later as a new message.",
+      "Delegate a self-contained job to a background child agent — omit 'agent' for the general-purpose default child, or pass a role when one matches; the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
     promptGuidelines: [
       "Delegate any self-contained job to subagent so you stay free to keep working or hand control back to the user",
-      "Omit 'agent' for the general-purpose child (inherits your model, thinking level, and default tools); pass 'agent' only when the 'explore' or 'plan' role, or a custom .pi/agents document, matches the job exactly",
       "After a subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
     ],
     parameters: {
@@ -1623,8 +1634,7 @@ export default function subagentExtension(pi: {
         },
         agent: {
           type: "string",
-          description:
-            "Optional agent role. Omit it for a general-purpose child that inherits your model, thinking level, and default tools. Built-in roles: 'explore' (fast read-only search, lowest thinking) and 'plan' (read-only implementation planning, ends with a critical-files list); any custom .pi/agents/<name>.md works too. A name that matches no document is rejected with the list of available roles.",
+          description: `Optional role for the child. Omit it for a general-purpose default child that inherits your model, thinking level, and default tools. Roles available: ${availableRoles}. Custom roles are .pi/agents/*.md documents. A name that matches no role is rejected with the list of available roles.`,
         },
         tools: {
           type: "array",

@@ -739,14 +739,23 @@ You are an expert researcher. Read references carefully.
     expect(props).not.toHaveProperty("async");
     expect(registered).not.toHaveProperty("renderResult");
 
-    // The role-less general-purpose child is the default and every model-facing
-    // surface must say so; otherwise models only ever fill `agent` with a role
-    // (issue 096).
-    expect(String(main.description)).toContain("general-purpose by default");
-    expect(String(main.promptSnippet)).toContain("general-purpose by default");
-    expect((main.promptGuidelines as string[]).join("\n")).toContain("Omit 'agent' for the general-purpose child");
+    // The omit-agent default path must stay visible on every model-facing surface,
+    // or models only ever fill `agent` with a role (issue 096). Nothing may gate
+    // custom roles behind the built-in ones, and the model must see the actual
+    // role choices, not just the built-ins (issue 105).
+    expect(String(main.description)).toContain("Omit 'agent' for a general-purpose default child");
+    expect(String(main.promptSnippet)).toContain("omit 'agent' for the general-purpose default child");
+    const guidelines = (main.promptGuidelines as string[]).join("\n");
+    expect(guidelines).toContain("Delegate any self-contained job");
+    expect(guidelines).not.toContain("pass 'agent' only when");
     const agentParam = props.agent as JsonObject;
-    expect(String(agentParam.description)).toContain("Omit it for a general-purpose child");
+    const agentParamText = String(agentParam.description);
+    expect(agentParamText).toContain("Omit it for a general-purpose default child");
+    // Dynamic role list (issue 105): built-ins are always discovered, so they must
+    // be listed; the default role itself stays out of the list.
+    expect(agentParamText).toContain("Roles available: ");
+    expect(agentParamText).toMatch(/\bexplore\b/);
+    expect(agentParamText).toMatch(/\bplan\b/);
   });
 
   it("formats the footer from the oldest running task and clears when idle", () => {
