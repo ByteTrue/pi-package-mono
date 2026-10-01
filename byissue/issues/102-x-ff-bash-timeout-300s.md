@@ -20,4 +20,11 @@ created: 2026-09-30
 - 验证：`npm --workspace @bytetrue/pi-background-terminal test` 8 files / 52 passed + 1 skipped 全绿；`tsc --noEmit` 通过；变异验证——把常量改回 600 重跑，`bash-default-timeout.test.ts` 多条转红（注入/钳制/steering 文案），恢复 300 后复绿。
 - byissue：已同步 `byissue/spec/pi-background-terminal/index.md`（定位、hook 小节标题与正文、promptGuidelines 第五条、明确不做、使用路径表、实现地图共 7 处）与 `byissue/spec/index.md`（2 处前台 hook 描述）。
 
-发布：**未做**。本包 npm 上仍是 0.9.0（600s），需要 bump + tag `pi-background-terminal-v*` 才生效；本机 `~/.pi/agent/npm` 也需相应更新。
+
+## 发布
+
+- 版本 `0.9.0` → `0.10.0`（minor）。
+- commit `fb388cb`（rebase 到 `07146e7` 之后的 `main` 尖端）推送 `origin/main`；tag `pi-background-terminal-v0.10.0` → 对象 `a7043f07`，解引用到 commit `c74b7d5`——那是 rebase 前的同一份提交，`packages/pi-background-terminal/` 子树与 `fb388cb` 逐字节相同（`git diff c74b7d5 fb388cb -- packages/pi-background-terminal` 为空），故 tag 内容与已推送代码一致。
+- `release.yml` run `36809670626`：typecheck → `npm test` → OIDC Trusted Publishing 全部 ✓，日志 `→ publishing @bytetrue/pi-background-terminal@0.10.0`。
+- npm 已生效：`latest = 0.10.0`；tarball 反验 10 文件干净（零测试泄漏），包内 `src/bash-default-timeout.ts:9` 为 `export const SHELL_TIMEOUT_SECONDS = 300;`、:56 steering 为插值模板串。
+- 本机全局包（`~/.pi/agent/npm`）已更新至 0.10.0；**其他机器需用户自行更新**（否则仍跑 600s）。
