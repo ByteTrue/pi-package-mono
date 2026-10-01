@@ -32,6 +32,8 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`。
 
 内建 shell 工具不传 timeout 时经 `tool_call` 钩子注入 300s；显式传超过 300s 的值被钳到 300——防跑飞命令挂死 agent（2026-09-30 由 600s 收紧到 300s：前台命令应快速失败或转 `background_run`，600s 让跑飞命令占用过久）。超时被杀死的瞬间，`tool_result` 钩子在错误信息后追加引导块：指出 300s 上限、长命令改用 `background_run`、挂起时先查原因再重试（079 审计推迟的动态引导，2026-09 真实事故后落地）。不注册工具、不接管执行，只补默认值与上限，加上失败瞬间的上下文内引导。需要更久的命令走 `background_run`。
 
+300s 是**暂定值**（2026-10-01 用户口径）：先观察一段时间，若合法慢命令频繁被硬杀再议；逃生口仍是 `background_run`。
+
 ## 输出与生命周期
 
 - stdout/stderr 实时写 `$TMPDIR/pi-background-terminal/<id>.log`；内存只留 tail 预览与行数。
