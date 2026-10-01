@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 /** Default and hard cap for the built-in shell tools' timeout parameter, in seconds. */
-const SHELL_TIMEOUT_SECONDS = 600;
+export const SHELL_TIMEOUT_SECONDS = 300;
 
 type ShellToolInput = {
   timeout?: number;
@@ -20,14 +20,14 @@ function isUsableTimeout(value: unknown): value is number {
 }
 
 /**
- * 600s timeout for the built-in shell tools (bash, powershell): Pi runs them with
+ * 300s timeout for the built-in shell tools (bash, powershell): Pi runs them with
  * no timeout unless the model passes one, so a single runaway foreground command
  * (`find /`) can wedge the agent for hours. Pi fires `tool_call` before execution and
  * documents mutating `event.input` as supported behavior, so inject the default here.
  *
- * The default is also a cap: an explicit timeout above 600s is clamped down. An agent
+ * The default is also a cap: an explicit timeout above 300s is clamped down. An agent
  * turn blocked on one foreground command is wedged — user, subagents, everything waits —
- * so no foreground bash call may outlive 600s. Commands that legitimately need longer
+ * so no foreground bash call may outlive 300s. Commands that legitimately need longer
  * (builds, test suites, dev servers) have a real home: background_run with a large
  * timeout, which reports its exit as a new message instead of blocking the turn.
  * The cap also guards against prompt-side drift teaching the model to sidestep the
@@ -36,9 +36,9 @@ function isUsableTimeout(value: unknown): value is number {
  *
  * This is a safety net, not a coupling: no tool is registered, overridden, or executed
  * here — only a missing parameter gets a default value and an oversized one gets clamped.
- * background_run resolves its own 600s lifetime default inside its execute.
+ * background_run resolves its own (longer) lifetime default inside its execute.
  *
- * Second surface: when a shell command dies on the 600s cap, the raw error the model
+ * Second surface: when a shell command dies on the 300s cap, the raw error the model
  * sees says only "Command timed out after N seconds" — nothing about the cap or the
  * recovery path. 079's audit deferred in-result steering until real usage proved the
  * need; that proof arrived (2026-09: the model repeatedly retried the same hung
@@ -49,11 +49,11 @@ function isUsableTimeout(value: unknown): value is number {
 const TIMEOUT_ERROR_PATTERN = /Command timed out after \d+ seconds/;
 // Source of that wording: pi core's bash/powershell execute throws
 // `Command timed out after ${n} seconds` (dist/core/tools/bash.js). If a core release
-// ever reformats it, this hook silently stops steering — the 600s cap itself is
+// ever reformats it, this hook silently stops steering — the 300s cap itself is
 // unaffected (it keys on the input parameter, not this text). Re-align on upgrade.
 
 const TIMEOUT_STEERING =
-  "[pi-background-terminal] Foreground shell commands are hard-capped at 600s by this extension. " +
+  `[pi-background-terminal] Foreground shell commands are hard-capped at ${SHELL_TIMEOUT_SECONDS}s by this extension. ` +
   "If the command legitimately needs longer, start it with background_run and a larger timeout — its exit arrives as a new message. " +
   "If it should have finished quickly, it probably hung; find out why before retrying it in the foreground.";
 
