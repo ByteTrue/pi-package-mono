@@ -77,9 +77,12 @@ describe("settings location", () => {
   it("creates the config root with 0700 and the file with 0600", () => {
     const path = updateSubagentSettings(cwd, "global", () => ({ defaultModel: "vendor/model-a" }));
 
-    expect(statSync(join(agentDir, "pi-pkg-cfg")).mode & 0o777).toBe(0o700);
-    expect(statSync(join(agentDir, "pi-pkg-cfg", "pi-subagent")).mode & 0o777).toBe(0o700);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    // Windows ignores POSIX mode bits and reports 0o666, so the modes are only meaningful off win32.
+    if (process.platform !== "win32") {
+      expect(statSync(join(agentDir, "pi-pkg-cfg")).mode & 0o777).toBe(0o700);
+      expect(statSync(join(agentDir, "pi-pkg-cfg", "pi-subagent")).mode & 0o777).toBe(0o700);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("honors an explicit file mode instead of forcing 0600", () => {
@@ -88,7 +91,7 @@ describe("settings location", () => {
     writeFileSync(path, "{}\n", { mode: 0o640 });
 
     updateSubagentSettings(cwd, "global", () => ({ defaultModel: "vendor/model-a" }));
-    expect(statSync(path).mode & 0o777).toBe(0o640);
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o640);
   });
 
   it("lets PI_PKG_CFG_DIR move the global root", () => {
