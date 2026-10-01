@@ -45,7 +45,7 @@ created: 2026-09-30
 用户裁决收尾 (m00211)：
 - 会话中途新增角色的快照漂移 "我不 care，有没有无所谓" —— 注册时快照 + resolveAgentRole 报错兜底的方案被接受。
 - 参数 schema 可见性已核实 (m00210)：pi provider 层 convertTools/buildParams 把工具 description + input_schema 打进 params.tools，随每次 API 请求整体发送——角色列表从第一回合就可见，不存在"模型不知道有角色→走通用流程"的信息缺口。剩余缺口仅会话中途新增角色，用户明确不 care。
-- 遗留待办：发布 0.9.x bump 未做（需用户授权）；general-purpose.md 文件名问题见后续候选。
+- 遗留待办：general-purpose.md 文件名问题见后续候选。发布已于当日完成（用户 m00224 授权）：0.11.0 → 0.12.0，tag pi-subagent-v0.12.0，经 release.yml OIDC 发布。
 
 ## 后续候选（不在本次范围）
 
