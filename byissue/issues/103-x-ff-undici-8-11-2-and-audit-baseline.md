@@ -23,9 +23,12 @@ created: 2026-10-01
 
 **已知非本次引入的失败（与本改动无关）**：`npm test` 在 `pi-subagent` 报 2 条 Windows 专属失败——`packages/pi-subagent/src/settings.test.ts:80,81,82,91` 的 `statSync(...).mode & 0o777` 断言缺 `process.platform !== "win32"` 守卫（`pi-vendor/src/config-core.test.ts:47`、`pi-vision/src/vision-command.test.ts:76` 有该守卫）。已在 4dbaba7 引入；`git stash` 掉本次全部改动后单跑 `npm --workspace @bytetrue/pi-subagent test` 仍然同样 2 条红，反证与 undici 无关。CI 跑 ubuntu，因此不影响本包发布。
 
-## 发布
+## 发布（2026-10-01）
 
-- tag `pi-web-search-v0.5.1` 触发 `.github/workflows/release.yml`（OIDC Trusted Publishing，无需 NPM_TOKEN）；本机 npm 未登录（`ENEEDAUTH`），只能走 CI。
-- 发布前检查：`npm view @bytetrue/pi-web-search versions` 停在 0.5.0，0.5.1 未被占用。
+- commit `884fbae` 推送 `origin/main`（fast-forward，父提交 `663c5ba`）；tag `pi-web-search-v0.5.1` 按提交哈希显式创建（轻量 tag，与 `pi-web-search-v0.5.0` 一致），推送后触发 `release.yml` run `36810468826`（OIDC Trusted Publishing，无需 NPM_TOKEN；本机 npm 未登录 `ENEEDAUTH`，只能走 CI）。57s 全绿：`npm ci` → typecheck → `npm test`（ubuntu）→ `→ publishing @bytetrue/pi-web-search@0.5.1`，provenance 入 transparency log `logIndex=3029692128`。
+- npm 已生效：`dist-tags.latest = 0.5.1`；本地 `npm view` 一度仍读回 0.5.0（客户端缓存），直接用 `curl https://registry.npmjs.org/@bytetrue%2fpi-web-search` 反验才看到 0.5.1 与 `latest` 更新——**发布后核验别只信 `npm view` 的第一读**。
+- tarball 反验：sha1 `75e86f260befc26508262a752a3f0cb3412a5bce`（与 CI 的 shasum 逐字符相同）、22 文件、`package/package.json` 为 `version 0.5.1` + `dependencies.undici 8.11.2`，零测试泄漏。
+- 本机 Pi 安装（`~/.pi/agent/npm`）已从 0.5.0（undici 8.9.0）升到 0.5.1（undici 8.11.2）；**其他机器需用户自行更新**（否则仍跑带漏洞的 8.9.0）。
+- 残留不在本仓范围：该安装目录里 `@earendil-works/pi-coding-agent/node_modules/brace-expansion` 仍是 5.0.9（其 `minimatch@10.2.6` 要求 `^5.0.8`，lockfile 标记为 `peer: true`，`npm audit fix`/`npm update` 都不动它）。这属于 Pi 本体依赖树，不属于本仓任何包。
 
-顺手发现（不在本次范围）：`packages/pi-subagent/src/settings.test.ts` 的 mode 断言缺 Windows 守卫。
+顺手发现（不在本次范围）：`packages/pi-subagent/src/settings.test.ts` 的 mode 断言缺 Windows 守卫（详见上文「已知非本次引入的失败」）。
