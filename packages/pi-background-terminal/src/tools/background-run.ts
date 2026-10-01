@@ -17,13 +17,14 @@ export const DEFAULT_LIFETIME_SECONDS = 600;
  * Hard cap on a background task's total lifetime, explicit timeout included (seconds).
  * Rationale: background tasks are cleared on session_shutdown, so no task outlives its
  * session anyway — the cap bounds how long a *zombie* task may burn resources inside a
- * live session. 3600s covers any local build/test suite; dev servers renew: the
- * timed_out notification tells the agent to restart with background_run, which is a
- * cheap, explicit renew loop instead of a silent forever-run. A "larger" escape hatch
- * (0.8.x taught 86400) was phantom protection — sessions rarely last that long, and it
- * left a 24-hour zombie ceiling (real incident class, 2026-09: see ff 099).
+ * live session. It also bounds the renew loop: a dev server started with the cap must be
+ * restarted (and its consumers reconnected) every time it fires, and that reconnect cost
+ * is real work — 3600s fired inside a single working session and cost more than the
+ * zombie ceiling it bought (2026-10-01 用户口径). 8 hours spans any working session —
+ * the cap now fires only for genuinely forgotten tasks; the ceiling itself
+ * stays (0.8.x taught 86400 for dev servers, which is 不设上限 in practice — see ff 099).
  */
-export const HARD_CAP_LIFETIME_SECONDS = 3600;
+export const HARD_CAP_LIFETIME_SECONDS = 28_800;
 
 /**
  * `background_run` — a pure background executor. It never waits, never returns command
@@ -37,8 +38,8 @@ export const HARD_CAP_LIFETIME_SECONDS = 3600;
  *
  * Dual inheritance from the 077/078 work, minus the wait path:
  * - timeout defaults to 600s total lifetime; explicit values are honored up to the
- *   3600s hard cap, above which they are clamped — and a timed-out dev server renews
- *   by restarting (the wake-up message says so);
+ *   hard cap (`HARD_CAP_LIFETIME_SECONDS`), above which they are clamped — and a timed-out
+ *   dev server renews by restarting (the wake-up message says so);
  * - the exit notification (followUp + triggerTurn) fires exactly once per task.
  *
  * This being a pure background tool, print/json sessions (pi -p, subagent children)
@@ -63,7 +64,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
       "Use background_run for work that should run hands-off — builds, test suites, dev servers, watch mode — anything you can leave running while you do other things",
       "When you need a command's output to decide your next step, use bash — it blocks and returns the output",
       "After background_run returns, the command is already running: continue with other work or end your turn. Its exit arrives as a new message that starts your next turn — that notification is how you wait. background_status is for a one-off look at partial output",
-      "timeout is a hard lifetime cap (default 600s, hard cap 3600s — larger values are clamped); pass a larger value for dev servers and watch modes, and restart with background_run when the timeout notification arrives to renew them",
+      `timeout is a hard lifetime cap (default ${DEFAULT_LIFETIME_SECONDS}s, hard cap ${HARD_CAP_LIFETIME_SECONDS}s — larger values are clamped); pass a larger value for dev servers and watch modes, and restart with background_run when the timeout notification arrives to renew them`,
       `bash/powershell are hard-killed after ${SHELL_TIMEOUT_SECONDS}s (this extension injects the default and caps explicit values at ${SHELL_TIMEOUT_SECONDS}); when a command needs longer, run it with background_run and a larger timeout instead of blocking on bash`,
     ],
     parameters: Type.Object({

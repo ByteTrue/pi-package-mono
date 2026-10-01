@@ -17,7 +17,7 @@ Pi's built-in `bash` is the foreground executor — and this package never touch
 
 `background_run(command, timeout?)`:
 
-- **`timeout` defaults to 600 seconds, hard cap 3600** — a hard lifetime cap so nothing lingers forever; larger explicit values are clamped. Long-running services renew: when the timeout notification arrives, restart them with background_run.
+- **`timeout` defaults to 600 seconds, hard cap 28800 (8 hours)** — a hard lifetime cap so nothing lingers forever; larger explicit values are clamped. Long-running services renew: when the timeout notification arrives, restart them with background_run.
 - Full stdout/stderr stream live to an output file (path in the result); the Agent reads it with Pi's built-in `read` only when needed.
 - In TUI/RPC sessions the exit notification fires normally. In `pi -p` the process exits with the turn, so a task started there dies before its exit can be reported — hands-off backgrounding belongs in interactive sessions (subagent children are killed by their own `session_shutdown`).
 
