@@ -1,7 +1,7 @@
 {
   "name": "@bytetrue/pi-background-terminal",
-  "version": "0.9.0",
-  "description": "Pi extension: background_run starts shell commands hands-off with automatic exit notifications, plus hard timeouts for shell tools (bash/powershell capped at 600s, background tasks at 3600s with renewal via restart).",
+  "version": "0.10.0",
+  "description": "Pi extension: background_run starts shell commands hands-off with automatic exit notifications, plus hard timeouts for shell tools (bash/powershell capped at 300s, background tasks at 3600s with renewal via restart).",
   "keywords": [
     "pi-package",
     "pi-extension",
