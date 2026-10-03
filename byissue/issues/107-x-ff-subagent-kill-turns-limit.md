@@ -51,8 +51,8 @@ created: 2026-10-03
 
 ## 发布（2026-10-03）
 
-- 版本 0.12.0 → **0.13.0**（行为修复，minor，同 ff106 先例）。
-- 提交链：feat + docs(byissue) + release 三段；tag `pi-subagent-v0.13.0` 推送触发 release.yml（OIDC provenance 发布）。
-- 安装版 `C:/Users/byte/.pi/agent/npm/node_modules/@bytetrue/pi-subagent` 已提前打同一源码补丁（版本号仍标 0.11.0，重装会回退，待 npm 0.13.0 落库后升级）。
+- 版本 0.12.0 → **0.13.0**（行为修复，minor，同 ff106 先例）。提交链：feat `5d1f9e3` → docs(byissue) `52ea3a5` → release `f3efeed`（空提交，树与 52ea3a5 相同）。
+- tag `pi-subagent-v0.13.0` 指向 `52ea3a5`（与 f3efeed 树哈希相同 d4d6279，发布内容无差）；中途误重打过 f3efeed 又遇网络抖动回滚失败，最终 `git tag -f` 对齐远端 52ea3a5——**远端已有同名 tag 时删除重推有窗口期，树相同就对齐本地即可，别 force**。Actions run `37118366070` success（58s）；npm 落库核验：`npm view` → 0.13.0 = latest（首查 0.12.0 是 CDN 缓存，约 20s 后刷新）。
+- 本机安装版 `C:/Users/byte/.pi/agent/npm/node_modules/@bytetrue/pi-subagent`：npm pack 0.13.0 解包覆盖重装（package.json "pi".extensions 直跑 src/index.ts，无 dist；grep 确认 3 处 taskkill），替代之前的手工补丁。
 
 顺手发现（不在本次范围）：`PI_CLI_JS` 在 Windows 上指向 `.cmd` 文件时 spawn 会 EINVAL（runPi spawn 无 shell:true）——现有解析路径都返回 exe/node 场景，暂不处理。
