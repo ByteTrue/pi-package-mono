@@ -10,6 +10,7 @@ import {
   findAgentDefinition,
   resolveAgentRole,
   resolvePiCli,
+  runPi,
   normalizeTask,
   SubagentTaskManager,
   SubagentBackgroundManager,
@@ -31,8 +32,8 @@ import {
   updateSubagentSettings,
   listDiscoveredAgentNames,
 } from "./settings.js";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, rmSync, readFileSync, mkdtempSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
 // The global settings layer is the user's real ~/.pi/agent/settings.json unless
@@ -1043,5 +1044,204 @@ You are an expert researcher. Read references carefully.
     // Don't leak the task into the process-global singleton for later tests.
     await subagentManager.clearSession("s-wiring");
     expect(subagentManager.list("s-wiring")).toHaveLength(0);
+  });
+});
+
+// A stand-in pi CLI: emits one assistant message_end every 120ms (one "turn"),
+// spawns a long-lived grandchild, and logs everything so tests can verify the
+// process tree actually died after abort.
+const FAKE_PI_CJS = [
+  'const fs = require("node:fs");',
+  'const { spawn } = require("node:child_process");',
+  'const logFile = process.env.FAKE_PI_LOG;',
+  'const log = (line) => fs.appendFileSync(logFile, line + "\\n");',
+  'log("start pid=" + process.pid);',
+  'const gc = spawn(process.execPath, ["-e", "setInterval(function(){}, 1000)"], { stdio: "ignore" });',
+  'log("grandchild " + gc.pid);',
+  'let n = 0;',
+  'process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");',
+  'setInterval(() => {',
+  '  n += 1;',
+  '  log("turn " + n);',
+  '  process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "turn " + n }], usage: { input: 1, output: 1, cost: { total: 0 }, totalTokens: 2 } } }) + "\\n");',
+  '}, 120);',
+  'process.on("SIGTERM", () => { log("sigterm"); try { process.kill(gc.pid); } catch {} process.exit(0); });',
+  'setTimeout(() => { try { process.kill(gc.pid); } catch {} process.exit(0); }, 60000);',
+].join("\n");
+
+function newRunState(id: string): RunState {
+  return {
+    id,
+    agent: "tester",
+    prompt: "keep running",
+    sessionId: "session-" + id,
+    status: "pending",
+    finalText: "",
+    textTail: "",
+    thinkingTail: "",
+    stderrTail: "",
+    tools: [],
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, ctxTokens: 0, turns: 0 },
+  };
+}
+
+describe("runPi kill semantics (fake pi cli)", () => {
+  it("aborts at maxTurns, kills the whole process tree, and reports paused exactly once", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagent-fake-pi-"));
+    const fake = join(dir, "fake-pi.cjs");
+    const logFile = join(dir, "fake-pi.log");
+    writeFileSync(fake, FAKE_PI_CJS);
+    const prev = process.env.PI_CLI_JS;
+    process.env.PI_CLI_JS = fake;
+    try {
+      const state = newRunState("max-turns");
+      const t0 = Date.now();
+      const r = await runPi(
+        dir,
+        "run 8 turns of bash",
+        { maxTurns: 2, env: { FAKE_PI_LOG: logFile } },
+        state,
+        () => {},
+      );
+      const elapsed = Date.now() - t0;
+
+      // Paused is reported immediately (not after the child happens to exit).
+      expect(r.paused).toBe(true);
+      expect(r.failed).toBe(false);
+      expect(state.status).toBe("paused");
+      expect(state.usage.turns).toBe(2);
+      expect(elapsed).toBeLessThan(10_000);
+      // Real turn count in the message, not the configured limit.
+      expect(r.output).toContain("reached maximum limit of 2 turns (turns: 2)");
+      expect(r.output).toContain('resume: "' + state.sessionId + '"');
+      // Exactly one paused notification, no duplicate from close.
+      expect(r.output.split("paused:").length - 1).toBe(1);
+
+      // The child is really dead: log must stop growing.
+      await new Promise((s) => setTimeout(s, 500));
+      const snap = readFileSync(logFile, "utf-8");
+      await new Promise((s) => setTimeout(s, 300));
+      expect(readFileSync(logFile, "utf-8")).toBe(snap);
+      expect(snap).toContain("turn 2");
+
+      // Tree kill: the grandchild spawned by the fake CLI must be gone too.
+      const gcLine = snap.split("\n").find((l) => l.startsWith("grandchild "));
+      expect(gcLine).toBeDefined();
+      const gcPid = Number(gcLine!.split(" ")[1]);
+      expect(Number.isFinite(gcPid)).toBe(true);
+      expect(() => process.kill(gcPid, 0)).toThrow();
+    } finally {
+      if (prev === undefined) delete process.env.PI_CLI_JS;
+      else process.env.PI_CLI_JS = prev;
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }, 20000);
+
+  it("times out after timeoutMs and reports paused with the elapsed duration", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagent-fake-pi-"));
+    const fake = join(dir, "fake-pi.cjs");
+    const logFile = join(dir, "fake-pi.log");
+    writeFileSync(fake, FAKE_PI_CJS);
+    const prev = process.env.PI_CLI_JS;
+    process.env.PI_CLI_JS = fake;
+    try {
+      const state = newRunState("timeout");
+      const r = await runPi(
+        dir,
+        "long task",
+        { timeoutMs: 400, env: { FAKE_PI_LOG: logFile } },
+        state,
+        () => {},
+      );
+      expect(r.paused).toBe(true);
+      expect(state.status).toBe("paused");
+      expect(state.pauseReason).toBe("timeout");
+      expect(r.output).toContain("timed out after 400ms (turns: ");
+      expect(r.output.split("paused:").length - 1).toBe(1);
+    } finally {
+      if (prev === undefined) delete process.env.PI_CLI_JS;
+      else process.env.PI_CLI_JS = prev;
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }, 20000);
+});
+
+describe("resolvePiCli resolution paths", () => {
+  let tmp = "";
+  let savedArgv: string[] = [];
+  let savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedArgv = [...process.argv];
+    savedEnv = { ...process.env };
+    tmp = mkdtempSync(join(tmpdir(), "pi-subagent-cli-"));
+  });
+
+  afterEach(() => {
+    process.argv = savedArgv;
+    for (const k of ["PI_CLI_JS", "npm_config_prefix", "NPM_CONFIG_PREFIX", "APPDATA", "PATH", "Path"]) {
+      delete process.env[k];
+    }
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v !== undefined) process.env[k] = v;
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const disableLookupEnv = () => {
+    delete process.env.PI_CLI_JS;
+    process.env.npm_config_prefix = "";
+    process.env.NPM_CONFIG_PREFIX = "";
+    process.env.APPDATA = "";
+    process.env.PATH = "";
+  };
+
+  it("matches the running argv even when pi runs from dist/bundle/cli.js", () => {
+    const cliPath = join(tmp, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js");
+    mkdirSync(dirname(cliPath), { recursive: true });
+    writeFileSync(cliPath, "");
+    disableLookupEnv();
+    process.argv = [process.execPath, cliPath];
+    const cli = resolvePiCli();
+    expect(cli.command).toBe(process.execPath);
+    expect(cli.args).toEqual([resolve(cliPath)]);
+  });
+
+  it("resolves version-manager PATH entries ending in .bin (mise-style layouts)", () => {
+    const install = join(tmp, "installs", "npm-earendil-works-pi-coding-agent", "1.0.0");
+    const cliPath = join(install, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js");
+    mkdirSync(dirname(cliPath), { recursive: true });
+    writeFileSync(cliPath, "");
+    disableLookupEnv();
+    process.argv = [process.execPath, "vitest"];
+    process.env.PATH = join(install, "node_modules", ".bin");
+    const cli = resolvePiCli();
+    expect(cli.command).toBe(process.execPath);
+    expect(cli.args).toEqual([resolve(cliPath)]);
+  });
+
+  it("still resolves the legacy dist/cli.js segment via APPDATA/npm", () => {
+    const npmRoot = join(tmp, "npm");
+    const cliPath = join(npmRoot, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
+    mkdirSync(dirname(cliPath), { recursive: true });
+    writeFileSync(cliPath, "");
+    disableLookupEnv();
+    process.argv = [process.execPath, "vitest"];
+    process.env.APPDATA = tmp;
+    const cli = resolvePiCli();
+    expect(cli.command).toBe(process.execPath);
+    expect(cli.args).toEqual([resolve(cliPath)]);
+  });
+
+  it("falls back to a bare pi command when nothing resolves", () => {
+    disableLookupEnv();
+    process.argv = [process.execPath, "vitest"];
+    const cli = resolvePiCli();
+    expect(cli).toEqual({ command: "pi", args: [] });
+  });
+
+  it("throws when PI_CLI_JS points at a missing file", () => {
+    process.env.PI_CLI_JS = join(tmp, "nope.js");
+    expect(() => resolvePiCli()).toThrow(/PI_CLI_JS missing/);
   });
 });

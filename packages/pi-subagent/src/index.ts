@@ -610,7 +610,9 @@ function toolBrief(t: ToolTrace): string {
 
 // ── Pi CLI Resolution ─────────────────────────────────────────────────
 const PI_CLI_SEGMENTS = [
+  ["node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"],
   ["node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"],
+  ["node_modules", "@mariozechner", "pi-coding-agent", "dist", "bundle", "cli.js"],
   ["node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js"],
 ];
 
@@ -623,7 +625,7 @@ export function resolvePiCli(): { command: string; args: string[] } {
   }
   const candidates: string[] = [];
   for (const arg of process.argv) {
-    if (/pi-coding-agent[\\/]dist[\\/]cli\.js$/i.test(arg)) {
+    if (/pi-coding-agent[\\/]dist[\\/](?:bundle[\\/])?cli\.js$/i.test(arg)) {
       candidates.push(resolve(arg));
     }
   }
@@ -642,6 +644,10 @@ export function resolvePiCli(): { command: string; args: string[] } {
     const e = entry.trim();
     if (!e) continue;
     addBase(e);
+    // Version managers put "<install>/node_modules/.bin" on PATH; the package
+    // tree lives one level up, so dirname(e) alone would double the
+    // "node_modules" segment and never hit.
+    if (/[\\/]\.bin$/i.test(e)) addBase(dirname(dirname(e)));
     addBase(dirname(e));
     addBase(join(dirname(e), "lib"));
   }
@@ -1047,11 +1053,16 @@ export function runPi(
     const childEnv = buildChildEnv(cfg);
     const targetCwd = cfg.cwd || cwd;
     state.cwd = targetCwd;
+    const isWin = process.platform === "win32";
     const cli = spawn(inv.command, [...inv.args, ...buildPiArgs(cfg)], {
       cwd: targetCwd,
       env: childEnv,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      // POSIX: a dedicated process group lets one kill(-pid) reach the whole
+      // tree. Windows has no usable group semantics from Node — tree kill goes
+      // through taskkill /T /F instead (see killTree).
+      detached: !isWin,
     });
     const stdout = new BBC(MAX_STDOUT);
     const stderr = new BBC(MAX_STDERR);
@@ -1061,19 +1072,115 @@ export function runPi(
     let settled = false;
     let aborted = false;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let verifyTimer: ReturnType<typeof setTimeout> | null = null;
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
     const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const maxTurns = cfg.maxTurns ?? DEFAULT_MAX_TURNS;
 
-    const abort = (reason?: "timeout" | "max_turns") => {
-      aborted = true;
-      if (reason) state.pauseReason = reason;
-      cli.kill();
+    // The resolved command can be a bare "pi" that is really a version-manager
+    // shim, with the true node process one level down; killing only the direct
+    // child orphans that grandchild and the run keeps streaming. Kill the whole
+    // tree: process group on POSIX, taskkill /T /F on Windows.
+    const childDead = () => cli.exitCode !== null || cli.signalCode !== null;
+    const killTree = (sig: "SIGTERM" | "SIGKILL" = "SIGTERM"): void => {
+      const pid = cli.pid;
+      if (pid === undefined || childDead()) return;
+      try {
+        if (isWin) {
+          spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
+            stdio: "ignore",
+            windowsHide: true,
+          }).on("error", () => {
+            try {
+              cli.kill("SIGKILL");
+            } catch {
+              /* exited already */
+            }
+          });
+        } else {
+          try {
+            process.kill(-pid, sig); // negative pid: the whole process group
+          } catch {
+            try {
+              cli.kill(sig);
+            } catch {
+              /* exited already */
+            }
+          }
+        }
+      } catch {
+        try {
+          cli.kill("SIGKILL");
+        } catch {
+          /* exited already */
+        }
+      }
+    };
+
+    // SIGTERM, then SIGKILL after a grace period — and verify the kill landed:
+    // a tree that survives even SIGKILL gets one more kill plus a surfaced
+    // note instead of silently leaking a live subprocess.
+    const killSequence = (): void => {
+      killTree("SIGTERM");
       killTimer = setTimeout(() => {
-        if (!settled && cli.exitCode === null) cli.kill("SIGKILL");
+        if (childDead()) return;
+        killTree("SIGKILL");
+        verifyTimer = setTimeout(() => {
+          if (childDead()) return;
+          killTree("SIGKILL");
+          state.stderrTail = appendTail(
+            state.stderrTail,
+            "\n[subagent] child process survived SIGKILL; kill re-sent\n",
+            MAX_TAIL,
+          );
+          emit();
+        }, ABORT_KILL_GRACE_MS);
+        verifyTimer?.unref?.();
       }, ABORT_KILL_GRACE_MS);
       killTimer?.unref?.();
+    };
+
+    const onAbort = () => abort();
+    const done = (v: { output: string; failed: boolean; paused?: boolean }) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      signal?.removeEventListener("abort", onAbort);
+      emit();
+      resolve(v);
+    };
+
+    // Single rendering for paused results — used at abort time (immediate
+    // notify) and by close as a dedupe-safe fallback.
+    const pausedResult = (): { output: string; failed: boolean; paused: boolean } => {
+      const out = stdout.toString();
+      const err = stderr.toString();
+      const reasonText =
+        state.pauseReason === "timeout"
+          ? `timed out after ${fmtDur(timeoutMs)} (turns: ${state.usage.turns})`
+          : `reached maximum limit of ${maxTurns} turns (turns: ${state.usage.turns})`;
+      const partialResult = finalize(state, formatPiOutput(out, err));
+      const notice = `\n\n---\n⚠️ [Subagent session ${state.sessionId} paused: ${reasonText}]\n💡 To resume this session from where it left off, call: subagent({ resume: "${state.sessionId}", task: "Continue the remaining work" })`;
+      return {
+        output: partialResult ? `${partialResult}${notice}` : notice.trim(),
+        failed: false,
+        paused: true,
+      };
+    };
+
+    const abort = (reason?: "timeout" | "max_turns") => {
+      if (aborted) return; // one kill sequence per run; aborted is never reset
+      aborted = true;
+      if (reason) state.pauseReason = reason;
+      killSequence();
+      if (!reason) return; // external cancel: settle at close as cancelled
+      // Report paused immediately with the real turn count instead of waiting
+      // for process exit; close only dedupes afterwards.
+      state.status = "paused";
+      state.finishedAt = Date.now();
+      emit();
+      done(pausedResult());
     };
 
     if (timeoutMs > 0) {
@@ -1082,17 +1189,6 @@ export function runPi(
       }, timeoutMs);
       timeoutTimer?.unref?.();
     }
-
-    const onAbort = () => abort();
-    const done = (v: { output: string; failed: boolean; paused?: boolean }) => {
-      if (settled) return;
-      settled = true;
-      if (killTimer) clearTimeout(killTimer);
-      if (timeoutTimer) clearTimeout(timeoutTimer);
-      signal?.removeEventListener("abort", onAbort);
-      emit();
-      resolve(v);
-    };
 
     signal?.addEventListener("abort", onAbort, { once: true });
     state.status = "running";
@@ -1134,6 +1230,7 @@ export function runPi(
     });
 
     cli.on("error", (e) => {
+      if (settled) return; // paused already reported at abort time
       state.status = aborted ? "cancelled" : "failed";
       state.errorMessage = e instanceof Error ? e.message : String(e);
       state.finishedAt = Date.now();
@@ -1141,6 +1238,9 @@ export function runPi(
     });
 
     cli.on("close", (code) => {
+      if (killTimer) clearTimeout(killTimer);
+      if (verifyTimer) clearTimeout(verifyTimer);
+      if (settled) return; // paused already reported at abort time
       buf += stdoutDecoder.end();
       if (buf.trim()) processLine(buf);
       const out = stdout.toString();
@@ -1150,17 +1250,7 @@ export function runPi(
 
       if (state.pauseReason) {
         state.status = "paused";
-        const reasonText =
-          state.pauseReason === "timeout"
-            ? `timed out after ${fmtDur(timeoutMs)}`
-            : `reached maximum limit of ${maxTurns} turns`;
-        const partialResult = finalize(state, formatPiOutput(out, err));
-        const notice = `\n\n---\n⚠️ [Subagent session ${state.sessionId} paused: ${reasonText}]\n💡 To resume this session from where it left off, call: subagent({ resume: "${state.sessionId}", task: "Continue the remaining work" })`;
-        done({
-          output: partialResult ? `${partialResult}${notice}` : notice.trim(),
-          failed: false,
-          paused: true,
-        });
+        done(pausedResult());
         return;
       }
 
