@@ -55,4 +55,19 @@ created: 2026-10-03
 - tag `pi-subagent-v0.13.0` 指向 `52ea3a5`（与 f3efeed 树哈希相同 d4d6279，发布内容无差）；中途误重打过 f3efeed 又遇网络抖动回滚失败，最终 `git tag -f` 对齐远端 52ea3a5——**远端已有同名 tag 时删除重推有窗口期，树相同就对齐本地即可，别 force**。Actions run `37118366070` success（58s）；npm 落库核验：`npm view` → 0.13.0 = latest（首查 0.12.0 是 CDN 缓存，约 20s 后刷新）。
 - 本机安装版 `C:/Users/byte/.pi/agent/npm/node_modules/@bytetrue/pi-subagent`：npm pack 0.13.0 解包覆盖重装（package.json "pi".extensions 直跑 src/index.ts，无 dist；grep 确认 3 处 taskkill），替代之前的手工补丁。
 
+## Review（完整版，2026-10-03）
+
+评审子代理完整报告（此前经网关有损传输的预览曾误报 3 个 blocker，对照代码逐一核实均不成立——**评审文本不可信时代码不可不查**）。最终结论：**approve**，无 blocker/major。状态机逐路径推演无竞态、无定时器泄漏（所有 timer 均 unref）；POSIX kill(-pid) 经 detached 组长成立；resolvePiCli 无误杀路径；测试无恒真断言。附带现场验证：评审子代理自己撞上 20m timeout 被立即 paused 并带 resume 提示——修复在生产环境生效。
+
+### Fast-follow（Minor，不阻塞发版）
+
+1. `index.ts:1091-1097` taskkill 非零退出码无兜底（.on("error") 只盖 spawn 失败）——有 killTimer/verifyTimer 三次重试兜底不静默；建议监听 close 补一次 cli.kill。
+2. `index.ts:1132-1136` "survived SIGKILL" 提示两条路径会丢：外部取消路径被 close 的 appendTail("") 重置抹掉；带 reason 路径 pausedResult 已定格，提示只在实时进度卡可见。建议独立字段。
+3. `index.test.ts:1110,1115` 同 chunk 双事件窄窗口 flake（turn 2+3 合并进一个 stdout chunk 则 turns 变 3）——建议断言 toBeGreaterThanOrEqual(2) 或拉大临界 turn 间隔。
+4. `index.test.ts:1132` gcPid 存活断言暴露于 Windows pid 复用（~800ms 窗口），vitest 高频起进程放大概率。
+5. 测试缺口：外部取消路径（abort 无 reason → close → cancelled/failed:true）无用例，是新劈出的 settle 分支。
+6. `index.ts:1086-1109` pid 复用为已知局限（childDead 在 exit/close 派发延迟窗口为假），健壮解是 Windows Job Objects——建议加注释说明即可。
+
+Nits：paused 后迟到事件会短暂改写 state.status（进度卡观感）；stdin error 分支不设 status/errorMessage（既有问题）；.bin 正则不容忍尾随分隔符（纯理论）；Windows 文案 "survived SIGKILL" 实为 taskkill /F。
+
 顺手发现（不在本次范围）：`PI_CLI_JS` 在 Windows 上指向 `.cmd` 文件时 spawn 会 EINVAL（runPi spawn 无 shell:true）——现有解析路径都返回 exe/node 场景，暂不处理。
