@@ -2,7 +2,7 @@
 kind: issue
 title: "pi-subagent 超时兜底：timer 迟到时的活动驱动看门狗"
 type: ff
-status: open
+status: done
 created: 2026-10-04
 ---
 
@@ -22,5 +22,6 @@ created: 2026-10-04
 - 改动：`packages/pi-subagent/README.md` — 参数表补 timeoutMs 触发行为与通知排队说明。
 - 验证：`npm --workspace @bytetrue/pi-subagent run typecheck` 通过；`npx vitest run` 62/62 通过（含新回归测试，单独 `-t "timer"` 复跑确认）。待用户在其 Windows 主机重跑 5 个探针做实机回归（需 /reload 或重启父 pi 加载新代码；旧任务闭包仍是旧代码，需新起探针）。
 - byissue：已同步 `byissue/spec/pi-subagent/index.md` 核心机制第 2 节（超时三重执行 + 实际 elapsed 文案）。
+- 发布：0.13.1（release commit 05296d6）。用户决定先发版，实机探针回归转为发布后可选验证——若跑，须 /reload 或重启父 pi 后新起探针，建议带 PI_SUBAGENT_DEBUG=1。
 
 顺手发现：`subagent-exit` 通知在父回合忙碌时排队，回合长达数小时时积压数小时——spec 3 已有记载（agent_settled 合并唤醒），README 已补用户面说明，未改行为。
