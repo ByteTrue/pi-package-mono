@@ -36,6 +36,7 @@
    - 一次调用恰好跑一个子进程(095);并行由模型发多个 tool call 天然获得，`ProgressDetails.runs` 保留数组形状但恒为单元素。
 2. **防爆门与 Pi 原生 Session 断点续跑**：
    - 默认 20 分钟超时与 50 轮上限；达到上限时安全暂停子进程并输出 Session ID 与恢复提示。
+   - 超时执行三重冗余（ff 108，Windows pi-rpc 主机上 unref'd one-shot timer 曾迟到 51s–54m50s 才触发）：one-shot timer + 每条子进程事件的 deadline 检查 + 1s unref'd 看门狗 interval，任一路径独立可执行 deadline；兜底迟到 >1s 在 stderrTail 留痕，`PI_SUBAGENT_DEBUG=1` 打诊断日志；paused 文案报实际 elapsed（`timed out after X (limit: Y, turns: N)`）而非配置值。
    - 传递 `--session-id <id>`（初次）与 `--session <id>`（恢复），无缝复用 Pi 原生标准会话存储与断点续接机制。
 3. **后台执行、通知与状态栏**：
    - 每次调用注册一条任务记录到进程级 manager（`globalThis[Symbol.for(...)]`，`/reload` 存活），立即返回。

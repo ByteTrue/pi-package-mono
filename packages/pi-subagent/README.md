@@ -70,6 +70,8 @@ Delegate ONE task to an isolated child agent session. The call always returns at
 
 Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, so a subagent started there has no next turn to report to. Pure background is the only mode by design (issue 088).
 
+Note: the `subagent-exit` completion notice is queued while the parent agent is busy in a turn (delivered in a batch at `agent_settled`). If the parent turn runs for hours, notices accumulate for that duration — check `subagent_status` for live status in the meantime.
+
 #### Parameters
 
 | Parameter | Type | Required | Description |
@@ -79,7 +81,7 @@ Note: in print mode (`pi -p`, `--mode json`) the process exits after one turn, s
 | `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `cwd` | `string` | No | Optional working directory for the task. |
 | `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
-| `timeoutMs` | `number` | No | Timeout in ms. Default: 1200000 (20 minutes). |
+| `timeoutMs` | `number` | No | Timeout in ms. Default: 1200000 (20 minutes). Enforced redundantly: a one-shot timer, a per-event deadline check, and a 1s watchdog — a late timer cannot stall the abort (ff 108). |
 | `maxTurns` | `number` | No | Turn limit before pausing. Default: 50. |
 
 #### Usage Example

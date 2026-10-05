@@ -105,6 +105,18 @@ const THROTTLE_MS = 300;
 const MAX_FALLBACK_OUTPUT_CHARS = 8192;
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 const DEFAULT_MAX_TURNS = 50; // 50 turns
+
+// Timeout diagnostics: set PI_SUBAGENT_DEBUG=1 in the parent to trace timeout
+// timer registration/firing on stderr — used to hunt timer-delivery bugs on
+// Windows hosts (see ff 108). Never throws, never alters behavior.
+const debugLog = (msg: string): void => {
+  if (process.env.PI_SUBAGENT_DEBUG !== "1") return;
+  try {
+    process.stderr.write(`[pi-subagent] ${new Date().toISOString()} ${msg}\n`);
+  } catch {
+    /* stderr unavailable; diagnostics must never break a run */
+  }
+};
 let toolCallCounter = 0;
 
 // ── State types ───────────────────────────────────────────────────────
@@ -1074,6 +1086,7 @@ export function runPi(
     let killTimer: ReturnType<typeof setTimeout> | null = null;
     let verifyTimer: ReturnType<typeof setTimeout> | null = null;
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    let deadlineTicker: ReturnType<typeof setInterval> | null = null;
 
     const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const maxTurns = cfg.maxTurns ?? DEFAULT_MAX_TURNS;
@@ -1083,6 +1096,26 @@ export function runPi(
     // child orphans that grandchild and the run keeps streaming. Kill the whole
     // tree: process group on POSIX, taskkill /T /F on Windows.
     const childDead = () => cli.exitCode !== null || cli.signalCode !== null;
+    // Direct-kill fallbacks used to fail silently (taskkill spawn errors were
+    // swallowed whole). Funnel them through one place that surfaces the failure
+    // in stderrTail so a surviving child is at least visible.
+    const killFallback = (why: string): void => {
+      try {
+        if (cli.kill("SIGKILL")) return;
+        state.stderrTail = appendTail(
+          state.stderrTail,
+          `\n[subagent] kill fallback failed (${why}): cli.kill returned false\n`,
+          MAX_TAIL,
+        );
+      } catch (e) {
+        state.stderrTail = appendTail(
+          state.stderrTail,
+          `\n[subagent] kill fallback failed (${why}): ${e instanceof Error ? e.message : String(e)}\n`,
+          MAX_TAIL,
+        );
+      }
+      emit();
+    };
     const killTree = (sig: "SIGTERM" | "SIGKILL" = "SIGTERM"): void => {
       const pid = cli.pid;
       if (pid === undefined || childDead()) return;
@@ -1091,30 +1124,16 @@ export function runPi(
           spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
             stdio: "ignore",
             windowsHide: true,
-          }).on("error", () => {
-            try {
-              cli.kill("SIGKILL");
-            } catch {
-              /* exited already */
-            }
-          });
+          }).on("error", (e) => killFallback(`taskkill: ${e.message}`));
         } else {
           try {
             process.kill(-pid, sig); // negative pid: the whole process group
           } catch {
-            try {
-              cli.kill(sig);
-            } catch {
-              /* exited already */
-            }
+            killFallback(`process.kill(-pid, ${sig})`);
           }
         }
       } catch {
-        try {
-          cli.kill("SIGKILL");
-        } catch {
-          /* exited already */
-        }
+        killFallback("killTree");
       }
     };
 
@@ -1146,6 +1165,7 @@ export function runPi(
       if (settled) return;
       settled = true;
       if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (deadlineTicker) clearInterval(deadlineTicker);
       signal?.removeEventListener("abort", onAbort);
       emit();
       resolve(v);
@@ -1156,9 +1176,13 @@ export function runPi(
     const pausedResult = (): { output: string; failed: boolean; paused: boolean } => {
       const out = stdout.toString();
       const err = stderr.toString();
+      // Report the actual elapsed time, not the configured limit — with the
+      // late-timer bug a run showed "timed out after 20m0s" while it had
+      // actually run 74m50s, which sent the investigation in circles.
+      const elapsedMs = Math.max(0, (state.finishedAt ?? Date.now()) - (state.startedAt ?? 0));
       const reasonText =
         state.pauseReason === "timeout"
-          ? `timed out after ${fmtDur(timeoutMs)} (turns: ${state.usage.turns})`
+          ? `timed out after ${fmtDur(elapsedMs)} (limit: ${fmtDur(timeoutMs)}, turns: ${state.usage.turns})`
           : `reached maximum limit of ${maxTurns} turns (turns: ${state.usage.turns})`;
       const partialResult = finalize(state, formatPiOutput(out, err));
       const notice = `\n\n---\n⚠️ [Subagent session ${state.sessionId} paused: ${reasonText}]\n💡 To resume this session from where it left off, call: subagent({ resume: "${state.sessionId}", task: "Continue the remaining work" })`;
@@ -1183,16 +1207,39 @@ export function runPi(
       done(pausedResult());
     };
 
+    // Deadline enforcement is triple-redundant on purpose. On some hosts the
+    // one-shot unref'd timer has been observed firing only minutes-to-an-hour
+    // past its deadline (ff 108 / Windows pi-rpc reports): (1) the timer,
+    // (2) a check on every processed child event (stdout/stderr activity),
+    // (3) a 1s watchdog interval. Any one of them enforces the deadline.
+    const startedAt = Date.now();
+    const deadline = timeoutMs > 0 ? startedAt + timeoutMs : 0;
+    const abortTimeout = (via: string) => {
+      const late = Math.max(0, Date.now() - deadline);
+      debugLog(`timeout abort via ${via}: ${late}ms past deadline (timeoutMs=${timeoutMs})`);
+      if (late > 1000) {
+        // Clearly anomalous enforcement (>1s late): make it visible in-band.
+        state.stderrTail = appendTail(
+          state.stderrTail,
+          `\n[subagent] timeout enforced via ${via}, ${late}ms past the ${fmtDur(timeoutMs)} deadline\n`,
+          MAX_TAIL,
+        );
+      }
+      abort("timeout");
+    };
     if (timeoutMs > 0) {
-      timeoutTimer = setTimeout(() => {
-        abort("timeout");
-      }, timeoutMs);
+      debugLog(`run ${state.sessionId}: timeout timer registered (timeoutMs=${timeoutMs})`);
+      timeoutTimer = setTimeout(() => abortTimeout("timer"), timeoutMs);
       timeoutTimer?.unref?.();
+      deadlineTicker = setInterval(() => {
+        if (!aborted && Date.now() >= deadline) abortTimeout("watchdog interval");
+      }, 1000);
+      deadlineTicker?.unref?.();
     }
 
     signal?.addEventListener("abort", onAbort, { once: true });
     state.status = "running";
-    state.startedAt = Date.now();
+    state.startedAt = startedAt;
     emit();
 
     const processLine = (line: string) => {
@@ -1202,6 +1249,12 @@ export function runPi(
         if (state.usage.turns >= maxTurns && !aborted) {
           abort("max_turns");
         }
+      }
+      // Activity-driven deadline check: every child event passes through here,
+      // so even with the timeout timer lost the run pauses at the first event
+      // past the deadline instead of running unchecked.
+      if (!aborted && deadline > 0 && Date.now() >= deadline) {
+        abortTimeout("stdout activity");
       }
     };
 
@@ -1221,6 +1274,9 @@ export function runPi(
         stderrDecoder.write(d),
         MAX_TAIL,
       );
+      if (!aborted && deadline > 0 && Date.now() >= deadline) {
+        abortTimeout("stderr activity");
+      }
     });
 
     cli.stdin?.on("error", (e: Error & { code?: string }) => {

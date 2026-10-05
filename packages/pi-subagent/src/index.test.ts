@@ -1156,9 +1156,57 @@ describe("runPi kill semantics (fake pi cli)", () => {
       expect(r.paused).toBe(true);
       expect(state.status).toBe("paused");
       expect(state.pauseReason).toBe("timeout");
-      expect(r.output).toContain("timed out after 400ms (turns: ");
+      // New text: actual elapsed (>= limit) plus the configured limit.
+      expect(r.output).toMatch(/timed out after \d+ms \(limit: 400ms, turns: \d+\)/);
       expect(r.output.split("paused:").length - 1).toBe(1);
     } finally {
+      if (prev === undefined) delete process.env.PI_CLI_JS;
+      else process.env.PI_CLI_JS = prev;
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  }, 20000);
+
+  // Regression (ff 108): on some Windows hosts the one-shot unref'd timeout
+  // timer fires minutes-to-an-hour late. Simulate a lost timer by swallowing
+  // every setTimeout >= 300ms while a subagent runs; the activity check and
+  // the 1s watchdog interval must still enforce the deadline.
+  it("enforces the timeout deadline even when the timeout timer never fires", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagent-fake-pi-"));
+    const fake = join(dir, "fake-pi.cjs");
+    const logFile = join(dir, "fake-pi.log");
+    writeFileSync(fake, FAKE_PI_CJS);
+    const prev = process.env.PI_CLI_JS;
+    process.env.PI_CLI_JS = fake;
+
+    const origSetTimeout = globalThis.setTimeout;
+    // Wrapper that drops any one-shot timer with a delay >= 300ms — the 400ms
+    // timeout timer never registers. Short timers (kill grace etc.) survive.
+    const droppedSetTimeout = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => {
+      if (ms !== undefined && ms >= 300) return origSetTimeout(() => {}, 0);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (origSetTimeout as any)(fn, ms, ...rest);
+    }) as typeof globalThis.setTimeout;
+    globalThis.setTimeout = droppedSetTimeout as unknown as typeof setTimeout;
+    try {
+      const state = newRunState("timer-loss");
+      const t0 = Date.now();
+      const r = await runPi(
+        dir,
+        "long task with a lost timer",
+        { timeoutMs: 400, env: { FAKE_PI_LOG: logFile } },
+        state,
+        () => {},
+      );
+      const elapsed = Date.now() - t0;
+
+      expect(r.paused).toBe(true);
+      expect(state.pauseReason).toBe("timeout");
+      expect(state.status).toBe("paused");
+      // Deadline enforced within watchdog granularity — not by child exit.
+      expect(elapsed).toBeLessThan(10_000);
+      expect(r.output).toMatch(/timed out after \d+ms \(limit: 400ms, turns: \d+\)/);
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
       if (prev === undefined) delete process.env.PI_CLI_JS;
       else process.env.PI_CLI_JS = prev;
       try { rmSync(dir, { recursive: true, force: true }); } catch {}
