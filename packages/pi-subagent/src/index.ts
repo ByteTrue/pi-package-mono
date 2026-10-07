@@ -5,9 +5,18 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
-import { loadSubagentSettings, listDiscoveredAgentNames, type SubagentSettings } from "./settings.js";
+import {
+  loadSubagentSettings,
+  listDiscoveredAgentNames,
+  type SubagentSettings,
+} from "./settings.js";
 import { runSubagentCommand } from "./command.js";
-import { BUILTIN_AGENTS_DIR, listBuiltinAgentNames, type AgentConfig } from "./builtin-agents.js";
+import { ByspaceReporter, buildByspaceReportRecord } from "./byspace-report.js";
+import {
+  BUILTIN_AGENTS_DIR,
+  listBuiltinAgentNames,
+  type AgentConfig,
+} from "./builtin-agents.js";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 export { BUILTIN_AGENTS_DIR, listBuiltinAgentNames, type AgentConfig };
@@ -120,7 +129,8 @@ const debugLog = (msg: string): void => {
 let toolCallCounter = 0;
 
 // ── State types ───────────────────────────────────────────────────────
-export type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled" | "paused";
+export type RunStatus =
+  "pending" | "running" | "succeeded" | "failed" | "cancelled" | "paused";
 export type ToolStatus = "running" | "succeeded" | "failed";
 
 export interface Usage {
@@ -257,7 +267,8 @@ function thinkingIntent(text: string): string {
 
 function behaviorSummary(r: RunState): string {
   if (r.status === "succeeded") return "Task completed successfully";
-  if (r.status === "paused") return `Task paused (${r.pauseReason === "timeout" ? "timeout" : "max turns reached"})`;
+  if (r.status === "paused")
+    return `Task paused (${r.pauseReason === "timeout" ? "timeout" : "max turns reached"})`;
   if (r.status === "failed") return "Task failed with error";
   if (r.status === "cancelled") return "Task was cancelled";
 
@@ -281,7 +292,9 @@ function behaviorSummary(r: RunState): string {
     return "Analyzing verification results";
   if (
     recent.length >= 2 &&
-    recent.every((t) => isSearchTool(t) || (t.name === "bash" && isInspectionCommand(t)))
+    recent.every(
+      (t) => isSearchTool(t) || (t.name === "bash" && isInspectionCommand(t)),
+    )
   )
     return "Mapping code structure";
 
@@ -307,7 +320,8 @@ function progressState(d: ProgressDetails): string {
 }
 
 function progressDone(d: ProgressDetails): number {
-  return d.runs.filter((r) => r.status !== "pending" && r.status !== "running").length;
+  return d.runs.filter((r) => r.status !== "pending" && r.status !== "running")
+    .length;
 }
 
 function summaryText(text: string): string {
@@ -336,7 +350,8 @@ function applyRunConfig(r: RunState, cfg: PiRunConfig) {
 
 function runElapsed(d: ProgressDetails, r: RunState): string {
   const start = r.startedAt ?? d.startedAt;
-  const end = r.finishedAt ?? (r.status === "running" ? Date.now() : d.updatedAt);
+  const end =
+    r.finishedAt ?? (r.status === "running" ? Date.now() : d.updatedAt);
   return fmtDur(Math.max(0, end - start));
 }
 
@@ -349,20 +364,32 @@ function runHeader(d: ProgressDetails, r: RunState): string {
  * Where pi persisted the child's session: `<agentDir>/sessions/<encoded cwd>/<ts>_<sessionId>.jsonl`.
  * Mirrors pi's getDefaultSessionDirPath (not exported). The full model behaviour history lives there.
  */
-export function sessionLogPath(run: Pick<RunState, "cwd" | "sessionId">): string | undefined {
+export function sessionLogPath(
+  run: Pick<RunState, "cwd" | "sessionId">,
+): string | undefined {
   if (!run.cwd) return undefined;
-  const agentDir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
-  const safe = `--${resolve(run.cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  const agentDir =
+    process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
+  const safe = `--${resolve(run.cwd)
+    .replace(/^[/\\]/, "")
+    .replace(/[/\\:]/g, "-")}--`;
   const dir = join(agentDir, "sessions", safe);
   try {
-    const file = readdirSync(dir).find((n) => n.endsWith(`_${run.sessionId}.jsonl`));
+    const file = readdirSync(dir).find((n) =>
+      n.endsWith(`_${run.sessionId}.jsonl`),
+    );
     return file ? join(dir, file) : undefined;
   } catch {
     return undefined;
   }
 }
 
-function renderRunBlock(lines: string[], d: ProgressDetails, run: RunState, w: number) {
+function renderRunBlock(
+  lines: string[],
+  d: ProgressDetails,
+  run: RunState,
+  w: number,
+) {
   const step = run.step ? `step ${run.step} · ` : "";
   lines.push(trunc(`  - ${step}${runHeader(d, run)}`, w));
   const summary = behaviorSummary(run);
@@ -409,10 +436,10 @@ export function renderProgressCard(d: ProgressDetails, w: number): string[] {
         ? "⏸"
         : "✓"
     : spinner;
-  const totalElapsed = fmtDur((d.final ? d.updatedAt : Date.now()) - d.startedAt);
-  const lines: string[] = [
-    `${icon} subagent · total ${totalElapsed}`,
-  ];
+  const totalElapsed = fmtDur(
+    (d.final ? d.updatedAt : Date.now()) - d.startedAt,
+  );
+  const lines: string[] = [`${icon} subagent · total ${totalElapsed}`];
 
   for (const run of d.runs) renderRunBlock(lines, d, run, w);
   return lines.map((l) => trunc(l, w));
@@ -622,9 +649,23 @@ function toolBrief(t: ToolTrace): string {
 
 // ── Pi CLI Resolution ─────────────────────────────────────────────────
 const PI_CLI_SEGMENTS = [
-  ["node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"],
+  [
+    "node_modules",
+    "@earendil-works",
+    "pi-coding-agent",
+    "dist",
+    "bundle",
+    "cli.js",
+  ],
   ["node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"],
-  ["node_modules", "@mariozechner", "pi-coding-agent", "dist", "bundle", "cli.js"],
+  [
+    "node_modules",
+    "@mariozechner",
+    "pi-coding-agent",
+    "dist",
+    "bundle",
+    "cli.js",
+  ],
   ["node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js"],
 ];
 
@@ -641,7 +682,8 @@ export function resolvePiCli(): { command: string; args: string[] } {
       candidates.push(resolve(arg));
     }
   }
-  const prefix = str(process.env.npm_config_prefix) ?? str(process.env.NPM_CONFIG_PREFIX);
+  const prefix =
+    str(process.env.npm_config_prefix) ?? str(process.env.NPM_CONFIG_PREFIX);
   const appData = str(process.env.APPDATA);
   const pathVal = process.env.PATH ?? process.env.Path ?? "";
   const addBase = (base: string) => {
@@ -699,12 +741,20 @@ export function parseAgentFile(filePath: string): AgentConfig {
   return cfg;
 }
 
-export function findAgentDefinition(cwd: string, agentName?: string): { config: AgentConfig; found: boolean } {
+export function findAgentDefinition(
+  cwd: string,
+  agentName?: string,
+): { config: AgentConfig; found: boolean } {
   if (!agentName) return { config: {}, found: false };
-  const sanitized = agentName.replace(/[\\/]/g, "").replace(/\.\./g, "").trim().toLowerCase();
+  const sanitized = agentName
+    .replace(/[\\/]/g, "")
+    .replace(/\.\./g, "")
+    .trim()
+    .toLowerCase();
   if (!sanitized) return { config: {}, found: false };
   const baseName = sanitized.endsWith(".md") ? sanitized : `${sanitized}.md`;
-  const agentHome = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  const agentHome =
+    process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
   const candidates = [
     join(cwd, ".pi", "agents", baseName),
     join(agentHome, "agents", baseName),
@@ -748,8 +798,14 @@ export function resolveAgentRole(
   // A role explicitly configured in settings is still real even without a
   // document: it carries the role's model/thinking overrides.
   const settings = subagentSettings ?? loadSubagentSettings(cwd, true);
-  if (settings.agents && Object.prototype.hasOwnProperty.call(settings.agents, name)) return {};
-  const known = listDiscoveredAgentNames(cwd).filter((r) => r !== DEFAULT_AGENT_NAME);
+  if (
+    settings.agents &&
+    Object.prototype.hasOwnProperty.call(settings.agents, name)
+  )
+    return {};
+  const known = listDiscoveredAgentNames(cwd).filter(
+    (r) => r !== DEFAULT_AGENT_NAME,
+  );
   throw new Error(
     `Unknown agent role "${name}". Available roles: ${known.join(", ") || "(none)"}. ` +
       `Omit 'agent' for the default general-purpose child, or use one of the roles above.`,
@@ -763,19 +819,30 @@ export function resolveRunCfg(
   inheritedModel?: string,
   subagentSettings?: SubagentSettings,
 ): PiRunConfig {
-  const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const THINKING_LEVELS = [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ];
   const normalize = (v: unknown): string | undefined => {
     const s = typeof v === "string" && v.trim() ? v.trim().toLowerCase() : "";
     return THINKING_LEVELS.includes(s) ? s : undefined;
   };
   const suffixRe = /:(off|minimal|low|medium|high|xhigh|max)$/i;
 
-  const roleSettings = item.agent ? subagentSettings?.agents?.[item.agent] : undefined;
+  const roleSettings = item.agent
+    ? subagentSettings?.agents?.[item.agent]
+    : undefined;
 
   const roleModel = str(roleSettings?.model);
   const agentModel = str(agentCfg.model);
   const defaultModel = str(subagentSettings?.defaultModel);
-  const rawModel = roleModel ?? agentModel ?? defaultModel ?? str(inheritedModel);
+  const rawModel =
+    roleModel ?? agentModel ?? defaultModel ?? str(inheritedModel);
 
   const roleSuffixThinking = normalize(roleModel?.match(suffixRe)?.[1]);
   const agentSuffixThinking = normalize(agentModel?.match(suffixRe)?.[1]);
@@ -791,17 +858,22 @@ export function resolveRunCfg(
     defaultSuffixThinking ??
     normalize(inheritedThinking);
 
-  const tools =
-    item.tools?.length
-      ? item.tools
-      : roleSettings?.tools?.length
-        ? roleSettings.tools
-        : agentCfg.tools;
+  const tools = item.tools?.length
+    ? item.tools
+    : roleSettings?.tools?.length
+      ? roleSettings.tools
+      : agentCfg.tools;
   const cwd = item.cwd ? resolve(item.cwd) : undefined;
   const resumeSession = str(item.resume);
   const sessionId = item.id ? str(item.id) : undefined;
-  const timeoutMs = typeof item.timeoutMs === "number" && item.timeoutMs > 0 ? item.timeoutMs : undefined;
-  const maxTurns = typeof item.maxTurns === "number" && item.maxTurns > 0 ? item.maxTurns : undefined;
+  const timeoutMs =
+    typeof item.timeoutMs === "number" && item.timeoutMs > 0
+      ? item.timeoutMs
+      : undefined;
+  const maxTurns =
+    typeof item.maxTurns === "number" && item.maxTurns > 0
+      ? item.maxTurns
+      : undefined;
 
   // Bake the level into the model string whenever a model exists, "off" included:
   // buildPiArgs cannot append through a model id that itself contains a colon.
@@ -1173,13 +1245,20 @@ export function runPi(
 
     // Single rendering for paused results — used at abort time (immediate
     // notify) and by close as a dedupe-safe fallback.
-    const pausedResult = (): { output: string; failed: boolean; paused: boolean } => {
+    const pausedResult = (): {
+      output: string;
+      failed: boolean;
+      paused: boolean;
+    } => {
       const out = stdout.toString();
       const err = stderr.toString();
       // Report the actual elapsed time, not the configured limit — with the
       // late-timer bug a run showed "timed out after 20m0s" while it had
       // actually run 74m50s, which sent the investigation in circles.
-      const elapsedMs = Math.max(0, (state.finishedAt ?? Date.now()) - (state.startedAt ?? 0));
+      const elapsedMs = Math.max(
+        0,
+        (state.finishedAt ?? Date.now()) - (state.startedAt ?? 0),
+      );
       const reasonText =
         state.pauseReason === "timeout"
           ? `timed out after ${fmtDur(elapsedMs)} (limit: ${fmtDur(timeoutMs)}, turns: ${state.usage.turns})`
@@ -1216,7 +1295,9 @@ export function runPi(
     const deadline = timeoutMs > 0 ? startedAt + timeoutMs : 0;
     const abortTimeout = (via: string) => {
       const late = Math.max(0, Date.now() - deadline);
-      debugLog(`timeout abort via ${via}: ${late}ms past deadline (timeoutMs=${timeoutMs})`);
+      debugLog(
+        `timeout abort via ${via}: ${late}ms past deadline (timeoutMs=${timeoutMs})`,
+      );
       if (late > 1000) {
         // Clearly anomalous enforcement (>1s late): make it visible in-band.
         state.stderrTail = appendTail(
@@ -1228,11 +1309,14 @@ export function runPi(
       abort("timeout");
     };
     if (timeoutMs > 0) {
-      debugLog(`run ${state.sessionId}: timeout timer registered (timeoutMs=${timeoutMs})`);
+      debugLog(
+        `run ${state.sessionId}: timeout timer registered (timeoutMs=${timeoutMs})`,
+      );
       timeoutTimer = setTimeout(() => abortTimeout("timer"), timeoutMs);
       timeoutTimer?.unref?.();
       deadlineTicker = setInterval(() => {
-        if (!aborted && Date.now() >= deadline) abortTimeout("watchdog interval");
+        if (!aborted && Date.now() >= deadline)
+          abortTimeout("watchdog interval");
       }, 1000);
       deadlineTicker?.unref?.();
     }
@@ -1350,7 +1434,10 @@ function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
 /** One call = one task (issue 095). Known fields only; model/thinking never pass through. */
 export function normalizeTask(input: SubagentInput): SubagentTaskItem {
   const task = String(input.task || "").trim();
-  if (!task) throw new Error("No task specified. Provide 'task' with the prompt to execute.");
+  if (!task)
+    throw new Error(
+      "No task specified. Provide 'task' with the prompt to execute.",
+    );
   return {
     task,
     agent: input.agent,
@@ -1358,8 +1445,14 @@ export function normalizeTask(input: SubagentInput): SubagentTaskItem {
     cwd: input.cwd,
     resume: input.resume,
     id: input.id,
-    timeoutMs: typeof input.timeoutMs === "number" && input.timeoutMs > 0 ? input.timeoutMs : undefined,
-    maxTurns: typeof input.maxTurns === "number" && input.maxTurns > 0 ? input.maxTurns : undefined,
+    timeoutMs:
+      typeof input.timeoutMs === "number" && input.timeoutMs > 0
+        ? input.timeoutMs
+        : undefined,
+    maxTurns:
+      typeof input.maxTurns === "number" && input.maxTurns > 0
+        ? input.maxTurns
+        : undefined,
   };
 }
 
@@ -1395,8 +1488,16 @@ export type BackgroundSubagentTask = SubagentTaskRecord;
  * like Promise / AbortController make that throw — so anything handed to
  * sendMessage must be clone-safe (strings, numbers, booleans only).
  */
-export function toMessageDetails(task: SubagentTaskRecord): Record<string, unknown> {
-  const { controller: _controller, done: _done, notifyOnExit: _notifyOnExit, progress: _progress, ...safe } = task;
+export function toMessageDetails(
+  task: SubagentTaskRecord,
+): Record<string, unknown> {
+  const {
+    controller: _controller,
+    done: _done,
+    notifyOnExit: _notifyOnExit,
+    progress: _progress,
+    ...safe
+  } = task;
   return safe;
 }
 
@@ -1406,13 +1507,19 @@ export function toMessageDetails(task: SubagentTaskRecord): Record<string, unkno
  * in /subagent and subagent_status (issue 095: records are now 1:1 with children,
  * so each deserves a slot).
  */
-export function formatSubagentStatus(tasks: SubagentTaskRecord[], now = Date.now()): string | undefined {
+export function formatSubagentStatus(
+  tasks: SubagentTaskRecord[],
+  now = Date.now(),
+): string | undefined {
   const running = tasks.filter((t) => t.status === "running");
   if (running.length === 0) return undefined;
   const sorted = [...running].sort((a, b) => a.startedAt - b.startedAt);
   const parts = sorted
     .slice(0, 3)
-    .map((t) => `${t.agent ?? "subagent"} ${fmtDur(Math.max(0, now - t.startedAt))}`);
+    .map(
+      (t) =>
+        `${t.agent ?? "subagent"} ${fmtDur(Math.max(0, now - t.startedAt))}`,
+    );
   const rest = running.length - parts.length;
   if (rest > 0) parts.push(`+${rest} more`);
   return `sub:${running.length} · ${parts.join(" · ")}`;
@@ -1423,8 +1530,13 @@ export function formatSubagentStatus(tasks: SubagentTaskRecord[], now = Date.now
  * recent tool calls + child session log path. The task's output is NOT included —
  * it is delivered by the exit notification (issue 095).
  */
-export function formatSubagentTaskStatus(task: SubagentTaskRecord, now = Date.now()): string {
-  const elapsed = fmtDur(Math.max(0, (task.finishedAt ?? now) - task.startedAt));
+export function formatSubagentTaskStatus(
+  task: SubagentTaskRecord,
+  now = Date.now(),
+): string {
+  const elapsed = fmtDur(
+    Math.max(0, (task.finishedAt ?? now) - task.startedAt),
+  );
   const lines = [
     `[${task.id}] ${task.agent ?? "subagent"} · ${task.status} · ${elapsed}`,
     `Task: ${task.description}`,
@@ -1443,7 +1555,8 @@ export function formatSubagentTaskStatus(task: SubagentTaskRecord, now = Date.no
   if (recent.length) {
     lines.push("Recent tools:");
     for (const t of recent) {
-      const icon = t.status === "running" ? "▸" : t.status === "failed" ? "✗" : "✓";
+      const icon =
+        t.status === "running" ? "▸" : t.status === "failed" ? "✗" : "✓";
       lines.push(`  ${icon} ${toolBrief(t)}`);
     }
   }
@@ -1453,18 +1566,23 @@ export function formatSubagentTaskStatus(task: SubagentTaskRecord, now = Date.no
 }
 
 export class SubagentTaskManager {
-  constructor(private readonly tasks: Map<string, SubagentTaskRecord> = new Map()) {}
+  constructor(
+    private readonly tasks: Map<string, SubagentTaskRecord> = new Map(),
+  ) {}
   private onExit?: (task: SubagentTaskRecord) => void;
-  private onChange?: () => void;
+  private onChange?: (task?: SubagentTaskRecord) => void;
 
-  init(onExit: (task: SubagentTaskRecord) => void, onChange?: () => void): void {
+  init(
+    onExit: (task: SubagentTaskRecord) => void,
+    onChange?: (task?: SubagentTaskRecord) => void,
+  ): void {
     this.onExit = onExit;
     this.onChange = onChange;
   }
 
   register(task: SubagentTaskRecord): void {
     this.tasks.set(task.id, task);
-    this.emitChange();
+    this.emitChange(task);
   }
 
   get(id: string): SubagentTaskRecord | undefined {
@@ -1477,7 +1595,7 @@ export class SubagentTaskManager {
     t.controller.abort();
     t.status = "cancelled";
     t.finishedAt = Date.now();
-    this.emitChange();
+    this.emitChange(t);
     return true;
   }
 
@@ -1485,16 +1603,28 @@ export class SubagentTaskManager {
     const t = this.tasks.get(id);
     if (!t || t.status !== "running") return;
     t.progress = progress;
-    this.emitChange();
+    this.emitChange(t);
   }
 
-  complete(id: string, output: string, failed: boolean, cancelled = false, paused = false): void {
+  complete(
+    id: string,
+    output: string,
+    failed: boolean,
+    cancelled = false,
+    paused = false,
+  ): void {
     const t = this.tasks.get(id);
     if (!t) return;
-    t.status = cancelled ? "cancelled" : paused ? "paused" : failed ? "failed" : "succeeded";
+    t.status = cancelled
+      ? "cancelled"
+      : paused
+        ? "paused"
+        : failed
+          ? "failed"
+          : "succeeded";
     t.output = output;
     t.finishedAt = Date.now();
-    this.emitChange();
+    this.emitChange(t);
     if (t.notifyOnExit) {
       try {
         this.onExit?.(t);
@@ -1510,7 +1640,9 @@ export class SubagentTaskManager {
 
   getRunningCount(parentSessionId?: string): number {
     return Array.from(this.tasks.values()).filter(
-      (t) => (!parentSessionId || t.parentSessionId === parentSessionId) && t.status === "running",
+      (t) =>
+        (!parentSessionId || t.parentSessionId === parentSessionId) &&
+        t.status === "running",
     ).length;
   }
 
@@ -1527,9 +1659,9 @@ export class SubagentTaskManager {
     this.emitChange();
   }
 
-  private emitChange(): void {
+  private emitChange(task?: SubagentTaskRecord): void {
     try {
-      this.onChange?.();
+      this.onChange?.(task);
     } catch {}
   }
 }
@@ -1542,7 +1674,10 @@ export type SubagentBackgroundManager = SubagentTaskManager;
 // load so its methods always come from the current code. Pinning the instance instead left an
 // old prototype alive after an upgrade-reload ("setProgress is not a function", issue 088).
 const SUBAGENT_TASKS_KEY = Symbol.for("@bytetrue/pi-subagent.tasks");
-const globalStore = globalThis as unknown as Record<symbol, Map<string, SubagentTaskRecord> | undefined>;
+const globalStore = globalThis as unknown as Record<
+  symbol,
+  Map<string, SubagentTaskRecord> | undefined
+>;
 export const subagentManager: SubagentTaskManager = new SubagentTaskManager(
   (globalStore[SUBAGENT_TASKS_KEY] ??= new Map()),
 );
@@ -1555,7 +1690,12 @@ export async function runSubagent(
   onUpdate?: (r: PiToolResult) => void,
   inheritedThinking?: string,
   inheritedModel?: string,
-): Promise<{ output: string; details: ProgressDetails; failed: boolean; paused?: boolean }> {
+): Promise<{
+  output: string;
+  details: ProgressDetails;
+  failed: boolean;
+  paused?: boolean;
+}> {
   const item = normalizeTask(input);
 
   const subagentSettings = loadSubagentSettings(cwd, true);
@@ -1601,7 +1741,8 @@ export async function runSubagent(
 
   try {
     const role = item.agent || "subagent";
-    const sessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
+    const sessionId =
+      item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
     const agentCfg = resolveAgentRole(cwd, item.agent, subagentSettings);
     const runCfg = resolveRunCfg(
       { ...item, id: sessionId },
@@ -1654,7 +1795,12 @@ export default function subagentExtension(pi: {
     },
   ) => void;
   sendMessage?: (
-    message: { customType?: string; content: string; display?: boolean; details?: unknown },
+    message: {
+      customType?: string;
+      content: string;
+      display?: boolean;
+      details?: unknown;
+    },
     opts?: { deliverAs?: "followUp" | "steer"; triggerTurn?: boolean },
   ) => void;
   on?: (
@@ -1679,7 +1825,9 @@ export default function subagentExtension(pi: {
     }
   };
 
-  const resolveInheritedModel = (ctx?: PiExtensionContext): string | undefined => {
+  const resolveInheritedModel = (
+    ctx?: PiExtensionContext,
+  ): string | undefined => {
     // 1. Context model from tool execution
     if (ctx?.model?.provider && ctx?.model?.id) {
       activeParentModel = `${ctx.model.provider}/${ctx.model.id}`;
@@ -1725,19 +1873,28 @@ export default function subagentExtension(pi: {
         customType: "subagent-exit",
         content,
         display: true,
-        details: batch.length === 1 ? toMessageDetails(first) : batch.map(toMessageDetails),
+        details:
+          batch.length === 1
+            ? toMessageDetails(first)
+            : batch.map(toMessageDetails),
       },
       { deliverAs: "followUp", triggerTurn: true },
     );
   };
 
+  const byspaceReporter = new ByspaceReporter();
   subagentManager.init(
     (task) => {
-      if (!currentSessionId || task.parentSessionId !== currentSessionId) return;
+      if (!currentSessionId || task.parentSessionId !== currentSessionId)
+        return;
       pendingExits.push(task);
       if (!agentBusy) flushPendingExits();
     },
-    () => updateStatus?.(),
+    (task) => {
+      updateStatus?.();
+      if (task)
+        byspaceReporter.report(buildByspaceReportRecord(task, sessionLogPath));
+    },
   );
 
   pi.registerCommand?.("subagent", {
@@ -1756,7 +1913,9 @@ export default function subagentExtension(pi: {
   };
   const availableRoles = listDiscoveredAgentNames(process.cwd())
     .filter((name) => name !== DEFAULT_AGENT_NAME)
-    .map((name) => (builtinRoleGlosses[name] ? `${name} (${builtinRoleGlosses[name]})` : name))
+    .map((name) =>
+      builtinRoleGlosses[name] ? `${name} (${builtinRoleGlosses[name]})` : name,
+    )
     .join(", ");
 
   pi.registerTool?.({
@@ -1785,7 +1944,8 @@ export default function subagentExtension(pi: {
         tools: {
           type: "array",
           items: { type: "string" },
-          description: "Optional tool allowlist (e.g. ['read', 'grep', 'find']).",
+          description:
+            "Optional tool allowlist (e.g. ['read', 'grep', 'find']).",
         },
         cwd: {
           type: "string",
@@ -1793,11 +1953,13 @@ export default function subagentExtension(pi: {
         },
         resume: {
           type: "string",
-          description: "Optional session ID or partial UUID to resume a previous subagent session.",
+          description:
+            "Optional session ID or partial UUID to resume a previous subagent session.",
         },
         timeoutMs: {
           type: "number",
-          description: "Optional timeout in milliseconds. Default: 1200000 (20 minutes).",
+          description:
+            "Optional timeout in milliseconds. Default: 1200000 (20 minutes).",
         },
         maxTurns: {
           type: "number",
@@ -1846,7 +2008,10 @@ export default function subagentExtension(pi: {
 
       const onProgress = (r: PiToolResult) => {
         if (isObj(r.details) && r.details.kind === "pi-subagent-progress") {
-          subagentManager.setProgress(taskId, r.details as unknown as ProgressDetails);
+          subagentManager.setProgress(
+            taskId,
+            r.details as unknown as ProgressDetails,
+          );
         }
       };
 
@@ -1869,7 +2034,12 @@ export default function subagentExtension(pi: {
         })
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);
-          subagentManager.complete(taskId, msg, true, controller.signal.aborted);
+          subagentManager.complete(
+            taskId,
+            msg,
+            true,
+            controller.signal.aborted,
+          );
         });
 
       record.done = execution;
@@ -1893,7 +2063,8 @@ export default function subagentExtension(pi: {
   ): BackgroundSubagentTask | undefined => {
     if (!id) return undefined;
     const task = subagentManager.get(id);
-    const sessionId = ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
+    const sessionId =
+      ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
     return task && task.parentSessionId === sessionId ? task : undefined;
   };
 
@@ -1918,20 +2089,25 @@ export default function subagentExtension(pi: {
       ctx?: PiExtensionContext,
     ) => {
       const task = findSessionTask(String(input?.id ?? "").trim(), ctx);
-      if (!task) throw new Error(`No subagent task found with id "${input?.id}".`);
+      if (!task)
+        throw new Error(`No subagent task found with id "${input?.id}".`);
       const status = formatSubagentTaskStatus(task);
       const text =
         task.status === "running"
           ? `${status}\nResult arrives as a new message when it completes.`
           : status;
-      return { content: [{ type: "text", text }], details: toMessageDetails(task) };
+      return {
+        content: [{ type: "text", text }],
+        details: toMessageDetails(task),
+      };
     },
   });
 
   pi.registerTool?.({
     name: "subagent_stop",
     label: "Stop Subagent",
-    description: "Stop a running subagent task by id. A cancellation notice arrives as a new message.",
+    description:
+      "Stop a running subagent task by id. A cancellation notice arrives as a new message.",
     promptSnippet: "Stop one subagent task.",
     parameters: {
       type: "object",
@@ -1948,19 +2124,28 @@ export default function subagentExtension(pi: {
       ctx?: PiExtensionContext,
     ) => {
       const task = findSessionTask(String(input?.id ?? "").trim(), ctx);
-      if (!task) throw new Error(`No subagent task found with id "${input?.id}".`);
+      if (!task)
+        throw new Error(`No subagent task found with id "${input?.id}".`);
       if (task.status !== "running" || !subagentManager.stop(task.id)) {
         const settled = subagentManager.get(task.id) ?? task;
         return {
           content: [
-            { type: "text", text: `[${settled.id}] is already ${settled.status}; nothing to stop.` },
+            {
+              type: "text",
+              text: `[${settled.id}] is already ${settled.status}; nothing to stop.`,
+            },
           ],
           details: toMessageDetails(settled),
         };
       }
       const stopped = subagentManager.get(task.id) ?? task;
       return {
-        content: [{ type: "text", text: `Stopped ${stopped.id} (${stopped.agent ?? "subagent"}).` }],
+        content: [
+          {
+            type: "text",
+            text: `Stopped ${stopped.id} (${stopped.agent ?? "subagent"}).`,
+          },
+        ],
         details: toMessageDetails(stopped),
       };
     },
@@ -2042,6 +2227,8 @@ function formatSubagentExitMessage(task: BackgroundSubagentTask): string {
       return path ? `- ${run.agent}: ${path}` : undefined;
     })
     .filter((line): line is string => Boolean(line));
-  const logSection = logs.length ? `\n\nSession log${logs.length > 1 ? "s" : ""} (full model behaviour history):\n${logs.join("\n")}` : "";
+  const logSection = logs.length
+    ? `\n\nSession log${logs.length > 1 ? "s" : ""} (full model behaviour history):\n${logs.join("\n")}`
+    : "";
   return `[Subagent Task ${task.id}] (${task.description}) ${outcome}.\n\n${task.output}${logSection}`;
 }
