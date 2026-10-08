@@ -117,3 +117,10 @@ closed: 2026-10-08
 **交付**：`packages/pi-subagent` 0.15.0。提交与发布经用户授权（2026-10-08），tag `pi-subagent-v0.15.0`；发布记录见下。
 
 **与 ff 105 的关系**：远端同期已发布 0.12.0（ff 105「dynamic role list in agent param, drop role gating」）——纯名字列表进 `agent` 参数描述，无触发句、无 description frontmatter、无 roster 嵌入 description。本 issue 是它的深化：roster 连同触发句渲染进工具 description 主文本，自定义角色带各自触发描述可见；rebase 时冲突以本 issue 版本为准，105 的「动态可见 + 无门槛」意图断言保留（`pass 'agent' only when` 禁句断言仍在）。
+
+## 发布记录（2026-10-08）
+
+- commit `6f58a22`（rebase 到 origin/main 之后、版本 0.14.0 → 0.15.0），tag `pi-subagent-v0.15.0`，运行 `37765245698` 全绿：typecheck 全 workspace、测试 69 passed、publish 带 provenance（logIndex=3146461836）。
+- npm registry 确认：`dist-tags.latest` = `0.15.0`，`gitHead` = `6f58a222b1163029f890100c047fb7b27973a242`。解包核对：`agents/{explore,plan}` 含 `description:` 触发句，`explore` 含 "Fast read-only search agent"。
+- 本地安装已同步：`pi update npm:@bytetrue/pi-subagent` → 0.15.0。**`/reload` 后**本会话的 subagent 工具 description 即换成 roster 版本，观察期开始。
+- 过程波折（供后来者）：本地 main 曾落后远端 21 个提交（0.11–0.14 已在远端发布而本地工作区停在 0.10.0），初版 commit 差点重发已占用的 0.12.0；发现后 rebase 解决冲突（唯一冲突文件 `src/index.ts`，四处模型可见文本区），`npm version 0.15.0` 顺延。**教训：发版前先 `git fetch` 对齐远端再定版本号。**
