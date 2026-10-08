@@ -7,6 +7,9 @@ export interface AgentConfig {
   thinking?: string;
   tools?: string[];
   systemPrompt?: string;
+  /** Trigger sentence for the dispatching model, rendered into the tool
+   * description's roster (issue 102). Not injected into the child's prompt. */
+  description?: string;
 }
 
 /**

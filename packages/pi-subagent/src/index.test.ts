@@ -9,6 +9,7 @@ import {
   parseAgentFile,
   findAgentDefinition,
   resolveAgentRole,
+  buildAgentRosterText,
   resolvePiCli,
   runPi,
   normalizeTask,
@@ -223,6 +224,37 @@ describe("pi-subagent unit tests", () => {
     expect(omitted.systemPrompt).toBeTruthy();
     // Blank/whitespace names take the same path rather than erroring.
     expect(resolveAgentRole(process.cwd(), "   ", {})).toEqual(gp.config);
+  });
+
+  it("builds the agent roster with trigger descriptions (issue 102)", () => {
+    // Built-in roles render name + trigger sentence.
+    const roster = buildAgentRosterText(process.cwd());
+    expect(roster).toContain("- explore: Fast read-only search agent");
+    expect(roster).toContain("Use it to find files by pattern");
+    expect(roster).toContain("- plan: Software architect agent");
+    expect(roster).toContain("Use this when you need to plan the implementation strategy");
+    // The default child is not a selectable role; it is what omission selects.
+    expect(roster).not.toContain("- general-purpose");
+
+    // A custom .pi/agents document with a description joins the roster with its
+    // trigger sentence; one without falls back to the bare name.
+    const dir = join(tmpdir(), `pi-subagent-roster-${Date.now()}`);
+    mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
+    writeFileSync(
+      join(dir, ".pi", "agents", "db-sleuth.md"),
+      "---\ndescription: Database migration auditor. Use it to inspect schema drift.\n---\n\nBody.\n",
+    );
+    writeFileSync(
+      join(dir, ".pi", "agents", "bare-role.md"),
+      "---\n---\n\nBody only.\n",
+    );
+    try {
+      const custom = buildAgentRosterText(dir);
+      expect(custom).toContain("- db-sleuth: Database migration auditor. Use it to inspect schema drift.");
+      expect(custom).toContain("- bare-role");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("lets a user agent document shadow a same-named built-in role", () => {
@@ -743,20 +775,25 @@ You are an expert researcher. Read references carefully.
     // The omit-agent default path must stay visible on every model-facing surface,
     // or models only ever fill `agent` with a role (issue 096). Nothing may gate
     // custom roles behind the built-in ones, and the model must see the actual
-    // role choices, not just the built-ins (issue 105).
-    expect(String(main.description)).toContain("Omit 'agent' for a general-purpose default child");
-    expect(String(main.promptSnippet)).toContain("omit 'agent' for the general-purpose default child");
+    // role choices with their trigger descriptions (issues 105, 102).
+    expect(String(main.description)).toContain("general-purpose by default");
+    expect(String(main.promptSnippet)).toContain("general-purpose by default");
     const guidelines = (main.promptGuidelines as string[]).join("\n");
     expect(guidelines).toContain("Delegate any self-contained job");
+    expect(guidelines).toContain("Omit 'agent' for the general-purpose child");
     expect(guidelines).not.toContain("pass 'agent' only when");
     const agentParam = props.agent as JsonObject;
-    const agentParamText = String(agentParam.description);
-    expect(agentParamText).toContain("Omit it for a general-purpose default child");
-    // Dynamic role list (issue 105): built-ins are always discovered, so they must
-    // be listed; the default role itself stays out of the list.
-    expect(agentParamText).toContain("Roles available: ");
-    expect(agentParamText).toMatch(/\bexplore\b/);
-    expect(agentParamText).toMatch(/\bplan\b/);
+    expect(String(agentParam.description)).toContain("Omit it for a general-purpose child");
+    // Issue 102: the roster with trigger descriptions is embedded in the tool
+    // description; the default child stays out of it.
+    expect(String(main.description)).toContain("- explore: Fast read-only search agent");
+    expect(String(main.description)).toContain("- plan: Software architect agent");
+    expect(String(main.description)).not.toContain("- general-purpose");
+    // The exact-match threshold and self-deprecating "lowest thinking" wording
+    // from 096/100 are gone (issue 102).
+    expect(String(main.description)).not.toContain("matches the job exactly");
+    expect(String(main.promptSnippet)).not.toContain("lowest thinking");
+    expect(String(agentParam.description)).not.toContain("lowest thinking");
   });
 
   it("formats the footer from the oldest running task and clears when idle", () => {

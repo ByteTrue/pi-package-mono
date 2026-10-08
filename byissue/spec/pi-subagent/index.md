@@ -14,17 +14,19 @@
   - **单任务语义(095)**:没有 `tasks[]`、`chain`、`prompts`、`mode`——批量与链式已删除。要同时跑多个子任务，在同一条 assistant 消息里发多个 `subagent` tool call，各自独立 id、独立 manager 记录、独立进度卡、各自回各自的完成通知；退出通知在 agent 忙时经 `pendingExits` 合并为一条。
   - Agent 工具不暴露 `model` 或 `thinking`：模型与思考强度只由用户通过 `/subagent`、settings 文件或 agent 模板控制；旧调用即使伪造这两个字段也会在规范化与执行时被忽略。
   - **纯后台**：调用立即返回一行 started 文本与 task id，永不阻塞父回合；完整结果经 `followUp + triggerTurn` 作为新消息开启下一回合。没有 `async` 参数——没有前台模式可以退回（issue 088，对齐 background-terminal 079 的同一逻辑：结果由通知送达，"要不要阻塞"这根轴不存在）。
-  - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达；多任务 = 同一消息多次调用，控制用 `subagent_status` / `subagent_stop`。同样正向说明默认路径：`agent` 省略 = 通用子 agent（继承父会话 model/thinking 与 pi 默认工具 `read, bash, edit, write`），内置角色是任务恰好匹配时才用的预设（issue 096 修正——此前四处模型可见文本只列 scout/researcher/reviewer，模型从不使用无角色路径；issue 100 起该四处文本只列 `explore` 与 `plan`）。
+  - 工具 description / promptGuidelines 按 decision 001 正向措辞说明等待方式：启动后继续做别的或结束回合，结果以新消息到达；多任务 = 同一消息多次调用，控制用 `subagent_status` / `subagent_stop`。同样正向说明默认路径：`agent` 省略 = 通用子 agent（继承父会话 model/thinking 与 pi 默认工具 `read, bash, edit, write`）。角色宣传经 description 内嵌的 **roster** 完成（issue 102；096/100 两轮把门槛收到「恰好匹配才用」曾是角色长期不被主动选用的原因）：`buildAgentRosterText(cwd)` 在工具注册时把全部已发现角色连同各自文档 `description:` 触发句（"Use it to…" 祈使句，写给调度模型）渲染进 description，自定义 `.pi/agents/*.md` 因此对模型可见；roster 注册时求值，会话中新增文档需 `/reload` 才进宣传面，而角色解析本身始终实时读文件。
   - `agent` 传了不存在的名字时**报错**：错误文本列出可用角色并提示可省略 `agent` 走通用子 agent，不会静默退化为通用子 agent（issue 097）。执行时经 `resolveAgentRole` 解析；settings 里显式配置过但无文档的角色名仍被接受。
 - `subagent_status(id)`：按 id 查一个任务——状态、耗时、当前活动(运行中工具/轮次/token/费用/模型)、最近 5 条工具调用、子会话 log 路径。**不含任务 output**(全文由完成通知送达)；description 写明完成自动通知、无需轮询。
 - `subagent_stop(id)`：停止一个运行中任务。幂等(已结束返回 “is already …; nothing to stop”)；停止后照常发 “was cancelled” 通知。两工具都按 parent session 过滤,跨会话的 id 视为不存在。
 - 内置角色预设（以包内 agent 文档形式提供，见 `agents/*.md`，与用户 `.pi/agents/*.md` 同一套解析，同名用户文件优先；issue 100 起为对齐 Claude Code 的三角色）：
-  - `explore`（只读搜索专家，最低思考档 `minimal`，工具：`read, grep, find, ls, bash`；正文强约束只读、不得改文件）
+  - `explore`（只读搜索专家，最低思考档 `minimal`，工具：`read, grep, find, ls, bash`；正文强约束只读、不得改文件；`description:` 触发句含反例边界——不做 code review / 跨文件一致性检查——并约定调用方在任务里写明 search breadth：quick / medium / very thorough）
   - `plan`（只读实现规划，不设思考档，工具同 `explore`，正文要求以 `### Critical Files for Implementation` 收尾给出关键文件清单）
+  - 角色文档的 `description:` frontmatter 是给调度模型的触发句（渲染进 roster），**不注入子代理提示词**；无该字段的自定义角色在 roster 中显示裸名。触发句来源同正文：改编自 tintinweb，不从 Claude Code 摘。
   - `general-purpose`（**默认角色**，不声明 `tools:` → 继承 pi 默认全量工具；规则见下）
   - **省略 `agent` = 用 `general-purpose` 文档当模板**（`DEFAULT_AGENT_NAME`，与 Claude Code 一致），因此默认路径不再是无系统提示词的裸子会话。模型可见的可用角色列表会过滤掉默认角色，只列 `explore, plan` 并提示可省略 `agent`（issue 097 的错误文本一并随之更新）。
+  - **观察期约定（issue 102 遗留）**：roster + 触发句上线后，若 `explore`/`plan` 在真实使用中仍长期无主动选用，将收敛到只剩 `general-purpose`（届时另立 issue；自定义角色可见性不受影响）。
   - 这三个角色的正文**改编自 `@tintinweb/pi-subagents`（MIT，Copyright (c) 2026 tintinweb）**，不是逐字复制 Claude Code——后者的提示词是 `© Anthropic PBC. All rights reserved.` 且本包以 MIT 公开发布 `agents/`，逐字搬运会变成版权文本的再分发（出处与措辞见 README `### Attribution`）。要改角色设计时沿用这个来源，不要直接从 Claude Code 摘。
-- `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度、为角色绑定模型，以及查看当前运行中与最近完成的 subagent 任务（运行中可看详细进度卡与终止；结束后可看输出）。在任何子菜单按 `Esc` 均返回上一级。
+- `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度、为角色绑定模型，以及查看当前运行中与最近完成的 subagent 任务（运行中可看详细进度卡与终止；结束后可看输出）。为 `explore` 绑模型时选择器标题提示「便宜快模型更合适」（不硬编码供应商，issue 102 决策 D2）。在任何子菜单按 `Esc` 均返回上一级。
 - **配置文件**：全局 `<pkg-config 根>/pi-subagent/settings.json`（根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`），project 层 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`（仅在显式选 project scope 且项目受信时写入）。文件顶层即节本体（无外层 `subagent` 键）。老的 Pi `settings.json` `subagent` 节（含 `subagents.agentOverrides`/`subagents.agents` 兼容形状）与新位置缺失时的老项目 `<project>/.pi/settings.json` 只读回退，新文件一存在即不再参与读取，老文件不被删改；生效值来自回退路径时状态输出标 `legacy (read-only fallback): <path>`。
 - 状态栏：有任务运行时显示 `sub:N · <agent> <elapsed> · …`,**每个运行中任务一格**(最老优先)，上限 3 个后缀 `+N more`;全部结束自动清除。
 

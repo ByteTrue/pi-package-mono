@@ -1,5 +1,8 @@
 ---
 # Read-only: no edit/write tool is granted, so the child cannot modify the tree.
+# `description:` is the trigger sentence shown to the dispatching model in the
+# tool description's roster (issue 102); the body below is the child's prompt.
+description: Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.
 tools: read, grep, find, ls, bash
 ---
 

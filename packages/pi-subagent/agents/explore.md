@@ -1,5 +1,8 @@
 ---
 # Read-only: no edit/write tool is granted, so the child cannot modify the tree.
+# `description:` is the trigger sentence shown to the dispatching model in the
+# tool description's roster (issue 102); the body below is the child's prompt.
+description: Fast read-only search agent for locating code. Use it to find files by pattern, grep for symbols or keywords, or answer "where is X defined / which files reference Y". Do NOT use it for code review, design-doc auditing, or cross-file consistency checks. Specify search breadth in the task: quick, medium, or very thorough.
 thinking: minimal
 tools: read, grep, find, ls, bash
 ---

@@ -8,9 +8,10 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 
 - **⚡️ Zero Bloat & Minimal Context**: Three lightweight tool schemas (~200 tokens) replace heavy multi-thousand-token multi-agent frameworks.
 - **🎭 Built-in Golden Roles**: `explore`, `plan`, and `general-purpose` ship as ordinary agent documents in `agents/` — copy one into `.pi/agents/` to customise it. The role design mirrors Claude Code's built-in subagents, ported from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) (MIT).
-  - `explore`: Fast read-only code search and reconnaissance (`read, grep, find, ls, bash`, lowest thinking level).
+  - `explore`: Fast read-only code search and reconnaissance (`read, grep, find, ls, bash`, minimal thinking).
   - `plan`: Read-only implementation planning; ends every report with a `### Critical Files for Implementation` list.
   - `general-purpose`: Full toolset for multi-step work — what omitting `agent` already gives you, available as an explicit role name.
+- **📋 Role Roster in the Tool Description**: each role document's `description:` frontmatter — a trigger sentence ("Use it to…") — is embedded in the `subagent` tool description, so the dispatching model sees when to use every role, including your custom `.pi/agents/*.md` (issue 102).
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
 - **🚀 Always Non-blocking**: The tool call returns a task id immediately; the parent turn is never held. The complete output is delivered as a follow-up message that starts the next turn.
@@ -77,7 +78,7 @@ Note: the `subagent-exit` completion notice is queued while the parent agent is 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `task` | `string` | **Yes** | The task instruction / prompt. |
-| `agent` | `string` | No | Optional role. **Omit it for a general-purpose child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`). Built-ins: `explore` (fast read-only search), `plan` (read-only implementation planning), `general-purpose` (full tools, multi-step work); any custom `.pi/agents/<name>.md` works too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to the general-purpose child. |
+| `agent` | `string` | No | Optional role. **Omit it for a general-purpose child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`). Pass the name of a role from the roster embedded in the tool description: built-ins `explore` (fast, cheap, read-only code search) and `plan` (read-only implementation planning ending with a critical-files list), or any custom `.pi/agents/<name>.md` — the roster includes those too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to the general-purpose child. |
 | `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `cwd` | `string` | No | Optional working directory for the task. |
 | `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
@@ -141,6 +142,19 @@ model: your-provider/your-model
 
 A document replaces the built-in entirely, so keep the fields you still want — `tools` in particular. Omitting `tools` leaves the child on pi's default set (`read, bash, edit, write`).
 
+#### Role descriptions and the roster
+
+Every agent document supports a `description:` frontmatter line. It is **not** injected into the child's prompt — it is the trigger sentence the dispatching model reads: the `subagent` tool description embeds the roster of all discovered roles (`- name: description`, one per line), so the model can match a job to a role. Write it as an instruction to the caller, not a property label:
+
+```markdown
+---
+description: Database migration auditor. Use it to inspect schema drift.
+tools: read, grep, find
+---
+```
+
+The roster is built when the extension registers the tool. Agent documents added mid-session still resolve immediately when passed as `agent`, but they appear in the advertised roster after a `/reload`. Roles without a `description:` fall back to the bare name. The default `general-purpose` child is deliberately absent from the roster — omitting `agent` already selects it.
+
 #### Extension tools and role documents
 
 `--tools` is an **allowlist that replaces the default selection**, so a role that names its own `tools:` receives only those names — extension tools are not added on top. The built-in `explore` and `plan` documents deliberately name only pi's read-only core (`read, grep, find, ls, bash`); they do **not** bake in another extension's tool names. `general-purpose` omits `tools:` entirely, so that child inherits pi's full default set, extension tools included.
@@ -179,6 +193,8 @@ The model priority chain is:
 5. The child `pi` process's own default
 
 Thinking follows the same user-controlled chain: role settings, agent document, subagent default, then the parent session. `explore` asks for the lowest available thinking level; `plan` and `general-purpose` set none, so they inherit the parent session.
+
+**Recommendation for `explore`**: no provider is hardcoded for it, but read-only search rarely needs the parent session's model — binding a cheap, fast model to the role (`/subagent` → Configure an Agent Role → `explore`, or `agents.explore.model` in settings) keeps delegated searches fast and inexpensive. The model picker shows this hint when you configure `explore`.
 
 Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
 

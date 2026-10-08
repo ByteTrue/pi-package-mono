@@ -49,6 +49,7 @@ async function chooseScope(ctx: ExtensionCommandContext): Promise<SettingsScope 
 export async function pickModel(
   ctx: ExtensionCommandContext,
   current?: string,
+  hint?: string,
 ): Promise<string | undefined | null> {
   const available = ctx.modelRegistry.getAvailable();
   const items: PickerItem[] = [];
@@ -81,9 +82,10 @@ export async function pickModel(
     });
   }
 
-  const title = current
+  const base = current
     ? `Select Subagent Model (Current: ${current})`
     : "Select Subagent Model";
+  const title = hint ? `${hint} — ${base}` : base;
 
   const picked = await promptFuzzySelect(ctx, title, items, "Type to filter models...");
   if (!picked) return undefined;
@@ -223,7 +225,15 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
     const currentSettings = loadSubagentSettings(ctx.cwd, ctx.isProjectTrusted());
     const existingRole = currentSettings.agents?.[roleName] ?? {};
 
-    const model = await pickModel(ctx, existingRole.model);
+    // Issue 102 (decision D2): no provider is hardcoded, so the menu nudges
+    // toward a cheap, fast model for this read-only searcher instead.
+    const model = await pickModel(
+      ctx,
+      existingRole.model,
+      roleName === "explore"
+        ? "explore is a fast read-only searcher — a cheap, fast model fits it best"
+        : undefined,
+    );
     if (model === undefined) continue;
 
     const thinking = await pickThinking(ctx, existingRole.thinking);

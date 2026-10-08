@@ -730,6 +730,7 @@ export function parseAgentFile(filePath: string): AgentConfig {
     const k = m[1] ?? "",
       v = (m[2] ?? "").trim().replace(/^["']|["']$/g, "");
     if (k === "model") cfg.model = v || undefined;
+    else if (k === "description") cfg.description = v || undefined;
     else if (k === "thinking") cfg.thinking = v || undefined;
     else if (k === "tools") {
       cfg.tools = v
@@ -810,6 +811,24 @@ export function resolveAgentRole(
     `Unknown agent role "${name}". Available roles: ${known.join(", ") || "(none)"}. ` +
       `Omit 'agent' for the default general-purpose child, or use one of the roles above.`,
   );
+}
+
+/**
+ * Roster of selectable agent roles for the tool description, in the spirit of
+ * tintinweb's typeList: one line per role, the name plus the role document's
+ * `description:` frontmatter — a trigger sentence written for the dispatching
+ * model ("Use it to…"), not a property label. Documents without a description
+ * and settings-only roles fall back to the bare name. The default
+ * general-purpose child is omitted: omitting `agent` already selects it.
+ */
+export function buildAgentRosterText(cwd: string): string {
+  return listDiscoveredAgentNames(cwd)
+    .filter((name) => name !== DEFAULT_AGENT_NAME)
+    .map((name) => {
+      const description = findAgentDefinition(cwd, name).config.description?.trim();
+      return description ? `- ${name}: ${description}` : `- ${name}`;
+    })
+    .join("\n");
 }
 
 export function resolveRunCfg(
@@ -1904,30 +1923,21 @@ export default function subagentExtension(pi: {
     },
   });
 
-  // Roles are discovered at registration so the model sees the actual choices
-  // when filling the agent argument (issue 105). Roles added mid-session surface
-  // through the resolveAgentRole error, which lists the current roles.
-  const builtinRoleGlosses: Record<string, string> = {
-    explore: "fast read-only search, lowest thinking",
-    plan: "read-only planning ending with a critical-files list",
-  };
-  const availableRoles = listDiscoveredAgentNames(process.cwd())
-    .filter((name) => name !== DEFAULT_AGENT_NAME)
-    .map((name) =>
-      builtinRoleGlosses[name] ? `${name} (${builtinRoleGlosses[name]})` : name,
-    )
-    .join(", ");
+  // Issue 102: the roster is baked into the description when the tool is
+  // registered; agent documents added mid-session need a /reload to appear
+  // here (role resolution itself always reads the files live).
+  const roster = buildAgentRosterText(process.cwd());
 
   pi.registerTool?.({
     name: "subagent",
     label: "Subagent",
-    description:
-      "Delegate ONE self-contained task to an isolated child agent session that runs in the background. Omit 'agent' for a general-purpose default child that inherits your model, thinking level, and pi's default tools. Roles are dynamic — built-in 'explore' (fast read-only search) and 'plan' (read-only planning ending with a critical-files list), plus any custom .pi/agents documents; use one when it matches the task. The call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. Make multiple subagent calls in one message to run tasks in parallel; use subagent_status to check one and subagent_stop to stop one.",
+    description: `Delegate ONE self-contained task to an isolated child agent session. The child is general-purpose by default: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), so any self-contained job you would otherwise do inline fits. Pass 'agent' to pick the role whose trigger description below matches the job; roles from .pi/agents/ (project or user) are picked up automatically:\n\n${roster}\n\nThe call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.`,
     promptSnippet:
-      "Delegate a self-contained job to a background child agent — omit 'agent' for the general-purpose default child, or pass a role when one matches; the result arrives later as a new message.",
+      "Delegate a self-contained job to a child agent — general-purpose by default, or a roster role from the tool description when its trigger matches; the call returns at once and the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
     promptGuidelines: [
       "Delegate any self-contained job to subagent so you stay free to keep working or hand control back to the user",
+      "Omit 'agent' for the general-purpose child (inherits your model, thinking level, and default tools); pass 'agent' when a roster role's trigger description matches the job — e.g. 'explore' for fast read-only code search, 'plan' for read-only implementation planning",
       "After a subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
     ],
     parameters: {
@@ -1939,7 +1949,8 @@ export default function subagentExtension(pi: {
         },
         agent: {
           type: "string",
-          description: `Optional role for the child. Omit it for a general-purpose default child that inherits your model, thinking level, and default tools. Roles available: ${availableRoles}. Custom roles are .pi/agents/*.md documents. A name that matches no role is rejected with the list of available roles.`,
+          description:
+            "Optional agent role. Omit it for a general-purpose child that inherits your model, thinking level, and default tools. Pass the name of a role from the roster in the tool description — built-ins 'explore' (fast, cheap, read-only code search) and 'plan' (read-only implementation planning ending with a critical-files list), or any custom .pi/agents/<name>.md. A name that matches no document is rejected with the list of available roles.",
         },
         tools: {
           type: "array",
