@@ -25,7 +25,8 @@ export type CompleteFn = typeof complete;
 
 const parameters = Type.Object({
   paths: Type.Array(Type.String(), {
-    description: "Local image paths, absolute or relative to cwd; group related images for comparison.",
+    description:
+      "Local image paths, absolute or relative to cwd; HTTP(S) URLs are rejected — download the image first. Each file may be at most 20 MiB; the format is identified by the file header, not the extension. Group related images for comparison.",
   }),
   question: Type.String({ description: "A specific question about the images." }),
 });

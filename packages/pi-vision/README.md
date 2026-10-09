@@ -53,7 +53,7 @@ Automatic mode is off by default because enabling it sends attachments and the c
 image_ask(paths, question)
 ```
 
-- `paths` — local PNG, JPEG, GIF, or WebP files, absolute or relative to the current working directory.
+- `paths` — local PNG, JPEG, GIF, or WebP files, absolute or relative to the current working directory. Each file may be at most 20 MiB; a larger file is rejected before it is read, with a hint to downscale it first. Formats are identified by the file header, not the extension, so a renamed file is judged by its contents.
 - `question` — the specific detail the vision model should answer.
 
 Ask naturally:
@@ -61,6 +61,8 @@ Ask naturally:
 > Compare `/tmp/mockup.png` with `/tmp/render.png` and list the visible layout differences.
 
 Pass several paths together to compare a mockup with a rendered page, or successive screenshots of the same flow. HTTP(S) URLs are not accepted; download the image first.
+
+The 20 MiB cap here applies to each file. It is a different limit from automatic mode's batch below, which allows up to four images with a combined decoded size of 20 MiB.
 
 If a text-only model tries Pi's built-in `read` tool on an image, the extension appends a short pointer to `image_ask` instead of leaving the model at a dead end.
 
