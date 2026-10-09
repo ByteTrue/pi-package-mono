@@ -30,6 +30,14 @@ const parameters = Type.Object({
   question: Type.String({ description: "A specific question about the images." }),
 });
 
+/**
+ * Minimum length for a header/env value to be treated as a credential when
+ * scanning model output. Short values ("prod", "Bearer", a team name) are
+ * ordinary words that appear in normal answers; redacting whole responses over
+ * them blinded the tool randomly depending on provider config (BYTE-5 #6).
+ */
+const CREDENTIAL_MIN_LENGTH = 8;
+
 function credentialEcho(raw: string, auth: VisionAuth): "the API key" | "a configured credential" | undefined {
   if (auth.apiKey && raw.includes(auth.apiKey)) return "the API key";
 
@@ -37,13 +45,23 @@ function credentialEcho(raw: string, auth: VisionAuth): "the API key" | "a confi
   const headerEntries = Object.entries(auth.headers ?? {}).filter(
     (entry): entry is [string, string] => entry[1] !== null,
   );
+  // The token part of an Authorization header ("Bearer x" style values are
+  // stripped of the scheme first), subject to the same length bar — an
+  // Authorization header holding a bare scheme word ("Bearer" with no token)
+  // must not censor answers either.
   const authorizationTokens = headerEntries
     .filter(([name]) => name.toLowerCase() === "authorization")
-    .map(([, value]) => value.replace(/^\S+\s+/, ""));
+    .map(([, value]) => value.replace(/^\S+\s+/, ""))
+    .filter((value) => value.length >= CREDENTIAL_MIN_LENGTH);
   const otherCredentials = [
-    ...headerEntries.map(([, value]) => value),
     ...authorizationTokens,
-    ...Object.values(auth.env ?? {}),
+    // Other headers and env values must look like secrets, not labels: a
+    // short business value (X-Env: prod) must not censor normal answers.
+    ...headerEntries
+      .filter(([name]) => name.toLowerCase() !== "authorization")
+      .map(([, value]) => value)
+      .filter((value) => value.length >= CREDENTIAL_MIN_LENGTH),
+    ...Object.values(auth.env ?? {}).filter((value) => value && value.length >= CREDENTIAL_MIN_LENGTH),
   ];
   if (otherCredentials.some((value) => value && raw.includes(value))) {
     return "a configured credential";

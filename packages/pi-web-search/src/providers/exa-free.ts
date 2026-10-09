@@ -78,23 +78,40 @@ async function mcpPost(
 
 	// SSE response: extract the last JSON-RPC message from data: lines.
 	if (contentType.includes("text/event-stream")) {
-		const raw = await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
-		const dataLines = raw.split("\n").filter((l) => l.startsWith("data: "));
-		const lastData = dataLines[dataLines.length - 1]?.slice(6);
-		if (!lastData) throw new Error("Exa MCP: empty SSE response");
-		let parsed: JsonRpcResponse;
-		try {
-			parsed = JSON.parse(lastData) as JsonRpcResponse;
-		} catch {
-			throw new Error("Exa MCP response body is not valid JSON");
-		}
-		if (parsed.error) throw new Error(`Exa MCP returned JSON-RPC error ${parsed.error.code}`);
-		return { json: parsed, sessionId: newSessionId };
+		const json = parseSseResponse(await readResponseText(res, MAX_SEARCH_RESPONSE_BODY_BYTES));
+		if (json.error) throw new Error(`Exa MCP returned JSON-RPC error ${json.error.code}`);
+		return { json, sessionId: newSessionId };
 	}
 
 	const parsed = await readResponseJson<JsonRpcResponse>(res, MAX_SEARCH_RESPONSE_BODY_BYTES);
 	if (parsed.error) throw new Error(`Exa MCP returned JSON-RPC error ${parsed.error.code}`);
 	return { json: parsed, sessionId: newSessionId };
+}
+
+/**
+ * Extracts the last JSON-RPC message from an SSE body, per the SSE spec: an
+ * event ends at a blank line and its data is ALL its `data:` lines joined
+ * with newlines — not just one line (BYTE-5 #7). Events whose data is not a
+ * JSON object (e.g. keep-alive comments) are skipped, walking back to the
+ * newest parseable event.
+ */
+export function parseSseResponse(raw: string): JsonRpcResponse {
+	const events = raw.split(/\r?\n\r?\n/);
+	for (let i = events.length - 1; i >= 0; i--) {
+		const dataLines = events[i]!
+			.split(/\r?\n/)
+			.filter((line) => line.startsWith("data:"))
+			.map((line) => line.slice(5).replace(/^ /, ""));
+		if (dataLines.length === 0) continue;
+		let parsed: JsonRpcResponse;
+		try {
+			parsed = JSON.parse(dataLines.join("\n")) as JsonRpcResponse;
+		} catch {
+			continue;
+		}
+		if (parsed && typeof parsed === "object") return parsed;
+	}
+	throw new Error("Exa MCP response body is not valid JSON");
 }
 
 async function mcpNotify(
@@ -128,13 +145,20 @@ function parseSearchText(text: string): SearchResult[] {
 	// Title: ...
 	// URL: ...
 	// Highlights: ...
+	// Title/URL are matched ONLY before Highlights:, and only in blocks that
+	// HAVE a Highlights section: highlights are attacker-controlled page
+	// content, so text inside them — including a "---" separator plus fake
+	// "Title:"/"URL:" lines — must never become a result the agent trusts
+	// (BYTE-5 #7). A fragment without Highlights is a content piece, not a
+	// result block; skipping it is fail-safe.
 	for (const block of text.split(/\n---+\n/)) {
-		const title = block.match(/^Title:\s*(.+)$/m)?.[1]?.trim();
-		const url = block.match(/^URL:\s*(https?:\/\/\S+)$/m)?.[1]?.trim();
-		if (!title || !url) continue;
 		const highlightsAt = block.search(/^Highlights:\s*/m);
-		const snippet =
-			highlightsAt >= 0 ? block.slice(highlightsAt).replace(/^Highlights:\s*/m, "").replace(/\s+/g, " ").trim() : "";
+		if (highlightsAt < 0) continue;
+		const header = block.slice(0, highlightsAt);
+		const title = header.match(/^Title:\s*(.+)$/m)?.[1]?.trim();
+		const url = header.match(/^URL:\s*(https?:\/\/\S+)$/m)?.[1]?.trim();
+		if (!title || !url) continue;
+		const snippet = block.slice(highlightsAt).replace(/^Highlights:\s*/m, "").replace(/\s+/g, " ").trim();
 		results.push({ title, url, snippet: snippet.slice(0, 300) });
 	}
 	if (results.length > 0) return results.slice(0, 10);

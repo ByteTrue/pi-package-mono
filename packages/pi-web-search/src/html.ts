@@ -23,6 +23,11 @@ export const BROWSER_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const FETCH_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5";
+// Total wall-clock budget for one web_fetch: DNS, every redirect hop, and the
+// whole body read. Without it a slow-drip server (a byte every few minutes)
+// keeps undici's per-op bodyTimeout resetting until the 10 MiB cap, hanging
+// the tool until a human cancels (BYTE-5 #4).
+export const WEB_FETCH_TOTAL_TIMEOUT_MS = 30_000;
 const BINARY_CONTENT_TYPE_PREFIXES = ["image/", "video/", "audio/"];
 const HTML_CONTENT_TYPE_TOKEN = "text/html";
 
@@ -392,8 +397,16 @@ async function extractBodyAsText(
 }
 
 // Single web_fetch transport: SSRF-safe direct fetch → content-type assert → extraction.
-export async function fetchViaGenericHtml(url: string, raw: boolean, signal?: AbortSignal): Promise<FetchedContent> {
-	const res = await fetchUrlOrThrow(url, signal);
+export async function fetchViaGenericHtml(
+	url: string,
+	raw: boolean,
+	signal?: AbortSignal,
+	totalTimeoutMs: number = WEB_FETCH_TOTAL_TIMEOUT_MS,
+): Promise<FetchedContent> {
+	// Caller cancellation stays primary; the total timeout only adds a ceiling.
+	const budget = AbortSignal.timeout(totalTimeoutMs);
+	const totalSignal = signal ? AbortSignal.any([signal, budget]) : budget;
+	const res = await fetchUrlOrThrow(url, totalSignal);
 	const contentType = res.headers.get("content-type") ?? "";
 	try {
 		assertTextContentType(contentType);

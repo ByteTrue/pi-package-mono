@@ -77,6 +77,57 @@ describe('generateImage', () => {
     expect(readFileSync(result.images[0]!.path)).toEqual(PNG_BYTES);
   });
 
+  it('never overwrites an existing image; the retry lands on a -2 name (BYTE-5 #3)', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const settings = { default: { provider: 'openai', model: 'gpt-image-2' } };
+    const fetchImpl: typeof fetch = (async () =>
+      fakeJsonResponse({ data: [{ b64_json: PNG_BYTES.toString('base64') }] })) as typeof fetch;
+    const first = await generateImage({ prompt: 'a cat', filename: 'dup-test' }, { cwd, settings, fetchImpl });
+    const second = await generateImage({ prompt: 'a cat again', filename: 'dup-test' }, { cwd, settings, fetchImpl });
+
+    expect(first.images[0]?.path).toMatch(/dup-test\.png$/);
+    expect(second.images[0]?.path).toMatch(/dup-test-2\.png$/);
+    expect(second.images[0]?.path).not.toBe(first.images[0]?.path);
+    // The first generation is still intact byte-for-byte — no silent overwrite.
+    expect(readFileSync(first.images[0]!.path)).toEqual(PNG_BYTES);
+    expect(readFileSync(second.images[0]!.path)).toEqual(PNG_BYTES);
+
+    // Two images in one response already carry -N suffixes; the exclusive
+    // write must still compose with them instead of colliding.
+    const two = await generateImage(
+      { prompt: 'a cat', filename: 'pair-test' },
+      {
+        cwd,
+        settings,
+        fetchImpl: (async () =>
+          fakeJsonResponse({
+            data: [
+              { b64_json: PNG_BYTES.toString('base64') },
+              { b64_json: PNG_BYTES.toString('base64') },
+            ],
+          })) as typeof fetch,
+      },
+    );
+    expect(two.images.map((i) => i.path)).toEqual([
+      expect.stringMatching(/pair-test-1\.png$/),
+      expect.stringMatching(/pair-test-2\.png$/),
+    ]);
+
+    // A single-image generation into the same directory takes the free base
+    // name — the exclusive write only ever skips names that really exist.
+    const twoAgain = await generateImage(
+      { prompt: 'a cat', filename: 'pair-test' },
+      {
+        cwd,
+        settings,
+        fetchImpl: (async () =>
+          fakeJsonResponse({ data: [{ b64_json: PNG_BYTES.toString('base64') }] })) as typeof fetch,
+      },
+    );
+    expect(twoAgain.images[0]?.path).toMatch(/pair-test\.png$/);
+  });
+
   it('raises if the default route is not configured', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-image-gen-'));
     await expect(generateImage({ prompt: 'hi' }, { cwd, settings: {} })).rejects.toThrow(

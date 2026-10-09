@@ -8,6 +8,11 @@ import type { SearchProvider, SearchResult } from "./types.js";
 const BING_ENDPOINT = "https://www.bing.com/search";
 const MAX_ATTEMPTS = 2;
 const BASE_BACKOFF_MS = 400;
+// A 200 response with a full page but zero parseable b_algo blocks is Bing's
+// human-verification / challenge markup, not an empty result set. Any real
+// Bing page — results or "no matches" — is far larger than this, so a body
+// below the bar is treated as a degenerate empty answer instead (BYTE-5 #5).
+const SUSPICIOUS_BODY_CHARS = 1024;
 
 function cleanText(html: string): string {
 	return htmlToText(html).replace(/\s+/g, " ").trim();
@@ -74,6 +79,13 @@ export class BingProvider implements SearchProvider {
 				if (!res.ok) throw new Error(`Bing search error (${res.status})`);
 				const results = parseBing(body, maxResults);
 				if (results.length > 0) return results;
+				// 200 + a full-size body + zero results means we could not parse the
+				// page (challenge, layout change). Treating it as success returned an
+				// empty array and blocked the configured fallback chain — fail loudly
+				// so the chain moves on to the next provider instead.
+				if (body.length >= SUSPICIOUS_BODY_CHARS) {
+					throw new Error(`Bing returned 200 with no parseable results (body ${body.length} chars, likely a verification page)`);
+				}
 			} catch (error) {
 				if (signal?.aborted) throw error;
 				lastError = error;

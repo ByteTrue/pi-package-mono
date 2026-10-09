@@ -209,6 +209,50 @@ describe("runImageAsk", () => {
     expect(result.content).toEqual([{ type: "text", text: "The screenshot belongs to corp." }]);
   });
 
+  it("does not censor answers over short business header values (BYTE-5 #6)", async () => {
+    const { ctx } = scenario({
+      ok: true,
+      apiKey: "sk-test-abcdef123456",
+      headers: { "x-env": "prod", "x-region": "eu-west" },
+    });
+    const complete = vi
+      .fn()
+      .mockResolvedValue(reply("Deployed in prod (eu-west); the button is 12px off.")) as unknown as CompleteFn;
+
+    const result = await runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    expect(result.content).toEqual([
+      { type: "text", text: "Deployed in prod (eu-west); the button is 12px off." },
+    ]);
+  });
+
+  it("does not censor answers over a scheme-only Authorization header (BYTE-5 #6)", async () => {
+    const { ctx } = scenario({
+      ok: true,
+      headers: { Authorization: "Bearer" },
+    });
+    const complete = vi
+      .fn()
+      .mockResolvedValue(reply("Bearer tokens are used by this API; the answer is 42.")) as unknown as CompleteFn;
+
+    const result = await runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete);
+
+    expect(result.content).toEqual([{ type: "text", text: "Bearer tokens are used by this API; the answer is 42." }]);
+  });
+
+  it("still withholds a long token echoed from a custom header (BYTE-5 #6)", async () => {
+    const secret = "x-api-key-value-987654321";
+    const { ctx } = scenario({
+      ok: true,
+      headers: { "x-api-key": secret, "x-env": "prod" },
+    });
+    const complete = vi.fn().mockResolvedValue(reply('the key is ' + secret)) as unknown as CompleteFn;
+
+    await expect(
+      runImageAsk({ paths: ["shot.png"], question: "q" }, ctx, undefined, complete),
+    ).rejects.toThrow(/echoed a configured credential/);
+  });
+
   it("withholds a thrown transport error that echoes the api key", async () => {
     const { ctx } = scenario();
     const complete = vi

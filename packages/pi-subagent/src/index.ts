@@ -44,6 +44,8 @@ export interface PiExtensionContext {
     notify?: (msg: string, type?: "info" | "warning" | "error") => void;
     setStatus?: (id: string, text?: string) => void;
   };
+  /** Whether project-local trust is active (pi provides this on the real ctx). */
+  isProjectTrusted?: () => boolean;
 }
 
 export interface SubagentTaskItem {
@@ -788,6 +790,7 @@ export function resolveAgentRole(
   cwd: string,
   agentName?: string,
   subagentSettings?: SubagentSettings,
+  projectTrusted: boolean = true,
 ): AgentConfig {
   const name = typeof agentName === "string" ? agentName.trim() : "";
   // No role named: use the general-purpose document as the default template.
@@ -798,7 +801,7 @@ export function resolveAgentRole(
   if (found) return config;
   // A role explicitly configured in settings is still real even without a
   // document: it carries the role's model/thinking overrides.
-  const settings = subagentSettings ?? loadSubagentSettings(cwd, true);
+  const settings = subagentSettings ?? loadSubagentSettings(cwd, projectTrusted);
   if (
     settings.agents &&
     Object.prototype.hasOwnProperty.call(settings.agents, name)
@@ -1741,6 +1744,7 @@ export async function runSubagent(
   inheritedThinking?: string,
   inheritedModel?: string,
   inheritCodemode?: boolean,
+  projectTrusted: boolean = true,
 ): Promise<{
   output: string;
   details: ProgressDetails;
@@ -1749,7 +1753,10 @@ export async function runSubagent(
 }> {
   const item = normalizeTask(input);
 
-  const subagentSettings = loadSubagentSettings(cwd, true);
+  // Project-layer settings (env, role model overrides) only load when the
+  // project is trusted; runSubagent is the tool's real entry, so the trust
+  // decision must arrive here rather than default to trusted (BYTE-5 #1).
+  const subagentSettings = loadSubagentSettings(cwd, projectTrusted);
   const startedAt = Date.now();
   const details: ProgressDetails = {
     kind: "pi-subagent-progress",
@@ -2022,12 +2029,15 @@ export default function subagentExtension(pi: {
       const cwd = process.cwd();
       const inheritedThinking = resolveInheritedThinking();
       const inheritedModel = resolveInheritedModel(ctx);
+      // Missing ctx (older pi) keeps the historical trusted default; the real
+      // entry must forward the decision so project-layer env is gated (BYTE-5 #1).
+      const projectTrusted = ctx?.isProjectTrusted?.() ?? true;
 
       const item = normalizeTask(input);
       // Fail the tool call before any task is registered: an unknown role must
       // surface as an error the model can correct, not as a silently different
       // child (issue 097).
-      resolveAgentRole(cwd, item.agent);
+      resolveAgentRole(cwd, item.agent, undefined, projectTrusted);
 
       // Pure background (issue 088): the call returns at once; progress streams into
       // the manager record (status bar + /subagent menu) and the result arrives as a
@@ -2067,6 +2077,7 @@ export default function subagentExtension(pi: {
         inheritedThinking,
         inheritedModel,
         isCodemodeActive(pi),
+        projectTrusted,
       )
         .then((res) => {
           subagentManager.complete(

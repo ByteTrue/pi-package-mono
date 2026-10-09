@@ -62,9 +62,23 @@ function validLegacyProvider(value: unknown, custom: boolean): value is LegacyPr
   );
 }
 
-/** Recognizes a v1 document, including one that is structurally unusable. */
+/**
+ * Recognizes a v1 document, including one that is structurally unusable.
+ *
+ * A missing `version` alone is NOT enough: a v2-shaped file written by hand
+ * (or stripped of its version by another tool) would otherwise be "migrated",
+ * silently dropping every custom provider and the default route, and the
+ * shrunk result would overwrite the original file. Without a version field we
+ * only treat the file as legacy when a v1-only marker is present —
+ * `defaultModel` or `customProviders` do not exist in the v2 layout.
+ */
 export function isLegacyDocument(document: Record<string, unknown>): boolean {
-  return document.version === undefined || document.version === 1;
+  if (document.version === 1) return true;
+  if (document.version !== undefined) return false;
+  return (
+    Object.prototype.hasOwnProperty.call(document, 'defaultModel') ||
+    Object.prototype.hasOwnProperty.call(document, 'customProviders')
+  );
 }
 
 function readLegacy(document: Record<string, unknown>): LegacySettings | undefined {
