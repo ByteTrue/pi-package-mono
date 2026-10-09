@@ -49,17 +49,24 @@ export function describeNetworkError(error: unknown, provider: ResolvedProvider)
   return `${provider.name} request failed: ${msg}`;
 }
 
+// Describe the settings file this package actually reads: the package-level
+// settings.json, not Pi's settings.json (the older location is read-only
+// fallback and edits there are silently ignored — audit BYTE-4 #16).
+function settingsFileHint(): string {
+  return 'the pi-image-gen settings.json (run /image-gen in Pi to edit it, or edit <pkg-config root>/pi-image-gen/settings.json directly)';
+}
+
 /**
  * Returns a settings-path string that points to where the user should fix
  * the apiKey. For built-ins we name the env var first, because that is the
- * usual source; for custom providers we name the JSON path.
+ * usual source; for custom providers we name the package settings file.
  */
 function providerLocator(provider: ResolvedProvider): string {
   if (provider.builtIn) {
     const envVar = ENV_VARS[provider.id as BuiltInProviderId] ?? `${provider.id.toUpperCase()}_API_KEY`;
-    return `the ${envVar} env var (or pi-image-gen.providers.${provider.id}.apiKey in settings.json)`;
+    return `the ${envVar} env var or the apiKey of provider "${provider.id}" in ${settingsFileHint()}`;
   }
-  return `pi-image-gen.providers.${provider.id}.apiKey in settings.json`;
+  return `the apiKey of provider "${provider.id}" in ${settingsFileHint()}`;
 }
 
 function providerBaseUrlLocator(provider: ResolvedProvider): string {
