@@ -2,7 +2,7 @@
 kind: issue
 title: "全仓审计 Must fix 8 项:信任门/迁移误判/图片覆盖/抓取时限/Bing 回退/凭据误杀/SSE 规范/tmp 残留"
 type: bug
-status: open
+status: closed
 created: 2026-10-09
 ---
 
@@ -35,9 +35,12 @@ BYTE-4 审计(基线 main e480899,641 通过/10 跳过全绿)确认 7 条主报�
 - `npm run typecheck --workspaces --if-present` 全绿(exit 0)。
 - 每项修复的行为级测试要点:#1 真实 execute 入口 untrusted 时拒绝 project-only 角色(修前会放行并 spawn);runSubagent 经真实子进程观察 env(FROM_PROJECT trusted 可见/untrusted 不存在);#2 versionless v2 形状文件读取后字节不变、无 .v1.bak、严格读拒绝;带 v1 标记的 versionless 文件仍迁移;#3 双次生成同名得 -2 路径且首图字节完好;#4 挂死响应 30s 预算到期中止、caller abort 仍即时、快路径正常返回;A2 rename 失败(目标为目录)后目录内零 .tmp;#5 大 body 0 条抛错、小 body 保持空数组;#6 prod/eu-west/Bearer 不误杀、长 token 仍拦;#7 毒化 Highlights 不产生 attacker.example 结果、多行 data 聚合、非 JSON 事件跳过、无 JSON 时 body-free 报错。
 
-## 关闭候选(待验收后毕业)
+## 关闭(2026-10-09,交付关闭)
 
-- `byissue/spec/pi-web-search/index.md` 安全与预算节:补一行 web_fetch 总时限 30s(AbortSignal.any,调用方取消优先)。
-- `byissue/spec/pi-image-gen/index.md` 配置边界节:补迁移判定——缺 version 且无 v1 独有标记(defaultModel/customProviders)不作 v1 迁移;图片落盘为独占写,冲突时 -N 重试。
-- `byissue/spec/pi-subagent/index.md` 第 7 条:补一句工具入口的信任决策经 ctx.isProjectTrusted 传入 runSubagent/resolveAgentRole(旧 pi 无 ctx 保持 trusted 默认)。
-- 关闭时把本文件改名 `110-x-audit-must-fix-eight.md`。
+**判断**:8 项 Must fix(主报告 #1–#7 + 增补 A2)全部按审计意图修复,每项有行为级测试钉住,无范围外夹带;验收通过,老大已批准合并收尾。
+
+**验证摘要**:全仓 `npm test` 本批交付时 664 通过 / 10 跳过(基线 641/10,新增 23 全绿),`typecheck --workspaces` 六包 exit 0;两批合流后全仓最新计数 **702 通过 / 10 跳过**(第二批 #16 补测 +2),零回退。
+
+**毕业回写**(均已完成):`byissue/spec/pi-web-search/index.md` 安全与预算(web_fetch 总时限 30s);`byissue/spec/pi-image-gen/index.md` 配置边界与 CLI 契约(缺 version 且无 v1 标记不迁移、图片独占写 -N 重试);`byissue/spec/pi-subagent/index.md`(信任决策经 ctx.isProjectTrusted 传入 runSubagent/resolveAgentRole)。
+
+**遗留事项**:仅 main 合并——origin/main 已先行推进(e480899→a8485bd,BYTE-2/4/7/8 四个 PR 先行合入),fast-forward 前置条件失效,已按收尾指令暂停合并、未推送;待合并决策后合入并补跑全仓自检。

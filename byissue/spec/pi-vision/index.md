@@ -18,10 +18,10 @@ Peer：`@earendil-works/pi-coding-agent` `>=0.79.10`；零 runtime 依赖。npm 
 
 ## 它负责什么
 
-- **`image_ask(paths, question)`**：多图（顺序保留，前端"设计稿 vs 实际渲染"对比是刚需，`UserMessage.content` 本来就是数组，零额外代码）。三个错误闸门——模型未配置 / 凭据不可用 / 图片读不出——均在任何网络调用之前触发，不静默用假描述兜底。
+- **`image_ask(paths, question)`**：多图（顺序保留，前端"设计稿 vs 实际渲染"对比是刚需，`UserMessage.content` 本来就是数组，零额外代码）。三个错误闸门——模型未配置 / 凭据不可用 / 图片读不出——均在任何网络调用之前触发，不静默用假描述兜底。工具路径与自动分析共用同一附件预算（不超过 4 张、解码后不超过 20 MiB，超限报错且不调模型）；声明 MIME 归一化后比较（`image/jpg` 视同 `image/jpeg`），真实错配仍整批拒绝。
 - **按当前模型能力门控**：`session_start` 与 `model_select` 根据 `ctx.model.input` 同步 `image_ask` active tool；视觉模型移除它，非视觉模型恢复它，执行路径另有 guard 防止旧 prompt 或竞态调用。
 - **`tool_result` hook**：agent 撞上 `read` 那句"看不到图"的提示时，追加一句"改用 image_ask"的引导，不改原文、不碰 image part。当前模型本身支持图片时不介入（该提示压根不会出现）。
-- **附件自动预分析**：`/vision auto on` 明确开启后，text-only 主模型收到 `before_agent_start.images` 时，在首轮主模型调用前把整批附件和当前请求交给所选视觉模型；最多 4 张、解码后总计 20 MiB、固定 60 秒 deadline。成功与失败都注入隐藏上下文，失败明确禁止主模型假装看过图。视觉主模型不触发；未信任 project 配置不能开启外发。
+- **附件自动预分析**：`/vision auto on` 明确开启后，text-only 主模型收到 `before_agent_start.images` 时，在首轮主模型调用前把整批附件和当前请求交给所选视觉模型；最多 4 张、解码后总计 20 MiB、固定 60 秒 deadline。成功与失败都注入隐藏上下文，失败明确禁止主模型假装看过图；60 秒 deadline 在 signal 之外另有 `Promise.race` 墙钟兜底（实现完全无视 signal 也生效），已取消的请求直接返回、不注入任何上下文。视觉主模型不触发；未信任 project 配置不能开启外发。
 - **`/vision`**：列出 `models.json` 里 `input` 含 `image` 的模型，`ctx.ui.select` 选一个，或用 `auto on|off` 切换自动附件分析；原子写入本包自己的 settings 文件，保留其它字段与文件权限；写完重读一次生效值，被 project 级配置覆盖时警告而不是无声失败。
 
 ## 它不负责什么

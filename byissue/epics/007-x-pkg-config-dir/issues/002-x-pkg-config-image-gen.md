@@ -37,7 +37,7 @@ closed: 2026-09-30
 
 - `agentDir()`（`$PI_CODING_AGENT_DIR` → `~/.pi/agent`）、`newSettingsPath()`（`$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg` + `pi-image-gen/settings.json`）、`legacySettingsPath()`（`$PI_CODING_AGENT_DIR` → `$PI_AGENT_HOME` → `~/.pi/agent`，`$PI_AGENT_HOME` 从此**只**参与定位老文件）。
 - `settingsLocation(): SettingsLocation` = `{path, legacy}`：新文件是 file 就用它；否则老文件是 file 且 `JSON.parse` 成功时 `mkdirSync(dir,{recursive:true,mode:0o700})` + `${target}.pi-image-gen-<uuid>.tmp`（`mode:0o600, flag:'wx'`）+ `rename`，返回新路径；解析或写失败 → 返回老路径 + `legacy:true`。
-- `imageGenSettingsPath()` = `settingsLocation().path`（读）；`writableImageGenSettingsPath()` = `newSettingsPath()`（写）；`describeImageGenSettingsPath()` 在 legacy 时输出 `<path> (legacy (read-only fallback))`。
+- `imageGenSettingsPath()` = `settingsLocation().path`（读）；写路径不设独立符号——`updateImageGenSettings()` 直接写 `newSettingsPath()`（零引用的 `writableImageGenSettingsPath()` 已随 BYTE-6 验收补齐（23ebdd4）删除）；`describeImageGenSettingsPath()` 在 legacy 时输出 `<path> (legacy (read-only fallback))`。
 - `loadImageGenSettings()` / `readImageGenSettingsLayer()` 改读 `settingsLocation().path`；`updateImageGenSettings()` 写 `newSettingsPath()`。
 - 调用方：`config-command.ts` 与 `cli.ts:4,137` 的 `imageGenSettingsPath` import 换成 `describeImageGenSettingsPath`，7 处 `Target:` / `Config file:` 输出统一走它。
 

@@ -2,13 +2,13 @@
 kind: issue
 title: "全仓审计 Should fix 第二批:17 项修复 + Lean 清理(BYTE-6)"
 type: bug
-status: open
+status: closed
 created: 2026-10-09
 ---
 
 # 全仓审计 Should fix 第二批:17 项修复 + Lean 清理
 
-> **读者:** 验收 BYTE-6 修复批次的接手人;想了解某条审计发现的落点与验证方式的人。姊妹批次(第一批 Must fix)见 `byissue/issues/110-o-audit-must-fix-eight.md`,基线分支 `byissue/110-audit-must-fix`(74bc721),本批在其之上推进,两批合并与本 issue 关闭随收尾一并处理。
+> **读者:** 验收 BYTE-6 修复批次的接手人;想了解某条审计发现的落点与验证方式的人。姊妹批次(第一批 Must fix)见 `byissue/issues/110-x-audit-must-fix-eight.md`,基线分支 `byissue/110-audit-must-fix`(74bc721),本批在其之上推进,两批合并与本 issue 关闭随收尾一并处理。
 
 ## 范围与来源
 
@@ -68,11 +68,12 @@ BYTE-4 全仓审计(主报告 #8–#20 + 增补 A1/A3/A4/A5)与 Lean 清理约 -
 - `npm run typecheck --workspaces --if-present` 全绿(exit 0,六包 0 error)。
 - 关键行为测试锚点:vendor `vendor-script.test.ts`(set-key 非 TTY 拒绝)、`official-catalog.test.ts`(毒化 module 拒绝);web-search `html-fidelity.test.ts`(GBK 解码/PDF 拒绝/双转义)、`spill-cleanup.test.ts`(TTL 清扫)、`proxy-validation.test.ts`(socks 拒绝+warn-once);image-gen `byte6-fixes.test.ts`(n=3 三请求/discovery 插值/401 指向);subagent `byte6-fixes.test.ts`(真实子进程 abort 竞态/malformed resume 拒绝/reload flush);vision `byte6-fixes.test.ts`(无视 signal 的 60s 兜底/image/jpg 接受/5 张拒绝)。
 
-## 关闭候选(待验收后毕业)
+## 关闭(2026-10-09,交付关闭)
 
-- `byissue/spec/pi-vendor/index.md`:catalog 语义段补"TUI 与脚本共用 src/shared/vendor-shared.js,token 匹配;set-key 非 TTY 拒绝;catalog 模块过数据守卫"。
-- `byissue/spec/pi-web-search/index.md`:web_fetch 补 content-type 白名单与 charset 解码;代理补"保存前 http/https 校验,socks 拒绝;env 非法 warn 一次";spill 临时目录 7 天 TTL。
-- `byissue/spec/pi-image-gen/index.md`:补 Gemini n 循环实现方式;401 指引指向包级 settings;模型列表 delta 写入。
-- `byissue/spec/pi-subagent/index.md`:补 resume/id 形状校验与 reload flush 契约。
-- `byissue/spec/pi-vision/index.md`:补 60s race 兜底、取消不注入、工具路径 4 张/20MiB 预算、image/jpg 别名。
-- 关闭时本文件改名 `111-x-audit-should-fix-batch-two.md`。
+**判断**:主报告 Should fix #8–#20(13 条)与增补 A1/A3/A4/A5 全部修复,Lean 收敛(7 个 JSON provider 泛型 + 配置表、models-json 死层删除、vendor-shared 单源、web-search 死导出清理)落地;Nice to have 18 项逐项"已修/不修 + 理由"处置完毕;验收三类补齐项闭环,验收通过。有意的语义变更:catalog 排序从"首见序"统一为"id 字母序"(脚本原语义),以测试为准。
+
+**验证摘要**:全仓 `npm test` **702 通过 / 10 跳过**(分计 bg-terminal 52+1skip、image-gen 134、subagent 80、vendor 193、vision 95、web-search 148+9skip),`typecheck --workspaces` 六包 exit 0;对照基线 664/10 零回退。
+
+**毕业回写**(均已完成):`byissue/spec/pi-vendor/index.md`(catalog 搜索 TUI/脚本单源 + 数据守卫、set-key 非 TTY 拒绝)、`byissue/spec/pi-web-search/index.md`(web_fetch 保真/总时限、代理校验、spill TTL)、`byissue/spec/pi-image-gen/index.md`(Gemini n 循环、401 指引、模型列表 delta)、`byissue/spec/pi-subagent/index.md`(resume/id 校验、reload flush)、`byissue/spec/pi-vision/index.md`(60s race 兜底、取消不注入、工具路径预算、image/jpg 别名)。
+
+**遗留事项**:仅 main 合并——origin/main 已先行推进(e480899→a8485bd),fast-forward 前置条件失效,已按收尾指令暂停合并、未推送;待合并决策后合入并补跑全仓自检。

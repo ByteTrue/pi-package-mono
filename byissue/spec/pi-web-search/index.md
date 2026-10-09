@@ -13,8 +13,10 @@
 - **代理凭据显示**：proxy URL 可含 userinfo 供 transport 使用，但 `/web --show`、provider menu、placeholder 与 notification 只显示脱敏 scheme/host/port。
 - **配置**：`<pkg-config 根>/pi-web-search/config.json`，根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`（`<agent dir>` = `$PI_CODING_AGENT_DIR` 或 `~/.pi/agent`）；env key/base URL 优先于文件。老位置 `~/.pi/byte-pi-web/config.json`（`PI_CONFIG_DIR` 可覆盖）只读回退：首次读取时逐字节复制进新位置，原件不动。
 - **代理**：package-scoped transport，不调用 `setGlobalDispatcher`。
-- **安全与预算**：URL 禁止 embedded credentials；direct route 在 DNS、redirect、connect-time 守 SSRF 边界；显式 proxy 模式仍拒绝 private hostname/IP literal，但 proxy 是目标 DNS 的受信边界；search provider body 2 MiB，generic fetch decoded body 10 MiB；每次 provider attempt 15 秒；结果字段与总量有 UTF-8 预算；超限取消 stream。
-- **写入安全**：配置原子写 `0600`；损坏配置不被 `/web` 覆盖；旧 `autoFallback` / 单数 `provider` 字段自 0.4.0 起不再读取或迁移。
+- **安全与预算**：URL 禁止 embedded credentials；direct route 在 DNS、redirect、connect-time 守 SSRF 边界；显式 proxy 模式仍拒绝 private hostname/IP literal，但 proxy 是目标 DNS 的受信边界；search provider body 2 MiB，generic fetch decoded body 10 MiB；每次 provider attempt 15 秒；web_fetch 总时限 30 秒（`AbortSignal.any` 组合，调用方取消仍优先）；结果字段与总量有 UTF-8 预算；超限取消 stream。
+- **web_fetch 输出保真**：content-type 白名单（`text/*`、`+xml`/`+json` 及常用基类，PDF/zip 等二进制直接拒）；按响应 charset 解码（未知回退 UTF-8）；实体单遍解码、quote-aware 标签剥离、未闭合 script/style/注释不泄漏正文。
+- **溢出临时文件**：web_fetch 溢出改写包私有目录 `%TEMP%/byte-web-fetch/`，每次溢出前清扫超 7 天的孤儿文件。
+- **写入安全**：配置原子写 `0600`；损坏配置不被 `/web` 覆盖；proxy 保存前只放行 http/https（socks 拒绝且不落盘），env 非法代理 warn 一次而非静默忽略；旧 `autoFallback` / 单数 `provider` 字段自 0.4.0 起不再读取或迁移。
 
 ## 它不负责什么
 

@@ -54,7 +54,7 @@ catalog 安装定位依次尝试 `PI_VENDOR_PI_ROOT`、PATH 中 `pi` 的 realpat
 
 ## API key
 
-`apiKey` 作为 literal 存入 `models.json`。普通 key 是明文；若包含 Pi 配置元字符，落盘前必须编码 `$` → `$$`、开头 `!` → `$!`，防止后续被环境展开或命令执行。Skill 不让用户把 key 发进聊天，而给出 bundled `skills/pi-vendor/scripts/vendor.mjs set-key` 命令；脚本在用户终端无回显输入，只更新一个 provider，写前检查原始 bytes 未并发变化，随机临时文件 + rename 原子写，目标与临时文件均为 `0600`。
+`apiKey` 作为 literal 存入 `models.json`。普通 key 是明文；若包含 Pi 配置元字符，落盘前必须编码 `$` → `$$`、开头 `!` → `$!`，防止后续被环境展开或命令执行。Skill 不让用户把 key 发进聊天，而给出 bundled `skills/pi-vendor/scripts/vendor.mjs set-key` 命令；脚本在用户终端无回显输入，只更新一个 provider，写前检查原始 bytes 未并发变化，随机临时文件 + rename 原子写，目标与临时文件均为 `0600`；stdin 非 TTY 时直接拒绝（usage 退出码 2），永不阻塞等待管道输入。
 
 TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/command-only 产品承诺，也不存在浏览器 SecretRef。
 
@@ -78,7 +78,7 @@ TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited
 
 ### Active catalog
 
-Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；token 与去除空格/连字符/下划线后的文本参与匹配，按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。Skill 把“千问 3.7”一类自然称呼当成搜索意图，必要时改用 `qwen 3.7` 等 catalog 关键词重试；匹配只产生候选，不静默决定 canonical ID。TUI 直接加载同一官方 catalog：autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。
+Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；token 与去除空格/连字符/下划线后的文本参与匹配，按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。Skill 把“千问 3.7”一类自然称呼当成搜索意图，必要时改用 `qwen 3.7` 等 catalog 关键词重试；匹配只产生候选，不静默决定 canonical ID。TUI 与脚本共用同一 catalog 搜索实现（`src/shared/vendor-shared.js`，语义即脚本原语义：token 化 + 归一化 + exact/prefix/substring 稳定排序，排序按 id 字母序），autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。两侧的 catalog 动态加载统一过数据形状守卫（函数/getter/setter/类实例/循环引用等非纯数据树直接拒绝）。
 
 ### Discovery 安全边界
 
