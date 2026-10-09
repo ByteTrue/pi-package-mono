@@ -5,7 +5,7 @@
 <h1 align="center">Pi Package Mono</h1>
 
 <p align="center">
-  Five focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated vision, and web access.
+  Six focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, subagent delegation, delegated vision, and web access.
 </p>
 
 <p align="center">
@@ -22,6 +22,7 @@ Each package is independent. Install one capability without inheriting a framewo
 | You want Pi to… | Package | What it adds | First step |
 | --- | --- | --- | --- |
 | Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `bash(waitSeconds)`, `background_status`, `background_kill`, `/background` | Install and ask Pi to run a command without hanging on it |
+| Delegate a task to a focused child agent | [`@bytetrue/pi-subagent`](packages/pi-subagent) | `subagent`, `subagent_status`, `subagent_stop`, `/subagent` | Ask Pi to delegate a subtask, or run `/subagent` |
 | Generate or edit images | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | On-demand Skill + CLI, `/image-gen` setup | Run `/image-gen` |
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |
 | Let a text-only model understand images | [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask`, optional attachment analysis, `/vision` | Run `/vision` |
@@ -33,6 +34,7 @@ Install any package from npm:
 
 ```bash
 pi install npm:@bytetrue/pi-background-terminal
+pi install npm:@bytetrue/pi-subagent
 pi install npm:@bytetrue/pi-image-gen
 pi install npm:@bytetrue/pi-vendor
 pi install npm:@bytetrue/pi-vision
@@ -48,9 +50,9 @@ Restart or reload Pi after installation. Each package README covers its own setu
 
 The repository keeps high-frequency and low-frequency capabilities separate:
 
-- **Agent tools** stay small and explicit: background terminal, delegated vision, and web access.
+- **Agent tools** stay small and explicit: background terminal, delegated vision, subagent delegation, and web access.
 - **Skills load on demand** for lower-frequency work: image generation and model configuration.
-- **TUI commands close the setup loop**: `/background`, `/image-gen`, `/vendor`, `/vision`, and `/web`.
+- **TUI commands close the setup loop**: `/background`, `/subagent`, `/image-gen`, `/vendor`, `/vision`, and `/web`.
 - **No package depends on another package here.** Install, upgrade, or remove each one independently.
 - **No package replaces Pi's built-in tools.** Background terminal, for example, complements `bash` rather than overriding it.
 
@@ -88,6 +90,7 @@ npm --workspace @bytetrue/pi-image-gen run build
 ```text
 packages/
   pi-background-terminal/  Unified shell execution: bash waitSeconds + background tasks
+  pi-subagent/             Lightweight subagent runner: subagent, subagent_status, subagent_stop
   pi-image-gen/            Image generation and editing
   pi-vendor/               models.json provider/model management
   pi-vision/               Vision delegation for text-only models
