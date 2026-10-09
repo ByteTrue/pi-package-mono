@@ -4,6 +4,7 @@ import {
   parseJsonEvent,
   applyEvent,
   resolveRunCfg,
+  isCodemodeActive,
   buildPiArgs,
   buildChildEnv,
   parseAgentFile,
@@ -172,6 +173,101 @@ describe("pi-subagent unit tests", () => {
     expect(args).toContain("openai/gpt-4o:high");
     expect(args).toContain("--tools");
     expect(args).toContain("read,grep");
+  });
+
+  it("prepends codemode to tools when inheritCodemode is true", () => {
+    // 1. Explicit tools allowlist with inheritCodemode=true
+    const explicitCfg = resolveRunCfg(
+      { tools: ["read", "grep", "find"] },
+      {},
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(explicitCfg.tools).toEqual(["codemode", "read", "grep", "find"]);
+    expect(buildPiArgs(explicitCfg)).toContain("codemode,read,grep,find");
+
+    // 2. Role-defined tools (e.g. explore agent) with inheritCodemode=true
+    const exploreDef = findAgentDefinition(process.cwd(), "explore");
+    const exploreCfg = resolveRunCfg(
+      { agent: "explore" },
+      exploreDef.config,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(exploreCfg.tools).toEqual(["codemode", "read", "grep", "find", "ls", "bash"]);
+    expect(buildPiArgs(exploreCfg)).toContain("codemode,read,grep,find,ls,bash");
+
+    // 3. Already contains codemode: no duplicates
+    const alreadyCodemodeCfg = resolveRunCfg(
+      { tools: ["codemode", "read"] },
+      {},
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(alreadyCodemodeCfg.tools).toEqual(["codemode", "read"]);
+
+    // 4. Default general-purpose (no tools specified): tools remains undefined
+    const defaultCfg = resolveRunCfg(
+      {},
+      {},
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(defaultCfg.tools).toBeUndefined();
+    expect(buildPiArgs(defaultCfg)).not.toContain("--tools");
+
+    // 5. inheritCodemode=false: unchanged
+    const unchangedCfg = resolveRunCfg(
+      { tools: ["read", "grep"] },
+      {},
+      undefined,
+      undefined,
+      undefined,
+      false,
+    );
+    expect(unchangedCfg.tools).toEqual(["read", "grep"]);
+  });
+
+  it("evaluates isCodemodeActive accurately across dynamic and static conditions", () => {
+    // 1. Dynamic active tools takes precedence: true when active includes codemode
+    expect(isCodemodeActive({
+      getActiveTools: () => ["codemode", "read"],
+      getSettings: () => ({ codemode: { mode: "off" } }),
+    })).toBe(true);
+
+    // 2. Dynamic active tools takes precedence: false when active excludes codemode even if mode=only
+    expect(isCodemodeActive({
+      getActiveTools: () => ["read", "bash"],
+      getSettings: () => ({ codemode: { mode: "only" } }),
+    })).toBe(false);
+
+    // 3. getActiveTools unavailable: falls back to settings codemode.mode="only"
+    expect(isCodemodeActive({
+      getSettings: () => ({ codemode: { mode: "only" } }),
+    })).toBe(true);
+
+    // 4. getActiveTools unavailable: falls back to defaultTools with "+codemode" or "codemode"
+    expect(isCodemodeActive({
+      getSettings: () => ({ defaultTools: ["+codemode"] }),
+    })).toBe(true);
+    expect(isCodemodeActive({
+      getSettings: () => ({ defaultTools: ["codemode", "read"] }),
+    })).toBe(true);
+
+    // 5. neither active nor configured: false
+    expect(isCodemodeActive({
+      getSettings: () => ({ defaultTools: ["read", "bash"] }),
+    })).toBe(false);
+    expect(isCodemodeActive(undefined)).toBe(false);
+    expect(isCodemodeActive({})).toBe(false);
   });
 
   it("builds session args for new session and resume", () => {

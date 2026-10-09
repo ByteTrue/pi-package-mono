@@ -831,12 +831,39 @@ export function buildAgentRosterText(cwd: string): string {
     .join("\n");
 }
 
+/**
+ * Determines whether the parent session is actively using codemode.
+ * Prioritizes dynamic active tools in the session; falls back to static settings.
+ */
+export function isCodemodeActive(pi?: unknown): boolean {
+  try {
+    const piAny = pi as {
+      getSettings?: () => { codemode?: { mode?: string }; defaultTools?: string[] };
+      getActiveTools?: () => string[];
+    };
+    const active = piAny?.getActiveTools?.();
+    if (Array.isArray(active)) {
+      return active.includes("codemode");
+    }
+    const settings = piAny?.getSettings?.();
+    if (settings?.codemode?.mode === "only") return true;
+    const defaultTools = settings?.defaultTools;
+    if (Array.isArray(defaultTools)) {
+      return defaultTools.includes("+codemode") || defaultTools.includes("codemode");
+    }
+  } catch {
+    // fallback
+  }
+  return false;
+}
+
 export function resolveRunCfg(
   item: Partial<SubagentTaskItem>,
   agentCfg: AgentConfig,
   inheritedThinking?: string,
   inheritedModel?: string,
   subagentSettings?: SubagentSettings,
+  inheritCodemode?: boolean,
 ): PiRunConfig {
   const THINKING_LEVELS = [
     "off",
@@ -877,11 +904,15 @@ export function resolveRunCfg(
     defaultSuffixThinking ??
     normalize(inheritedThinking);
 
-  const tools = item.tools?.length
+  const rawTools = item.tools?.length
     ? item.tools
     : roleSettings?.tools?.length
       ? roleSettings.tools
       : agentCfg.tools;
+  const tools =
+    inheritCodemode && rawTools && rawTools.length > 0 && !rawTools.includes("codemode")
+      ? ["codemode", ...rawTools]
+      : rawTools;
   const cwd = item.cwd ? resolve(item.cwd) : undefined;
   const resumeSession = str(item.resume);
   const sessionId = item.id ? str(item.id) : undefined;
@@ -1709,6 +1740,7 @@ export async function runSubagent(
   onUpdate?: (r: PiToolResult) => void,
   inheritedThinking?: string,
   inheritedModel?: string,
+  inheritCodemode?: boolean,
 ): Promise<{
   output: string;
   details: ProgressDetails;
@@ -1769,6 +1801,7 @@ export async function runSubagent(
       inheritedThinking,
       inheritedModel,
       subagentSettings,
+      inheritCodemode,
     );
     const run = newRun(role, role, item.task, sessionId);
     applyRunConfig(run, runCfg);
@@ -1956,7 +1989,7 @@ export default function subagentExtension(pi: {
           type: "array",
           items: { type: "string" },
           description:
-            "Optional tool allowlist (e.g. ['read', 'grep', 'find']).",
+            "Optional tool allowlist. Restricts which tools the child agent can execute (nested in codemode when in codemode mode). Defaults to omitting this parameter to inherit the parent's full toolset.",
         },
         cwd: {
           type: "string",
@@ -2033,6 +2066,7 @@ export default function subagentExtension(pi: {
         onProgress,
         inheritedThinking,
         inheritedModel,
+        isCodemodeActive(pi),
       )
         .then((res) => {
           subagentManager.complete(
