@@ -5,7 +5,7 @@
 <h1 align="center">Pi Package Mono</h1>
 
 <p align="center">
-  Five focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated vision, and web access.
+  Six focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated subagents, delegated vision, and web access.
 </p>
 
 <p align="center">
@@ -23,6 +23,7 @@ Each package is independent. Install one capability without inheriting a framewo
 | --- | --- | --- | --- |
 | Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `bash(waitSeconds)`, `background_status`, `background_kill`, `/background` | Install and ask Pi to run a command without hanging on it |
 | Generate or edit images | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | On-demand Skill + CLI, `/image-gen` setup | Run `/image-gen` |
+| Delegate subtasks to child agents | [`@bytetrue/pi-subagent`](packages/pi-subagent) | `subagent`, `subagent_status`, `subagent_stop`, `/subagent` | Ask Pi to run a focused task in an isolated session |
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |
 | Let a text-only model understand images | [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask`, optional attachment analysis, `/vision` | Run `/vision` |
 | Search the web and fetch pages safely | [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search`, `web_fetch`, `/web` setup | Search immediately, or run `/web` |
@@ -34,6 +35,7 @@ Install any package from npm:
 ```bash
 pi install npm:@bytetrue/pi-background-terminal
 pi install npm:@bytetrue/pi-image-gen
+pi install npm:@bytetrue/pi-subagent
 pi install npm:@bytetrue/pi-vendor
 pi install npm:@bytetrue/pi-vision
 pi install npm:@bytetrue/pi-web-search
@@ -89,10 +91,13 @@ npm --workspace @bytetrue/pi-image-gen run build
 packages/
   pi-background-terminal/  Unified shell execution: bash waitSeconds + background tasks
   pi-image-gen/            Image generation and editing
+  pi-subagent/             Delegated subagents for focused child sessions
   pi-vendor/               models.json provider/model management
   pi-vision/               Vision delegation for text-only models
   pi-web-search/           Search providers and safe page fetching
 byissue/spec/           Current architecture and project decisions
 ```
+
+For AI coding agents working in this repository, [AGENTS.md](AGENTS.md) covers the build/test commands, per-package notes, and commit/PR conventions.
 
 For package-specific installation, configuration, examples, and limits, follow the links in [Choose a package](#choose-a-package).
