@@ -1,39 +1,41 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_SEARCH_RESPONSE_BODY_BYTES } from "../response-body.js";
+import { createProvider, JSON_PROVIDER_SPECS } from "./factory.js";
+import { PROVIDERS } from "./registry.js";
 import { BingProvider } from "./bing.js";
-import { BochaProvider } from "./bocha.js";
-import { BraveProvider } from "./brave.js";
 import { ExaMcpFreeProvider } from "./exa-free.js";
-import { ExaProvider } from "./exa.js";
-import { FirecrawlProvider } from "./firecrawl.js";
-import { JinaProvider } from "./jina.js";
-import { SearxngProvider } from "./searxng.js";
-import { TavilyProvider } from "./tavily.js";
 import type { SearchProvider } from "./types.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
+const providerNames = ["bocha", "tavily", "exa", "brave", "jina", "firecrawl", "searxng"] as const;
+
 const providers: Array<[string, () => SearchProvider]> = [
 	["Exa free", () => new ExaMcpFreeProvider()],
 	["Bing", () => new BingProvider()],
-	["SearXNG", () => new SearxngProvider()],
-	["Bocha", () => new BochaProvider("key")],
-	["Tavily", () => new TavilyProvider("key")],
-	["Exa", () => new ExaProvider("key")],
-	["Brave", () => new BraveProvider("key")],
-	["Jina", () => new JinaProvider("key")],
-	["Firecrawl", () => new FirecrawlProvider("key")],
+	...providerNames.map((name) => [name, () => createProvider(name, { apiKey: "key", baseUrl: "http://searxng.invalid" })] as [string, () => SearchProvider]),
 ];
 
+describe("JSON provider spec table (BYTE-6 Lean)", () => {
+	// Registry and factory must stay in lockstep: every paid/keyless-with-url
+	// provider in the registry needs a JSON spec, and vice versa. A missing
+	// registry entry would silently break /web; a missing spec breaks search.
+	it("covers exactly the registry providers that are not custom transports", () => {
+		const custom = new Set(["exa-free", "bing"]);
+		const expected = PROVIDERS.map((p) => p.name).filter((name) => !custom.has(name)).sort();
+		expect(Object.keys(JSON_PROVIDER_SPECS).sort()).toEqual(expected);
+	});
+});
+
 describe("search provider response budget", () => {
-	it.each(providers)("%s rejects and cancels an oversized response", async (_name, createProvider) => {
+	it.each(providers)("%s rejects and cancels an oversized response", async (_name, create) => {
 		let cancellations = 0;
 		vi.stubGlobal("fetch", vi.fn(async () => new Response(
 			new ReadableStream<Uint8Array>({ cancel: () => { cancellations++; } }),
 			{ headers: { "content-length": String(MAX_SEARCH_RESPONSE_BODY_BYTES + 1) } },
 		)));
 
-		await expect(createProvider().search("query", 3)).rejects.toThrow(/Response body exceeds/);
+		await expect(create().search("query", 3)).rejects.toThrow(/Response body exceeds/);
 		expect(cancellations).toBeGreaterThan(0);
 	});
 	it("bounds and cancels an oversized successful Exa notification body", async () => {

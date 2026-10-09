@@ -50,9 +50,9 @@ Restart or reload Pi after installation. Each package README covers its own setu
 
 The repository keeps high-frequency and low-frequency capabilities separate:
 
-- **Agent tools** stay small and explicit: background terminal, delegated vision, and web access.
+- **Agent tools** stay small and explicit: background terminal, delegated vision, subagent delegation, and web access.
 - **Skills load on demand** for lower-frequency work: image generation and model configuration.
-- **TUI commands close the setup loop**: `/background`, `/image-gen`, `/vendor`, `/vision`, and `/web`.
+- **TUI commands close the setup loop**: `/background`, `/image-gen`, `/subagent`, `/vendor`, `/vision`, and `/web`.
 - **No package depends on another package here.** Install, upgrade, or remove each one independently.
 - **No package replaces Pi's built-in tools.** Background terminal, for example, complements `bash` rather than overriding it.
 

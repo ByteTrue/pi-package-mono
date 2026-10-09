@@ -231,7 +231,9 @@ async function promptConnection(
   if (!baseUrl) return undefined;
   const credential = await promptCredential(ctx, existing?.apiKey, defaultEnvVar);
   if (!credential) return undefined;
-  const headers = await promptHeaders(ctx, credential.kind !== 'clear' && Boolean(existing?.headers));
+  // "Keep" must survive a credential clear too: wiping the key must not
+  // silently wipe custom headers (audit BYTE-4 #16).
+  const headers = await promptHeaders(ctx, Boolean(existing?.headers));
   if (!headers) return undefined;
   return { baseUrl, credential, headers };
 }
@@ -577,10 +579,17 @@ async function manageModelList(
   if (target) await modelActions(ctx, effective, entry, models, target);
 }
 
+/**
+ * Commit one model-list delta against the fresh on-disk list, not the snapshot
+ * the menu was opened with — a concurrent editor's additions must survive
+ * (audit BYTE-4 #16). applyDelta receives the current list and returns the
+ * intended one; the confirmed preview is derived from the snapshot only.
+ */
 async function commitModelList(
   ctx: ExtensionCommandContext,
   entry: ProviderEntry,
   models: readonly ImageModelEntry[],
+  applyDelta: (fresh: ImageModelEntry[]) => ImageModelEntry[],
   title: string,
   detail: string,
   notify: string,
@@ -595,7 +604,10 @@ async function commitModelList(
   const path = updateImageGenSettings((current) => {
     const previous = current.providers?.[entry.id];
     const row: ImageProvider = { ...(previous ?? {}) };
-    writeRowModels(row, models);
+    const fresh = (previous?.models ?? []).filter(
+      (model): model is ImageModelEntry => Boolean(typeof model === 'string' ? model : model?.id),
+    );
+    writeRowModels(row, applyDelta(fresh));
     return { ...current, providers: { ...(current.providers ?? {}), [entry.id]: row } };
   });
   ctx.ui.notify(`${notify} in ${path}.`, 'info');
@@ -620,6 +632,10 @@ async function addModel(
     ctx,
     entry,
     next,
+    (fresh) => {
+      const without = fresh.filter((model) => (typeof model === 'string' ? model : model.id) !== picked.id);
+      return [...without, picked];
+    },
     'Add model to list?',
     `Add: ${pick.modelId}${pick.alias ? ` (alias ${pick.alias})` : ''}`,
     `Model ${pick.modelId} added to ${entry.id}`,
@@ -647,6 +663,7 @@ async function modelActions(
       ctx,
       entry,
       models.filter((model) => model.id !== target.id),
+      (fresh) => fresh.filter((model) => (typeof model === 'string' ? model : model.id) !== target.id),
       'Remove model from list?',
       `Remove: ${target.id}`,
       `Model ${target.id} removed from ${entry.id}`,
@@ -670,6 +687,14 @@ async function modelActions(
     ctx,
     entry,
     next,
+    (fresh) =>
+      fresh.map((model) =>
+        (typeof model === 'string' ? model : model.id) === target.id
+          ? typeof model === 'string'
+            ? { id: model, alias }
+            : { ...model, alias }
+          : model,
+      ),
     'Save model alias?',
     `${target.id} → alias ${alias ?? '(none)'}`,
     `Alias for ${target.id} saved`,

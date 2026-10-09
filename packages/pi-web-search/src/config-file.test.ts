@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -100,6 +100,30 @@ describe("config location", () => {
 		expect(isLegacyConfigPath()).toBe(true);
 		expect(getConfigPath()).toBe(legacyPath());
 		expect(existsSync(configPath())).toBe(false);
+	});
+});
+
+describe("writeConfig failure hygiene", () => {
+	it("removes the plaintext-key temp file when the rename fails (BYTE-5 A2)", async () => {
+		const { getWritableConfigPath, writeConfig } = await import("./config.js");
+		const path = getWritableConfigPath();
+		mkdirSync(join(path, ".."), { recursive: true });
+		// A directory at the target makes renameSync fail on every platform
+		// (EISDIR/EPERM), the same window a Windows AV/indexer lock opens.
+		mkdirSync(path, { recursive: true });
+
+		expect(writeConfig({ apiKeys: { tavily: "sk-secret-material" } })).toBe(false);
+		// The temp file carried the plaintext key; it must not survive the
+		// failed write.
+		const leftovers = readdirSync(join(path, "..")).filter((f) => f.endsWith(".tmp"));
+		expect(leftovers).toEqual([]);
+	});
+
+	it("still writes successfully when the rename is not obstructed", async () => {
+		const { getWritableConfigPath, writeConfig } = await import("./config.js");
+		expect(writeConfig({ providers: ["bing"] })).toBe(true);
+		expect(JSON.parse(readFileSync(getWritableConfigPath(), "utf8"))).toEqual({ providers: ["bing"] });
+		expect(readdirSync(join(getWritableConfigPath(), "..")).filter((f) => f.endsWith(".tmp"))).toEqual([]);
 	});
 });
 

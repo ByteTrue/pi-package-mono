@@ -6,22 +6,20 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { MAX_IMAGE_BYTES, sniffMime } from "./image-file.js";
+import {
+  decodedBase64Length,
+  MAX_ATTACHMENT_COUNT,
+  MAX_IMAGE_BYTES,
+  normalizeDeclaredMime,
+  sniffMime,
+} from "./image-file.js";
 import { analyzeImages, TOOL_NAME, type CompleteFn } from "./image-ask.js";
 import { readAutoAnalyzeAttachments } from "./vision-model.js";
 
-export const MAX_AUTO_IMAGES = 4;
+export const MAX_AUTO_IMAGES = MAX_ATTACHMENT_COUNT;
 export const MAX_AUTO_IMAGE_BYTES = MAX_IMAGE_BYTES;
 export const AUTO_ANALYZE_TIMEOUT_MS = 60_000;
 const CUSTOM_TYPE = "pi-vision-auto-analysis";
-
-function decodedBase64Length(data: string): number | undefined {
-  if (!data || data.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return;
-  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
-  const contentLength = data.length - padding;
-  if (padding && (data.length % 4 !== 0 || contentLength % 4 !== 4 - padding)) return;
-  return Math.floor((contentLength * 6) / 8);
-}
 
 function validateImages(images: ImageContent[]): ImageContent[] {
   if (images.length > MAX_AUTO_IMAGES) {
@@ -45,7 +43,9 @@ function validateImages(images: ImageContent[]): ImageContent[] {
     const bytes = Buffer.from(image.data, "base64");
     totalBytes += byteLength;
     const actualMime = sniffMime(bytes);
-    if (actualMime !== image.mimeType) {
+    // Compare against the normalized declaration: image/jpg is a common
+    // non-standard label for JPEG and must not fail the batch (BYTE-6 A4).
+    if (actualMime !== normalizeDeclaredMime(image.mimeType)) {
       throw new Error(`Attached image ${index + 1} does not match its declared MIME type; none were sent.`);
     }
     return { ...image, mimeType: actualMime };
@@ -99,21 +99,28 @@ export async function runAutoAnalyze(
   }
 
   try {
+    if (ctx.signal?.aborted) return;
     const images = validateImages(event.images);
     const timeoutController = new AbortController();
-    const timeout = setTimeout(
-      () =>
-        timeoutController.abort(
-          new Error(`Automatic vision analysis timed out after ${AUTO_ANALYZE_TIMEOUT_MS / 1000} seconds.`),
-        ),
-      AUTO_ANALYZE_TIMEOUT_MS,
-    );
+    const deadlineMessage = `Automatic vision analysis timed out after ${AUTO_ANALYZE_TIMEOUT_MS / 1000} seconds.`;
+    const timeout = setTimeout(() => timeoutController.abort(new Error(deadlineMessage)), AUTO_ANALYZE_TIMEOUT_MS);
     const signal = ctx.signal
       ? AbortSignal.any([ctx.signal, timeoutController.signal])
       : timeoutController.signal;
-    const analysis = await analyzeImages(images, questionFor(event), ctx, signal, completeFn).finally(() =>
-      clearTimeout(timeout),
-    );
+    // Deadline is enforced twice (BYTE-6 #19): the abort signal above depends
+    // on pi-ai honoring it; the race below guarantees the 60s wall clock even
+    // if a future pi-ai version ignores the signal.
+    const deadline = new Promise<never>((_, reject) => {
+      timeoutController.signal.addEventListener(
+        "abort",
+        () => reject(timeoutController.signal.reason ?? new Error(deadlineMessage)),
+        { once: true },
+      );
+    });
+    const analysis = await Promise.race([
+      analyzeImages(images, questionFor(event), ctx, signal, completeFn),
+      deadline,
+    ]).finally(() => clearTimeout(timeout));
     if (ctx.hasUI) {
       ctx.ui.notify(
         `Analyzed ${images.length} attached image${images.length === 1 ? "" : "s"} with ${analysis.model}.`,
@@ -136,6 +143,10 @@ export async function runAutoAnalyze(
       },
     };
   } catch (error) {
+    // A deliberate user cancel (Esc) must not inject a retry nudge: the
+    // failure path tells the model to try image_ask, which is the opposite of
+    // what the user just asked for (BYTE-6 #19).
+    if (ctx.signal?.aborted) return undefined;
     return failure(error, event.images.length, ctx);
   }
 }

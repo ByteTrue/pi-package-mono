@@ -163,15 +163,21 @@ export function classifyImageOutput(
     };
   }
 
-  // Maybe bare base64 — try to decode and sniff. Bail cheaply on anything that
-  // can't possibly be an image (too short, contains non-base64 chars).
+  // Maybe bare base64 — sniff the magic bytes from a small prefix instead of
+  // decoding the whole payload (audit nice-to-have: multi-megabyte payloads
+  // were base64-decoded in full just to read the 12-byte header). 16 base64
+  // chars decode to exactly 12 bytes, the most any signature below reads;
+  // probes that stop earlier are the whole input, so accept/reject matches
+  // the old full decode exactly.
   if (trimmed.length < 16 || /[^A-Za-z0-9+/=\s]/.test(trimmed)) return null;
-  let decoded: Buffer;
-  try {
-    decoded = Buffer.from(trimmed, 'base64');
-  } catch {
-    return null;
+  let probe = '';
+  for (const ch of trimmed) {
+    if (probe.length >= 16) break;
+    if (ch === '=') break; // padding ends the stream, like Buffer's decoder
+    if (/\s/.test(ch)) continue;
+    probe += ch;
   }
+  const decoded = Buffer.from(probe, 'base64');
   if (decoded.length < 8) return null;
   const mimeType = sniffMime(decoded);
   if (!mimeType) return null;

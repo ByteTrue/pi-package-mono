@@ -331,4 +331,44 @@ describe('migration from the v1 layout', () => {
     expect(loadImageGenSettings().default).toEqual({ provider: 'openai', model: 'gpt-image-2' });
     expect(readFileSync(imageGenSettingsPath(), 'utf8')).toContain('defaultModel');
   });
+
+  it('does not migrate a versionless v2-shaped file as v1 (BYTE-5 #2)', () => {
+    isolated();
+    // A v2 layout whose version field was lost (hand-written or stripped by
+    // another tool). Pre-fix this was read as v1, migration kept only the
+    // built-in row, and the shrunk file overwrote the original — losing the
+    // custom provider, the default route, and outputDir with it.
+    const original = writeCurrent(
+      JSON.stringify(
+        {
+          outputDir: '.pi/art',
+          default: { provider: 'corp', model: 'image-v1' },
+          providers: {
+            corp: { api: 'openai', baseUrl: 'https://images.corp.example/v1', apiKey: 'k', models: ['image-v1'] },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+
+    // Runtime read: fail-soft keeps the file exactly as it is — no migration,
+    // no rewrite, no data loss. Migration would return nothing usable anyway
+    // (no v1 markers), but the must-not-do is overwriting the user's file.
+    expect(loadImageGenSettings()).toEqual({});
+    expect(readFileSync(imageGenSettingsPath(), 'utf8')).toBe(original);
+    expect(existsSync(join(dirname(imageGenSettingsPath()), 'settings.json.v1.bak'))).toBe(false);
+
+    // Strict read (interactive write flow) refuses rather than guessing.
+    expect(() => readImageGenSettingsLayer()).toThrow(/refusing to rewrite/i);
+    expect(readFileSync(imageGenSettingsPath(), 'utf8')).toBe(original);
+
+    // A versionless file that DOES carry v1 markers still migrates: markers
+    // cannot exist in a v2 document, so this is the safe hand-written-v1 case.
+    isolated();
+    process.env.OPENAI_API_KEY = 'env-secret';
+    writeCurrent(JSON.stringify({ defaultModel: 'gpt-image-2' }) + '\n');
+    expect(loadImageGenSettings().default).toEqual({ provider: 'openai', model: 'gpt-image-2' });
+    expect(JSON.parse(readFileSync(imageGenSettingsPath(), 'utf8')).version).toBe(2);
+  });
 });

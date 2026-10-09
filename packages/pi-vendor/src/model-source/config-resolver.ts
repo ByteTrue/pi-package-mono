@@ -48,10 +48,8 @@ export class CommandResolutionError extends Error {
 // --- Template parser ---
 
 /** Encode a literal so Pi will not interpret leading ! or $ references. */
-export function encodeConfigLiteral(value: string): string {
-	const dollarsEscaped = value.replaceAll("$", () => "$$");
-	return dollarsEscaped.startsWith("!") ? `$${dollarsEscaped}` : dollarsEscaped;
-}
+// Shared with the bundled script so both encode credentials identically.
+export { encodeConfigLiteral } from "../shared/vendor-shared.js";
 
 type TemplateResult = {
 	resolved: string;

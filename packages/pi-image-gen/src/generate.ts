@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { resolveDefaultRoute } from './config.js';
 import { resolveImageInputs } from './image-input.js';
 import { getAdapter } from './providers/index.js';
@@ -61,8 +61,10 @@ export async function generateImage(
     const fetched = await materialize(raw, fetchImpl, options.signal);
     const ext = MIME_TO_EXT[fetched.mimeType] ?? 'png';
     const suffix = raws.length > 1 ? `-${i + 1}` : '';
-    const path = resolve(outDir, `${baseFilename}${suffix}.${ext}`);
-    await writeFile(path, fetched.bytes);
+    // Exclusive write: two generations in the same second, parallel calls, or
+    // a user-fixed filename reused across runs must never overwrite an image
+    // already on disk (BYTE-5 #3).
+    const path = await writeExclusively(resolve(outDir, `${baseFilename}${suffix}.${ext}`), fetched.bytes);
     const image: GeneratedImage = { path, mimeType: fetched.mimeType };
     if (raw.revisedPrompt) image.revisedPrompt = raw.revisedPrompt;
     images.push(image);
@@ -77,6 +79,29 @@ export async function generateImage(
 
 function providerLabel(provider: ResolvedProvider): string {
   return provider.builtIn ? provider.id : `${provider.id} (custom)`;
+}
+
+/**
+ * Writes with `wx` so an existing image is never overwritten; on EEXIST the
+ * next free `-2`, `-3`, … candidate name is tried and its path returned, so
+ * the markdown output always points at the file that actually holds this
+ * generation.
+ */
+async function writeExclusively(path: string, bytes: Uint8Array): Promise<string> {
+  const dir = dirname(path);
+  const ext = extname(path);
+  const stem = basename(path, ext);
+  let candidate = path;
+  for (let n = 2; n <= 99; n++) {
+    try {
+      await writeFile(candidate, bytes, { flag: 'wx' });
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      candidate = join(dir, `${stem}-${n}${ext}`);
+    }
+  }
+  throw new Error(`Could not write ${path}: every candidate name already exists.`);
 }
 
 function resolveOutputDir(configured: string | undefined, cwd: string): string {

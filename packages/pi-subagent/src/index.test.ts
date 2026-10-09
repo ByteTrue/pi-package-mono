@@ -10,6 +10,7 @@ import {
   parseAgentFile,
   findAgentDefinition,
   resolveAgentRole,
+  runSubagent,
   buildAgentRosterText,
   resolvePiCli,
   runPi,
@@ -739,6 +740,135 @@ You are an expert researcher. Read references carefully.
         sessionManager: { getSessionId: () => "sess-err" },
       }),
     ).rejects.toThrow(/Unknown agent role "no-such-role"/);
+  });
+
+  it("gates project-layer settings behind ctx.isProjectTrusted at the tool entry (BYTE-5 #1)", async () => {
+    const registered = new Map<string, JsonObject>();
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    const projectDir = mkdtempSync(join(tmpdir(), "pi-subagent-trust-"));
+    const projectSettingsDir = join(projectDir, ".pi", "pi-pkg-cfg", "pi-subagent");
+    mkdirSync(projectSettingsDir, { recursive: true });
+    writeFileSync(
+      join(projectSettingsDir, "settings.json"),
+      JSON.stringify({ agents: { secretops: { model: "vendor/project-only" } } }),
+    );
+    const ctxBase = { sessionManager: { getSessionId: () => "sess-trust" } };
+    try {
+      subagentExtension({
+        registerTool: (tool: JsonObject) => registered.set(String(tool.name), tool),
+      });
+    } finally {
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+    }
+    const execute = registered.get("subagent")!.execute as (
+      id: string,
+      input: unknown,
+      signal: undefined,
+      onUpdate: undefined,
+      ctx: Record<string, unknown>,
+    ) => Promise<unknown>;
+
+    // Untrusted project: a role that exists ONLY in project settings must be
+    // rejected before any task is registered or child process spawned. The
+    // extension executes with process.cwd(), so chdir into the project for
+    // the duration of the call.
+    const prevCwd = process.cwd();
+    process.chdir(projectDir);
+    try {
+      await expect(
+        execute("call_t1", { task: "x", agent: "secretops" }, undefined, undefined, {
+          ...ctxBase,
+          isProjectTrusted: () => false,
+        }),
+      ).rejects.toThrow(/Unknown agent role "secretops"/);
+      // The negative must come from the trust gate, not from a missing file:
+      // identical resolution on a trusted project finds the project-only role.
+      expect(resolveAgentRole(projectDir, "secretops", undefined, true)).toEqual({});
+      // No task may have been registered by the failed call.
+      expect(subagentManager.list().some((t) => t.agent === "secretops")).toBe(false);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it("runSubagent drops project-layer env and role overrides for untrusted projects (BYTE-5 #1)", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "pi-subagent-trust-env-"));
+    const projectSettingsDir = join(projectDir, ".pi", "pi-pkg-cfg", "pi-subagent");
+    mkdirSync(projectSettingsDir, { recursive: true });
+    writeFileSync(
+      join(projectSettingsDir, "settings.json"),
+      JSON.stringify({
+        defaultModel: "vendor/project-model",
+        agents: { secretops: { model: "vendor/project-only" } },
+        // FROM_PROJECT is the observable probe. In production this layer is
+        // where a malicious repo would put NODE_OPTIONS="--require evil.js"
+        // (the attack this gate stops); the probe keeps the fixture runnable.
+        env: { FROM_PROJECT: "1" },
+      }),
+    );
+
+    // A settings-only role that only exists in the project layer: trusted
+    // resolution finds it, untrusted resolution must not.
+    expect(resolveAgentRole(projectDir, "secretops", undefined, true)).toEqual({});
+    expect(() => resolveAgentRole(projectDir, "secretops", undefined, false)).toThrow(
+      /Unknown agent role "secretops"/,
+    );
+
+    // The env gate, observed at the spawn boundary: run the fake pi CLI (a
+    // real child process) once per trust level and log the child environment.
+    const fake = join(projectDir, "fake-pi.cjs");
+    const makeFake = (logFile: string) => {
+      const line =
+        'const fs = require("node:fs");\n' +
+        'fs.appendFileSync(' + JSON.stringify(logFile) + ', JSON.stringify(process.env) + "\\n");\n' +
+        'process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");\n' +
+        'process.exit(0);';
+      return line;
+    };
+    const trustedLog = join(projectDir, "trusted.log");
+    const untrustedLog = join(projectDir, "untrusted.log");
+    const prevCliJs = process.env.PI_CLI_JS;
+    try {
+      process.env.PI_CLI_JS = fake;
+      writeFileSync(fake, makeFake(trustedLog));
+      const trusted = await runSubagent(
+        projectDir,
+        { task: "x", id: "trust-t" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        true,
+      );
+      expect(trusted.failed).toBe(false);
+
+      // Untrusted run: the project env must never reach the child process.
+      writeFileSync(fake, makeFake(untrustedLog));
+      const untrusted = await runSubagent(
+        projectDir,
+        { task: "x", id: "trust-f" },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      );
+      expect(untrusted.failed).toBe(false);
+
+      const untrustedEnv = JSON.parse(readFileSync(untrustedLog, "utf-8")) as Record<string, string>;
+      expect(untrustedEnv.FROM_PROJECT).toBeUndefined();
+      // Control: the trusted run DOES receive the project env, proving the
+      // untrusted absence comes from the trust gate, not from a broken merge.
+      const trustedEnv = JSON.parse(readFileSync(trustedLog, "utf-8")) as Record<string, string>;
+      expect(trustedEnv.FROM_PROJECT).toBe("1");
+    } finally {
+      if (prevCliJs === undefined) delete process.env.PI_CLI_JS;
+      else process.env.PI_CLI_JS = prevCliJs;
+      try { rmSync(projectDir, { recursive: true, force: true }); } catch {}
+    }
   });
 
   it("normalizes a single task input, dropping unknown fields (issue 095)", () => {

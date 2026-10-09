@@ -12,7 +12,7 @@ import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch, ProxyAgent, type Dispatcher, type RequestInit as UndiciRequestInit } from "undici";
 import type { FetchedContent } from "./providers/types.js";
 import { getInstalledProxyUrl } from "./proxy.js";
-import { readResponseText } from "./response-body.js";
+import { charsetFromContentType, MAX_RESPONSE_BODY_BYTES, readResponseText } from "./response-body.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -23,7 +23,22 @@ export const BROWSER_USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const FETCH_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5";
-const BINARY_CONTENT_TYPE_PREFIXES = ["image/", "video/", "audio/"];
+// Total wall-clock budget for one web_fetch: DNS, every redirect hop, and the
+// whole body read. Without it a slow-drip server (a byte every few minutes)
+// keeps undici's per-op bodyTimeout resetting until the 10 MiB cap, hanging
+// the tool until a human cancels (BYTE-5 #4).
+export const WEB_FETCH_TOTAL_TIMEOUT_MS = 30_000;
+// Content types web_fetch may deliver as text (audit BYTE-4 #12): a whitelist,
+// because the old deny-list (image/video/audio) let PDFs, zips and other
+// binaries pour raw bytes into the model context.
+const TEXTUAL_BASE_TYPES = new Set([
+	"application/json",
+	"application/xml",
+	"application/javascript",
+	"application/rss",
+	"application/atom",
+	"application/xhtml",
+]);
 const HTML_CONTENT_TYPE_TOKEN = "text/html";
 
 const SUPPORTED_HTTP_PROTOCOLS = new Set(["http:", "https:"]);
@@ -38,7 +53,10 @@ const NOSCRIPT_BLOCK_REGEX = /<noscript[\s\S]*?<\/noscript>/gi;
 const BLOCK_CLOSER_REGEX =
 	/<\/(p|div|h[1-6]|li|tr|br|blockquote|pre|section|article|header|footer|nav|details|summary)>/gi;
 const SELF_CLOSING_BR_REGEX = /<br\s*\/?>/gi;
-const ANY_REMAINING_TAG_REGEX = /<[^>]+>/g;
+// Quote-aware: an attribute value containing ">" must not split the tag
+// (audit BYTE-4 #12).
+const ANY_REMAINING_TAG_REGEX = /<(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+const COMMENT_REGEX = /<!--[\s\S]*?-->/g;
 const TITLE_TAG_REGEX = /<title[^>]*>([\s\S]*?)<\/title>/i;
 const NUMERIC_HTML_ENTITY_REGEX = /&#(\d+);/g;
 const HEX_HTML_ENTITY_REGEX = /&#x([0-9a-fA-F]+);/g;
@@ -61,20 +79,43 @@ function decodeNumericEntity(code: string, radix: number): string {
 	return String.fromCodePoint(value);
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+	amp: "&",
+	lt: "<",
+	gt: ">",
+	quot: '"',
+	apos: "'",
+	nbsp: " ",
+	ensp: " ",
+	emsp: " ",
+	thinsp: " ",
+	hellip: "…",
+	mdash: "—",
+	ndash: "–",
+	middot: "·",
+	copy: "©",
+	reg: "®",
+	trade: "™",
+	laquo: "«",
+	raquo: "»",
+};
+
+// Every entity decodes in one pass, so the output of one replacement is never
+// re-scanned: "&amp;lt;" stays the literal text "&lt;" instead of collapsing
+// into "<" (audit BYTE-4 #12: double-decoding), and "&amp;#60;" stays "&#60;".
+const ENTITY_REGEX = /&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/g;
+
+function decodeOneEntity(entity: string): string {
+	if (entity[1] === "#") {
+		return entity[2] === "x" || entity[2] === "X"
+			? decodeNumericEntity(entity.slice(3, -1), 16)
+			: decodeNumericEntity(entity.slice(2, -1), 10);
+	}
+	return NAMED_ENTITIES[entity.slice(1, -1)] ?? entity;
+}
+
 function decodeHtmlEntities(text: string): string {
-	return text
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'")
-		.replace(/&nbsp;|&ensp;|&emsp;|&thinsp;/g, " ")
-		.replace(/&hellip;/g, "…")
-		.replace(/&mdash;/g, "—")
-		.replace(/&ndash;/g, "–")
-		.replace(/&middot;/g, "·")
-		.replace(HEX_HTML_ENTITY_REGEX, (_, code) => decodeNumericEntity(code, 16))
-		.replace(NUMERIC_HTML_ENTITY_REGEX, (_, code) => decodeNumericEntity(code, 10));
+	return text.replace(ENTITY_REGEX, decodeOneEntity);
 }
 
 function collapseWhitespace(text: string): string {
@@ -83,6 +124,10 @@ function collapseWhitespace(text: string): string {
 
 export function htmlToText(html: string): string {
 	let text = stripNonContentBlocks(html);
+	// An unterminated script/style block would leak its whole body as prose, and
+	// an unclosed comment likewise (audit BYTE-4 #12).
+	text = text.replace(/<(?:script|style|noscript)\b[\s\S]*$/i, "");
+	text = text.replace(COMMENT_REGEX, "").replace(/<!--[\s\S]*$/, "");
 	text = convertBlockTagsToNewlines(text);
 	text = text.replace(ANY_REMAINING_TAG_REGEX, " ");
 	text = decodeHtmlEntities(text);
@@ -93,7 +138,10 @@ export function htmlToText(html: string): string {
 export function extractTitle(html: string): string | undefined {
 	const match = html.match(TITLE_TAG_REGEX);
 	if (!match) return undefined;
-	return match[1]?.replace(ANY_REMAINING_TAG_REGEX, "").trim() || undefined;
+	// Titles carry entities too (audit BYTE-4 #12): decode instead of leaving
+	// "&amp;" visible in every title line.
+	const decoded = decodeHtmlEntities(match[1]?.replace(ANY_REMAINING_TAG_REGEX, " ") ?? "");
+	return decoded.replace(/\s+/g, " ").trim() || undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,8 +153,10 @@ export function isHtmlContentType(contentType: string): boolean {
 }
 
 export function assertTextContentType(contentType: string): void {
-	if (BINARY_CONTENT_TYPE_PREFIXES.some((prefix) => contentType.includes(prefix))) {
-		throw new Error(`Unsupported content type: ${contentType}. web_fetch supports text pages only.`);
+	const base = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+	const textual = base.startsWith("text/") || base.endsWith("+xml") || base.endsWith("+json") || TEXTUAL_BASE_TYPES.has(base);
+	if (!base || !textual) {
+		throw new Error(`Unsupported content type: ${contentType || "(none)"}. web_fetch supports text content only (HTML, plain text, JSON, XML).`);
 	}
 }
 
@@ -384,7 +434,9 @@ async function extractBodyAsText(
 	contentType: string,
 	raw: boolean,
 ): Promise<{ text: string; title?: string }> {
-	const body = await readResponseText(res);
+	// Decode with the response's charset (GBK and friends), not blind UTF-8
+	// (audit BYTE-4 #12).
+	const body = await readResponseText(res, MAX_RESPONSE_BODY_BYTES, charsetFromContentType(contentType));
 	if (!raw && isHtmlContentType(contentType)) {
 		return { text: htmlToText(body), title: extractTitle(body) };
 	}
@@ -392,8 +444,16 @@ async function extractBodyAsText(
 }
 
 // Single web_fetch transport: SSRF-safe direct fetch → content-type assert → extraction.
-export async function fetchViaGenericHtml(url: string, raw: boolean, signal?: AbortSignal): Promise<FetchedContent> {
-	const res = await fetchUrlOrThrow(url, signal);
+export async function fetchViaGenericHtml(
+	url: string,
+	raw: boolean,
+	signal?: AbortSignal,
+	totalTimeoutMs: number = WEB_FETCH_TOTAL_TIMEOUT_MS,
+): Promise<FetchedContent> {
+	// Caller cancellation stays primary; the total timeout only adds a ceiling.
+	const budget = AbortSignal.timeout(totalTimeoutMs);
+	const totalSignal = signal ? AbortSignal.any([signal, budget]) : budget;
+	const res = await fetchUrlOrThrow(url, totalSignal);
 	const contentType = res.headers.get("content-type") ?? "";
 	try {
 		assertTextContentType(contentType);

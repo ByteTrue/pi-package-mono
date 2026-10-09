@@ -24,7 +24,7 @@
  *   3. provider's defaultBaseUrl from registry
  */
 
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Static, Type } from "typebox";
@@ -161,17 +161,22 @@ export function readConfig(): WebConfig {
 // Always writes the new location: the legacy path is read-only by design.
 export function writeConfig(config: WebConfig): boolean {
 	const path = newConfigPath();
+	let tmp: string | undefined;
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 		const body = `${JSON.stringify(config, null, 2)}
 `;
-		const tmp = `${path}.${process.pid}.tmp`;
+		tmp = `${path}.${process.pid}.tmp`;
 		// mode 0o600: may contain API keys. Atomic rename avoids half-written JSON.
 		writeFileSync(tmp, body, { encoding: "utf8", mode: 0o600 });
 		renameSync(tmp, path);
 		return true;
 	} catch {
 		return false;
+	} finally {
+		// A failed rename (Windows: AV/indexer holding the target) must not
+		// leave the plaintext-key temp file behind forever (BYTE-5 A2).
+		if (tmp) rmSync(tmp, { force: true });
 	}
 }
 

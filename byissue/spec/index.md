@@ -2,7 +2,7 @@
 
 ## 这个项目是什么
 
-`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。多数包以 TypeScript 源码通过 jiti 加载；`pi-image-gen` 因 bundled Skill CLI 与 extension 共用同一 core，发布时构建 `dist`。当前有七个能力包：
+`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。多数包以 TypeScript 源码通过 jiti 加载；`pi-image-gen` 因 bundled Skill CLI 与 extension 共用同一 core，发布时构建 `dist`。当前有六个能力包：
 
 1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
 2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
@@ -10,7 +10,8 @@
 4. **背景终端**（`@bytetrue/pi-background-terminal`）：纯后台执行——`background_run` 立即返回 task id，退出时 followUp 唤醒（含退出码+末行）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值逃逸。内建 `bash` 是前台执行器（零触碰，仅 300s 安全网 hook）。选择轴是"要不要结果"：需要输出 → bash；脱手跑 → background_run。
 5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
 6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：三个工具 `subagent` / `subagent_status` / `subagent_stop`，在隔离子进程会话里跑一个子任务；纯后台——调用即返回，结果以新消息送达，并行靠模型在同一条消息里发多个调用（无链式入参）。
-7. **浏览器协助配置**（`@bytetrue/pi-browser`）：`/browser` 菜单只协助 agent-browser——展示安装 CLI、下载 Chrome for Testing、安装官方 skill 的命令，写入 Pi 专用持久 Profile/session/namespace 与闲置回收配置，并提供会话查看与清理；不注册 agent 工具，不替用户执行安装。
+
+> 2026-10-09：`@bytetrue/pi-browser`（原第 7 包）已从 main 整体删除，本 spec 不再描述它；历史与决策见 `byissue/epics/005-o-browser-direct-profile-target/`，其 spec 目录已并入归档。
 
 仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
 
@@ -30,7 +31,6 @@
 - **生成图像** → 读 [`pi-image-gen/`](pi-image-gen/index.md) 与 `packages/pi-image-gen/README.md`
 - **跑命令 / 后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；纯后台 background_run + 两个管理工具
 - **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 精确问图 + opt-in 附件预分析 + `/vision` 配置
-- **配置 Pi 专用 agent-browser Profile / 清理遗留会话** → 读 [`pi-browser/`](pi-browser/index.md)；setup-only 包，不注册 agent tool
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
 - **历史审计与旧流程证据** → [`byissue/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
 
@@ -41,7 +41,6 @@
 - **改 image-gen 配置/Skill/CLI**：先读 image-gen 子 spec；保持 TUI 配置闭环、专用 `settings.json` 存储与无常驻 Agent tool。
 - **改 models.json 管理语义**：先读 vendor 子 spec；日常行为由 package Skill + bundled script 定义，冷启动行为在 TUI，配置事务与模型来源语义仍在共享 core。
 - **改 background terminal**：先读 background-terminal 子 spec，再改 `packages/pi-background-terminal`；至少验证 typecheck、test、pack dry-run 与真实 Pi 回归。
-- **改浏览器配置/会话/Setup**：先读 [`pi-browser/`](pi-browser/index.md)，再改 `packages/pi-browser`；验证 `npm --workspace @bytetrue/pi-browser test`、typecheck、pack dry-run，并确认真实 Pi 里 `/browser` 各入口与真实 CLI 会话清理。
 - **发 background terminal npm 版**：bump `packages/pi-background-terminal/package.json` 版本后，push tag `pi-background-terminal-v<version>`；GitHub Actions `release.yml` 走 npm Trusted Publishing 自动发布。
 - **发 pi-vision npm 版**：bump `packages/pi-vision/package.json` 版本后，push tag `pi-vision-v<version>`；同一 OIDC workflow 自动发布。
 - **查“以前为什么这么定”**：closed epic/issue 在 `byissue/epics/`、`byissue/issues/`；完整旧 design/review 在 archive。
@@ -56,7 +55,6 @@
 | `@bytetrue/pi-background-terminal` | bash 覆盖（`waitSeconds`）+ `background_status`/`background_kill` + 用户菜单 `/background` | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
 | `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `<pkg-config 根>/pi-vision/settings.json` 的 `model` 与 `autoAnalyzeAttachments`（`/vision` 写全局层；可信 `<project>/.pi/pi-pkg-cfg/pi-vision/settings.json` 可覆盖且只读）；老位置 Pi `settings.json` 的 `pi-vision` 节只读回退 |
 | `@bytetrue/pi-subagent` | 工具 `subagent` / `subagent_status` / `subagent_stop`（单任务、纯后台、并行 = 同一条消息多条调用） | `<pkg-config 根>/pi-subagent/settings.json` 的 `defaultModel` / `defaultThinking` / `agents[角色]` / `env`（子进程环境变量透传）；project 层 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`；老位置 Pi `settings.json` 的 `subagent` 节只读回退；模型/思考强度只由用户配置与父会话继承决定，角色文档按需读 `.pi/agents/*.md` 与 `<agent dir>/agents/*.md` |
-| `@bytetrue/pi-browser` | 命令 `/browser`（Status / Configure / Settings / Sessions / Setup 命令面板）；无 agent tool | agent-browser 用户配置（`~/.agent-browser/config.json`，尊重 `AGENT_BROWSER_CONFIG`，写前备份）+ `<agent dir>/pi-browser/profiles/agent-browser` Chrome for Testing；官方 skill 经 `npx skills add vercel-labs/agent-browser -a pi -y -g` 由用户安装 |
 
 六包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
 
@@ -86,10 +84,9 @@
 
 **做**
 
-- 维护五个扩展，并按需回归与发版
+- 维护六个扩展，并按需回归与发版
 - 安全/正确性回归（SSRF、密钥权限、配置损坏保护、revision 冲突）
 - 以 package-only 方式提供后台执行：三个独立且只含必填参数的 Agent 工具、输出落盘、session-scoped cleanup、自然完成自动通知、`/background` 用户菜单，全程不覆盖任何 Pi 原生工具
-- 用 setup-only 的方式交付浏览器能力：官方 CLI + 官方 skill + 受管 profile，不注册 agent 工具
 - 用新 CodeStable（`byissue/`）承载真相、epic、issue、notes
 
 **不做**
@@ -114,7 +111,6 @@
 
 - 根 `package.json` workspaces、`npm test`
 - BySpace worktree 准备：`byspace.json`
-- 浏览器能力：`packages/pi-browser`、`byissue/spec/pi-browser/index.md`、`byissue/epics/005-o-browser-direct-profile-target/`（真实 Profile 反证、agent-browser 替换决策与穿刺证据）
 - 本地 package / worktree 加载边界：`byissue/notes/005-pi-local-package-loading.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
 - 已删除的 pi-ask-user 历史：`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`

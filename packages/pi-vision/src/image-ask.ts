@@ -5,7 +5,7 @@ import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readImageFile } from "./image-file.js";
+import { decodedBase64Length, MAX_ATTACHMENT_COUNT, MAX_IMAGE_BYTES, readImageFile } from "./image-file.js";
 import { resolveVisionModel, type VisionAuth } from "./vision-model.js";
 
 export const TOOL_NAME = "image_ask";
@@ -26,10 +26,18 @@ export type CompleteFn = typeof complete;
 const parameters = Type.Object({
   paths: Type.Array(Type.String(), {
     description:
-      "Local image paths, absolute or relative to cwd; HTTP(S) URLs are rejected — download the image first. Each file may be at most 20 MiB; the format is identified by the file header, not the extension. Group related images for comparison.",
+      "Local image paths, absolute or relative to cwd; HTTP(S) URLs are rejected — download the image first. Each file may be at most 20 MiB; the format is identified by the file header, not the extension. At most 4 images per call, 20 MiB total. Group related images for comparison.",
   }),
   question: Type.String({ description: "A specific question about the images." }),
 });
+
+/**
+ * Minimum length for a header/env value to be treated as a credential when
+ * scanning model output. Short values ("prod", "Bearer", a team name) are
+ * ordinary words that appear in normal answers; redacting whole responses over
+ * them blinded the tool randomly depending on provider config (BYTE-5 #6).
+ */
+const CREDENTIAL_MIN_LENGTH = 8;
 
 function credentialEcho(raw: string, auth: VisionAuth): "the API key" | "a configured credential" | undefined {
   if (auth.apiKey && raw.includes(auth.apiKey)) return "the API key";
@@ -38,13 +46,23 @@ function credentialEcho(raw: string, auth: VisionAuth): "the API key" | "a confi
   const headerEntries = Object.entries(auth.headers ?? {}).filter(
     (entry): entry is [string, string] => entry[1] !== null,
   );
+  // The token part of an Authorization header ("Bearer x" style values are
+  // stripped of the scheme first), subject to the same length bar — an
+  // Authorization header holding a bare scheme word ("Bearer" with no token)
+  // must not censor answers either.
   const authorizationTokens = headerEntries
     .filter(([name]) => name.toLowerCase() === "authorization")
-    .map(([, value]) => value.replace(/^\S+\s+/, ""));
+    .map(([, value]) => value.replace(/^\S+\s+/, ""))
+    .filter((value) => value.length >= CREDENTIAL_MIN_LENGTH);
   const otherCredentials = [
-    ...headerEntries.map(([, value]) => value),
     ...authorizationTokens,
-    ...Object.values(auth.env ?? {}),
+    // Other headers and env values must look like secrets, not labels: a
+    // short business value (X-Env: prod) must not censor normal answers.
+    ...headerEntries
+      .filter(([name]) => name.toLowerCase() !== "authorization")
+      .map(([, value]) => value)
+      .filter((value) => value.length >= CREDENTIAL_MIN_LENGTH),
+    ...Object.values(auth.env ?? {}).filter((value) => value && value.length >= CREDENTIAL_MIN_LENGTH),
   ];
   if (otherCredentials.some((value) => value && raw.includes(value))) {
     return "a configured credential";
@@ -162,9 +180,24 @@ export async function runImageAsk(
     throw new Error("image_ask is unavailable because the current model already supports images.");
   }
 
+  // Same budget as the auto path (BYTE-6 A3): unbounded paths meant one model
+  // call could carry dozens of images — a giant request and a huge base64
+  // blob held in memory.
+  if (params.paths.length > MAX_ATTACHMENT_COUNT) {
+    throw new Error(
+      `Ask about at most ${MAX_ATTACHMENT_COUNT} images per call (got ${params.paths.length}). Group the most relevant ones.`,
+    );
+  }
   const images: ImageContent[] = [];
+  let totalBytes = 0;
   for (const path of params.paths) {
-    images.push(await readImageFile(path, ctx.cwd));
+    const image = await readImageFile(path, ctx.cwd);
+    const byteLength = decodedBase64Length(image.data) ?? 0;
+    totalBytes += byteLength;
+    if (totalBytes > MAX_IMAGE_BYTES) {
+      throw new Error(`${MAX_IMAGE_BYTES / 1024 / 1024}MB total image limit exceeded; use fewer or smaller images.`);
+    }
+    images.push(image);
   }
   const analysis = await analyzeImages(images, params.question, ctx, signal, completeFn);
 

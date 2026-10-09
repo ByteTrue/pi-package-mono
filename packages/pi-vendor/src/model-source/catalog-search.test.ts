@@ -52,10 +52,27 @@ describe("searchOfficialModels", () => {
 		expect(await searchOfficialModels("mini")).toEqual(["o4-mini"]);
 	});
 
-	it("returns exact matches before prefix matches", async () => {
+	it("orders prefix matches by id within the group (script semantics)", async () => {
 		mockLoad.mockResolvedValue(fakeCatalog());
-		// First-seen order within the prefix group.
-		expect(await searchOfficialModels("gpt")).toEqual(["gpt-4o", "gpt-4.1"]);
+		expect(await searchOfficialModels("gpt")).toEqual(["gpt-4.1", "gpt-4o"]);
+	});
+
+	it("matches multi-token queries like the skill script", async () => {
+		mockLoad.mockResolvedValue({
+			openai: {
+				"gpt-5.2": { id: "gpt-5.2", name: "GPT-5.2" },
+				"gpt-4o": { id: "gpt-4o", name: "GPT-4o" },
+				"claude-x": { id: "claude-x", name: "Claude X" },
+			},
+		});
+		// "gpt 5": whole-string substring would find nothing and the TUI used to
+		// store the literal as a custom id (audit BYTE-4 #8); token matching finds it.
+		expect(await searchOfficialModels("gpt 5")).toEqual(["gpt-5.2"]);
+	});
+
+	it("matches separator-insensitive queries like the skill script", async () => {
+		mockLoad.mockResolvedValue(fakeCatalog());
+		expect(await searchOfficialModels("gpt4o")).toEqual(["gpt-4o"]);
 	});
 
 	it("respects the limit parameter", async () => {

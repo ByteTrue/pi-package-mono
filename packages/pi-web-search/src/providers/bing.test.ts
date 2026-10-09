@@ -39,4 +39,19 @@ describe("BingProvider", () => {
 		const results = await new BingProvider().search("x", 5);
 		expect(results).toEqual([]);
 	});
+
+	it("treats a full-size 200 challenge page with zero results as a failure (BYTE-5 #5)", async () => {
+		// Bing's non-browser response: 200 + human-verification markup, no
+		// b_algo blocks. This must reject so searchWithProvider falls back to the
+		// next configured provider instead of reporting a bogus empty success.
+		const challenge = "<html><body>" + "x".repeat(2048) + "<div id=challenge>verify</div></body></html>";
+		vi.stubGlobal("fetch", vi.fn(async () => new Response(challenge, { status: 200 })));
+		await expect(new BingProvider().search("x", 5)).rejects.toThrow(/no parseable results/);
+	});
+
+	it("keeps a degenerate small 200 body as a plain empty result", async () => {
+		vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>empty</html>", { status: 200 })));
+		const results = await new BingProvider().search("x", 5);
+		expect(results).toEqual([]);
+	});
 });

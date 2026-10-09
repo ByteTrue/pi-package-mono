@@ -32,9 +32,9 @@ package 不注册常驻 Agent tool，也不注册生命周期钩子。
 
 写入使用随机临时文件、`wx`、`0600` 与 atomic rename；malformed settings fail closed；保留文件内其它 top-level key。取消为零写入。
 
-配置本体是 `version: 2`：单容器 `providers`（built-in 与 custom 同权——built-in 可省略 `api`，也可完全没有 row 而靠协议模板与标准 env 变量生效）+ 显式 `default: {provider, model}` + 可选 `outputDir`。`models` 只是已知模型与 alias 清单，供选择器与文件名使用，**不参与路由判定**。
+配置本体是 `version: 2`：单容器 `providers`（built-in 与 custom 同权——built-in 可省略 `api`，也可完全没有 row 而靠协议模板与标准 env 变量生效）+ 显式 `default: {provider, model}` + 可选 `outputDir`。`models` 只是已知模型与 alias 清单，供选择器与文件名使用，**不参与路由判定**。模型列表编辑对落盘列表施加 delta（加/别名/删各自独立施加），不做整份快照写回，多窗口并发编辑互不覆盖；认证失败（401/403）的指引一律指向包级 `<pkg-config 根>/pi-image-gen/settings.json`，不指向已废弃的 Pi settings.json 路径。
 
-v1 文件在下一次读取时一次性迁移为 v2，原件先另存为同目录 `settings.json.v1.bak`（老文件先整份搬进新位置，所以备份落在新位置旁边）；迁移对调用方不可见，持久化失败不致命（本次运行仍用内存结果）。三种情况明确不猜：custom 与 built-in 同名 ⇒ 不动文件；`version > 2` ⇒ 拒绝回写；旧 `defaultModel` 解析不出 route ⇒ 省略 `default`，等用户重选。
+v1 文件在下一次读取时一次性迁移为 v2，原件先另存为同目录 `settings.json.v1.bak`（老文件先整份搬进新位置，所以备份落在新位置旁边）；迁移对调用方不可见，持久化失败不致命（本次运行仍用内存结果）。缺 `version` 且没有 v1 独有标记（`defaultModel` 或 `customProviders`）的文件不作 v1 迁移——按 v2 形状 fail-soft 读取，字节不被改写。三种情况明确不猜：custom 与 built-in 同名 ⇒ 不动文件；`version > 2` ⇒ 拒绝回写；旧 `defaultModel` 解析不出 route ⇒ 省略 `default`，等用户重选。
 
 ## CLI 契约
 
@@ -52,6 +52,8 @@ stdin：一个不超过 1 MiB 的 JSON object：
 ```
 
 - 未知字段拒绝。
+- 生成图片独占写（`wx`）：同名冲突按 `-2`…`-99` 递增重试并返回实际落盘路径，永不覆盖已存在图片。
+- Gemini adapter 的 `candidateCount` 恒为 1，`n>1` 由循环逐张请求完成（`n` 1–8 契约成立）。
 - stdout 成功时只返回 generated file 的 markdown 与非敏感元数据。
 - stderr 失败且退出非零。
 - settings literal、解析后的标准/自定义 env credential、credential header 值不得出现在 stdout/stderr；上游 revised prompt 同样经过遮罩。

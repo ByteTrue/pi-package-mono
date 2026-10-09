@@ -44,6 +44,8 @@ export interface PiExtensionContext {
     notify?: (msg: string, type?: "info" | "warning" | "error") => void;
     setStatus?: (id: string, text?: string) => void;
   };
+  /** Whether project-local trust is active (pi provides this on the real ctx). */
+  isProjectTrusted?: () => boolean;
 }
 
 export interface SubagentTaskItem {
@@ -788,6 +790,7 @@ export function resolveAgentRole(
   cwd: string,
   agentName?: string,
   subagentSettings?: SubagentSettings,
+  projectTrusted: boolean = true,
 ): AgentConfig {
   const name = typeof agentName === "string" ? agentName.trim() : "";
   // No role named: use the general-purpose document as the default template.
@@ -798,7 +801,7 @@ export function resolveAgentRole(
   if (found) return config;
   // A role explicitly configured in settings is still real even without a
   // document: it carries the role's model/thinking overrides.
-  const settings = subagentSettings ?? loadSubagentSettings(cwd, true);
+  const settings = subagentSettings ?? loadSubagentSettings(cwd, projectTrusted);
   if (
     settings.agents &&
     Object.prototype.hasOwnProperty.call(settings.agents, name)
@@ -955,9 +958,17 @@ export function resolveRunCfg(
 
 export function buildPiArgs(cfg: PiRunConfig): string[] {
   const args = ["--mode", "json", "-p"];
+  // Defense in depth for the argv boundary (audit BYTE-4 #18): normalizeTask
+  // already gates the tool input; this guards any other caller.
   if (cfg.resumeSession) {
+    if (!SESSION_ID_PATTERN.test(cfg.resumeSession)) {
+      throw new Error("Invalid resume session id: refusing to pass it to the child process.");
+    }
     args.push("--session", cfg.resumeSession);
   } else if (cfg.sessionId) {
+    if (!SESSION_ID_PATTERN.test(cfg.sessionId)) {
+      throw new Error("Invalid session id: refusing to pass it to the child process.");
+    }
     args.push("--session-id", cfg.sessionId);
   }
 
@@ -1481,6 +1492,21 @@ function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
 }
 
 // ── Normalization Helper ──────────────────────────────────────────────
+// Session ids reach the child's argv (--session/--session-id), so anything
+// beyond letters/digits/-/_ would be argv injection or a silently broken
+// resume (audit BYTE-4 #18). Agents get a sanitizer; resume/id get this gate.
+const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function assertSessionIdShape(value: string, field: "resume" | "id"): void {
+  if (!SESSION_ID_PATTERN.test(value)) {
+    throw new Error(
+      field === "resume"
+        ? 'Invalid "resume": expected a session id or partial UUID (letters, digits, - or _; max 128 chars).'
+        : 'Invalid "id": expected letters, digits, - or _ (max 128 chars).',
+    );
+  }
+}
+
 /** One call = one task (issue 095). Known fields only; model/thinking never pass through. */
 export function normalizeTask(input: SubagentInput): SubagentTaskItem {
   const task = String(input.task || "").trim();
@@ -1488,13 +1514,17 @@ export function normalizeTask(input: SubagentInput): SubagentTaskItem {
     throw new Error(
       "No task specified. Provide 'task' with the prompt to execute.",
     );
+  const resume = input.resume !== undefined ? (str(input.resume) ?? "") : "";
+  if (resume) assertSessionIdShape(resume, "resume");
+  const id = input.id !== undefined ? (str(input.id) ?? "") : "";
+  if (id) assertSessionIdShape(id, "id");
   return {
     task,
     agent: input.agent,
     tools: input.tools,
     cwd: input.cwd,
-    resume: input.resume,
-    id: input.id,
+    resume: resume || undefined,
+    id: id || undefined,
     timeoutMs:
       typeof input.timeoutMs === "number" && input.timeoutMs > 0
         ? input.timeoutMs
@@ -1741,6 +1771,7 @@ export async function runSubagent(
   inheritedThinking?: string,
   inheritedModel?: string,
   inheritCodemode?: boolean,
+  projectTrusted: boolean = true,
 ): Promise<{
   output: string;
   details: ProgressDetails;
@@ -1749,7 +1780,10 @@ export async function runSubagent(
 }> {
   const item = normalizeTask(input);
 
-  const subagentSettings = loadSubagentSettings(cwd, true);
+  // Project-layer settings (env, role model overrides) only load when the
+  // project is trusted; runSubagent is the tool's real entry, so the trust
+  // decision must arrive here rather than default to trusted (BYTE-5 #1).
+  const subagentSettings = loadSubagentSettings(cwd, projectTrusted);
   const startedAt = Date.now();
   const details: ProgressDetails = {
     kind: "pi-subagent-progress",
@@ -2022,12 +2056,15 @@ export default function subagentExtension(pi: {
       const cwd = process.cwd();
       const inheritedThinking = resolveInheritedThinking();
       const inheritedModel = resolveInheritedModel(ctx);
+      // Missing ctx (older pi) keeps the historical trusted default; the real
+      // entry must forward the decision so project-layer env is gated (BYTE-5 #1).
+      const projectTrusted = ctx?.isProjectTrusted?.() ?? true;
 
       const item = normalizeTask(input);
       // Fail the tool call before any task is registered: an unknown role must
       // surface as an error the model can correct, not as a silently different
       // child (issue 097).
-      resolveAgentRole(cwd, item.agent);
+      resolveAgentRole(cwd, item.agent, undefined, projectTrusted);
 
       // Pure background (issue 088): the call returns at once; progress streams into
       // the manager record (status bar + /subagent menu) and the result arrives as a
@@ -2067,6 +2104,7 @@ export default function subagentExtension(pi: {
         inheritedThinking,
         inheritedModel,
         isCodemodeActive(pi),
+        projectTrusted,
       )
         .then((res) => {
           subagentManager.complete(
@@ -2241,7 +2279,20 @@ export default function subagentExtension(pi: {
 
   pi.on?.("session_shutdown", async (event, ctx) => {
     const reason = isObj(event) ? str(event.reason) : null;
-    if (reason === "reload") return;
+    // /reload keeps tasks alive (global Map) and re-runs session_start, but the
+    // old closure's teardown still applies: pending exit notifications must
+    // flush here and the status ticker must stop, or every reload drops the
+    // completed-task notifications and leaves a second ticker running
+    // (audit BYTE-4 #17).
+    if (reason === "reload") {
+      flushPendingExits();
+      if (statusTicker) {
+        clearInterval(statusTicker);
+        statusTicker = undefined;
+      }
+      updateStatus = undefined;
+      return;
+    }
 
     const sessionId =
       ctx?.sessionManager?.getSessionId?.() ?? currentSessionId ?? "default";
