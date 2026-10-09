@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listAvailableSearchProviders, searchWithProvider } from "./search.js";
+import { searchWithProvider } from "./search.js";
 
 const BING = readFileSync(fileURLToPath(new URL("./providers/__fixtures__/bing.html", import.meta.url)), "utf8");
 
@@ -31,14 +31,5 @@ describe("configured search provider chain", () => {
 		await expect(searchWithProvider({ providers: ["bing"] }, undefined, "x", 3, undefined)).rejects.toThrow(
 			/All configured search providers failed: bing: Bing search failed: network down/s,
 		);
-	});
-
-	it("lists only providers that can currently be called", () => {
-		const available = listAvailableSearchProviders({ apiKeys: { tavily: "k" } });
-		expect(available).toContain("exa-free");
-		expect(available).toContain("bing");
-		expect(available).toContain("tavily");
-		expect(available).not.toContain("exa");
-		expect(available).not.toContain("searxng");
 	});
 });

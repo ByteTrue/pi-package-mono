@@ -1,6 +1,5 @@
 import { getProviderChain, resolveApiKey, resolveBaseUrl, type WebConfig } from "./config.js";
 import { createProvider } from "./providers/factory.js";
-import { PROVIDERS } from "./providers/registry.js";
 import type { SearchResult } from "./providers/types.js";
 
 export const SEARCH_PROVIDER_TIMEOUT_MS = 15_000;
@@ -76,20 +75,6 @@ async function searchProviderWithTimeout(
 	} finally {
 		attemptSignal.removeEventListener("abort", onAttemptAbort);
 	}
-}
-
-function hasExplicitBaseUrl(name: string, config: WebConfig): boolean {
-	const meta = PROVIDERS.find((provider) => provider.name === name);
-	if (!meta?.baseUrlEnvVar) return true;
-	return Boolean(process.env[meta.baseUrlEnvVar]?.trim() || config.baseUrls?.[name]?.trim());
-}
-
-export function listAvailableSearchProviders(config: WebConfig): string[] {
-	return PROVIDERS.filter(
-		(provider) =>
-			(provider.keyless && hasExplicitBaseUrl(provider.name, config)) ||
-			resolveApiKey(provider.name, config) !== undefined,
-	).map((provider) => provider.name);
 }
 
 export interface SearchOutcome {
