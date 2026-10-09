@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { isCatalogObject, isPlainDataTree, stripRoutingFields } from "../shared/vendor-shared.js";
 import type { ProviderModelConfig } from "../models-json.js";
 
 export type OfficialModelConfig = Record<string, unknown> & {
@@ -23,12 +24,6 @@ export type OfficialModelCandidate = {
 	provider: string;
 	model: OfficialModelConfig;
 };
-
-const STRIPPED_FIELDS = ["provider", "baseUrl", "headers", "apiKey", "authHeader"] as const;
-
-function cloneJson<T>(value: T): T {
-	return JSON.parse(JSON.stringify(value)) as T;
-}
 
 function resolvePackageRoot(startDir: string): string | null {
 	let current = startDir;
@@ -129,14 +124,18 @@ export async function loadOfficialCatalog(): Promise<OfficialModelsCatalog | nul
 	}
 	if (cachedCatalogPath === path) return cachedCatalog;
 
+	// The catalog module is located by walking install roots, so an untrusted
+	// checkout can plant a same-named package that import() would execute
+	// (audit BYTE-4 #11). Accept only plain-data MODELS of the expected shape.
 	try {
 		const mod = await import(pathToFileURL(path).href);
-		const catalog = mod.MODELS as OfficialModelsCatalog | undefined;
-		if (!catalog || typeof catalog !== "object") {
+		const catalog = (mod as { MODELS?: unknown }).MODELS;
+		if (!isPlainDataTree(catalog) || !isCatalogObject(catalog)) {
 			return null;
 		}
+		const official = catalog as OfficialModelsCatalog;
 		cachedCatalogPath = path;
-		cachedCatalog = catalog;
+		cachedCatalog = official;
 		return cachedCatalog;
 	} catch {
 		return null;
@@ -150,7 +149,7 @@ export function collectOfficialCandidates(catalog: OfficialModelsCatalog | null 
 	for (const [provider, providerModels] of Object.entries(catalog)) {
 		const model = providerModels?.[modelId];
 		if (model && typeof model === "object" && !Array.isArray(model) && typeof model.id === "string") {
-			matches.push({ provider, model: cloneJson(model) as OfficialModelConfig });
+			matches.push({ provider, model: structuredClone(model) as OfficialModelConfig });
 		}
 	}
 	return matches;
@@ -158,11 +157,7 @@ export function collectOfficialCandidates(catalog: OfficialModelsCatalog | null 
 
 
 export function stripOfficialRoutingFields(model: OfficialModelConfig): ProviderModelConfig {
-	const next = cloneJson(model) as ProviderModelConfig;
-	for (const field of STRIPPED_FIELDS) {
-		delete next[field];
-	}
-	return next;
+	return stripRoutingFields(model) as ProviderModelConfig;
 }
 
 export function formatOfficialCandidate(candidate: OfficialModelCandidate): string {

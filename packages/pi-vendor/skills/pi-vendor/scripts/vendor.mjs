@@ -6,6 +6,7 @@ import { delimiter, basename, dirname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { encodeConfigLiteral as encodeConfigLiteralShared, isPlainDataTree, stripRoutingFields as cleanTemplate } from "../../../src/shared/vendor-shared.js";
 
 const [, , command, ...args] = process.argv;
 const modelsPath = join(process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"), "models.json");
@@ -116,18 +117,23 @@ function catalogPaths() {
 	return paths;
 }
 
-function cleanTemplate(model) {
-	const copy = structuredClone(model);
-	for (const field of ["provider", "baseUrl", "headers", "apiKey", "authHeader"]) delete copy[field];
-	return copy;
-}
+// (cleanTemplate moved to vendor-shared.mjs as stripRoutingFields; the script
+// imports encodeConfigLiteral from there too, so TUI and script cannot drift.)
 
 async function officialModels() {
 	const path = catalogPaths().find(existsSync);
 	if (!path) fail("Official catalog is unavailable; set PI_VENDOR_PI_ROOT to the install prefix that contains node_modules/@earendil-works/pi-ai");
 	try {
-		return (await import(pathToFileURL(path).href)).MODELS;
-	} catch {
+		// The catalog path is resolved from PATH entries, so an untrusted
+		// checkout can plant a same-named module whose top-level code would run
+		// on import (audit BYTE-4 #11). Accept only plain-data MODELS output.
+		const catalog = (await import(pathToFileURL(path).href)).MODELS;
+		if (!isPlainDataTree(catalog)) {
+			fail("Official catalog is unavailable; set PI_VENDOR_PI_ROOT to the install prefix that contains node_modules/@earendil-works/pi-ai");
+		}
+		return catalog;
+	} catch (error) {
+		if (error instanceof CliError) throw error;
 		fail("Official catalog is unavailable; set PI_VENDOR_PI_ROOT to the install prefix that contains node_modules/@earendil-works/pi-ai");
 	}
 }
@@ -607,11 +613,11 @@ function collectRoutes(provider) {
 
 
 async function readSecret() {
+	// Keys must be typed at an interactive terminal (audit BYTE-4 #9): a piped
+	// stdin that never closes would hang this process forever. SKILL.md's
+	// "never run set-key yourself" rule gets a technical backstop here.
 	if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== "function") {
-		process.stderr.write("API key: ");
-		let value = "";
-		for await (const chunk of process.stdin) value += chunk;
-		return value.replace(/[\r\n]+$/, "");
+		fail("set-key requires an interactive terminal; run it yourself in a terminal, not through a pipe or an agent.", 2);
 	}
 	process.stderr.write("API key: ");
 	process.stdin.setRawMode(true);
@@ -636,45 +642,50 @@ async function readSecret() {
 	}
 }
 
-async function setKey(providerKey) {
+// Exported with an injectable secret reader + path so the CAS/escape/atomic
+// write flow stays testable now that piped stdin is refused at readSecret.
+export async function setKey(providerKey, { reader = readSecret, modelsPath: targetPath = modelsPath } = {}) {
 	if (!providerKey) fail("Usage: vendor.mjs set-key <provider-key>", 2);
 	let originalText;
 	let models;
-	try { originalText = readFileSync(modelsPath, "utf8"); models = JSON.parse(originalText); } catch { fail(`Unable to read ${modelsPath}`); }
+	try { originalText = readFileSync(targetPath, "utf8"); models = JSON.parse(originalText); } catch { fail(`Unable to read ${targetPath}`); }
 	if (!models?.providers?.[providerKey] || typeof models.providers[providerKey] !== "object" || Array.isArray(models.providers[providerKey])) fail(`Provider ${JSON.stringify(providerKey)} was not found`);
-	const apiKey = await readSecret();
+	const apiKey = await reader();
 	if (!apiKey) fail("API key cannot be empty");
 	let currentText;
-	try { currentText = readFileSync(modelsPath, "utf8"); } catch { fail(`Unable to re-read ${modelsPath}`); }
+	try { currentText = readFileSync(targetPath, "utf8"); } catch { fail(`Unable to re-read ${targetPath}`); }
 	if (currentText !== originalText) fail("models.json changed while entering the key; no changes were written. Run the command again.");
 	models = JSON.parse(currentText);
 	if (!models?.providers?.[providerKey] || typeof models.providers[providerKey] !== "object" || Array.isArray(models.providers[providerKey])) fail(`Provider ${JSON.stringify(providerKey)} was not found`);
-	models.providers[providerKey].apiKey = apiKey.replaceAll("$", () => "$$").replace(/^!/, "$!");
-	mkdirSync(dirname(modelsPath), { recursive: true });
-	const temp = `${modelsPath}.api-key-${randomBytes(16).toString("hex")}.tmp`;
+	models.providers[providerKey].apiKey = encodeConfigLiteralShared(apiKey);
+	mkdirSync(dirname(targetPath), { recursive: true });
+	const temp = `${targetPath}.api-key-${randomBytes(16).toString("hex")}.tmp`;
 	try {
 		writeFileSync(temp, `${JSON.stringify(models, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-		renameSync(temp, modelsPath);
+		renameSync(temp, targetPath);
 	} finally {
 		rmSync(temp, { force: true });
 	}
-	console.log(`Updated apiKey for provider ${JSON.stringify(providerKey)} in ${modelsPath}`);
+	console.log(`Updated apiKey for provider ${JSON.stringify(providerKey)} in ${targetPath}`);
 }
 
-try {
-	switch (command) {
-		case "catalog": await catalog(args[0], args[1]); break;
-		case "discover": await discover(args[0]); break;
-		case "drift": await drift(args[0], args[1]); break;
-		case "order": await order(args[0], args[1]); break;
-		case "set-key": await setKey(args[0]); break;
-		default: fail("Usage: vendor.mjs <catalog|discover|drift|order> [argument]", 2);
-	}
-} catch (error) {
-	if (error instanceof CliError) {
-		console.error(error.message);
-		process.exitCode = error.code;
-	} else {
-		throw error;
+// Run the CLI only when this file is the entry point; imports (tests) stay inert.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+	try {
+		switch (command) {
+			case "catalog": await catalog(args[0], args[1]); break;
+			case "discover": await discover(args[0]); break;
+			case "drift": await drift(args[0], args[1]); break;
+			case "order": await order(args[0], args[1]); break;
+			case "set-key": await setKey(args[0]); break;
+			default: fail("Usage: vendor.mjs <catalog|discover|drift|order|set-key> [argument]", 2);
+		}
+	} catch (error) {
+		if (error instanceof CliError) {
+			console.error(error.message);
+			process.exitCode = error.code;
+		} else {
+			throw error;
+		}
 	}
 }

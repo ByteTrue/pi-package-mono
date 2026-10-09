@@ -80,7 +80,10 @@ async function acquireApiFormat(ui: QuickUI): Promise<string | null> {
 		const custom = await ui.input({ message: "Custom API format:" });
 		if (custom === null) return null;
 		const trimmed = custom.trim();
-		if (!trimmed) return "openai-completions";
+		if (!trimmed) {
+			ui.notify("Custom API format cannot be empty.", "warning");
+			return acquireApiFormat(ui);
+		}
 		return trimmed;
 	}
 	return choice;
@@ -94,7 +97,7 @@ async function acquireApiKey(ui: QuickUI): Promise<string | null> {
 			ui.notify("API key cannot be empty.", "warning");
 			continue;
 		}
-		return key;
+		return key.trim();
 	}
 }
 

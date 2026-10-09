@@ -33,7 +33,6 @@ const COMMAND_MAX_STDOUT = 64 * 1024;
 const BODY_MAX_BYTES = 2 * 1024 * 1024; // 2 MiB
 const MAX_IDS = 10_000;
 const MAX_ID_BYTES = 1024;
-const ID_MAX_BYTES_PER_CHAR = 4; // worst-case UTF-8
 
 // --- URL validation ---
 
@@ -113,7 +112,6 @@ function parseAndSortModelIds(json: unknown, api = "openai-completions"): string
 		if (typeof raw !== "string") continue;
 		const trimmed = (api === "google-generative-ai" ? raw.replace(/^models\//, "") : raw).trim();
 		if (!trimmed) continue;
-		if (trimmed.length > MAX_ID_BYTES) continue; // byte count checked below
 		if (new TextEncoder().encode(trimmed).length > MAX_ID_BYTES) continue;
 		if (seen.has(trimmed)) continue;
 		seen.add(trimmed);

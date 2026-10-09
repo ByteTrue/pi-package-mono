@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { collectOfficialCandidates, findOfficialCatalogPath, formatOfficialCandidate, stripOfficialRoutingFields } from "./official-catalog.js";
 
 describe("official catalog helpers", () => {
@@ -87,4 +87,70 @@ describe("official catalog helpers", () => {
 		expect(config).not.toHaveProperty("authHeader");
 	});
 
+});
+
+describe("loadOfficialCatalog data guard (audit BYTE-4 #11)", () => {
+	// loadOfficialCatalog caches per resolved path; each test uses a fresh
+	// module registry so the cache cannot leak between cases.
+	beforeEach(() => vi.resetModules());
+
+	function makeRoot(mount: string): string {
+		const root = mkdtempSync(join(tmpdir(), "pi-vendor-catalog-guard-"));
+		// resolveCandidateRoots walks up from PI_VENDOR_PI_ROOT looking for the pi package marker.
+		writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		const dist = join(root, "node_modules/@earendil-works/pi-ai/dist");
+		mkdirSync(dist, { recursive: true });
+		writeFileSync(join(dist, "models.generated.js"), mount);
+		writeFileSync(join(dist, "package.json"), JSON.stringify({ type: "module" }));
+		return root;
+	}
+
+	it("accepts a plain-data catalog", async () => {
+		const root = makeRoot('export const MODELS = { openai: { g: { id: "g", name: "G" } } };\n');
+		try {
+			vi.stubEnv("PI_VENDOR_PI_ROOT", root);
+			const { loadOfficialCatalog } = await import("./official-catalog.js");
+			const catalog = await loadOfficialCatalog();
+			expect(catalog?.openai?.g?.id).toBe("g");
+		} finally {
+			vi.unstubAllEnvs();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects MODELS that expose functions", async () => {
+		const root = makeRoot('export const MODELS = { openai: { g: { id: "g", run() { return 1; } } } };\n');
+		try {
+			vi.stubEnv("PI_VENDOR_PI_ROOT", root);
+			const { loadOfficialCatalog } = await import("./official-catalog.js");
+			await expect(loadOfficialCatalog()).resolves.toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects MODELS that expose getters", async () => {
+		const root = makeRoot('export const MODELS = { openai: { g: { id: "g", get poison() { return process.exit; } } } };\n');
+		try {
+			vi.stubEnv("PI_VENDOR_PI_ROOT", root);
+			const { loadOfficialCatalog } = await import("./official-catalog.js");
+			await expect(loadOfficialCatalog()).resolves.toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects MODELS with the wrong shape", async () => {
+		const root = makeRoot("export const MODELS = [1, 2, 3];\n");
+		try {
+			vi.stubEnv("PI_VENDOR_PI_ROOT", root);
+			const { loadOfficialCatalog } = await import("./official-catalog.js");
+			await expect(loadOfficialCatalog()).resolves.toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

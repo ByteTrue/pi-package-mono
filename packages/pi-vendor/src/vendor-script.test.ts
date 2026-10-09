@@ -3,7 +3,9 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { setKey } from "../skills/pi-vendor/scripts/vendor.mjs";
 
 const script = join(import.meta.dirname, "../skills/pi-vendor/scripts/vendor.mjs");
 let dir: string;
@@ -482,35 +484,60 @@ describe("vendor skill script", () => {
 		}
 	});
 
-	it("sets a key from stdin and never writes it to output", () => {
-		const output = run(["set-key", "relay"], { input: "sk-new-secret\n" });
+	// set-key requires an interactive terminal (audit BYTE-4 #9): the old piped
+	// branch could hang forever on a stdin that never closes. The CLI-level
+	// refusal is tested through a real spawn below; the core CAS/escape/write
+	// flow is driven through the exported setKey with an injected reader.
+	const casRunner = join(import.meta.dirname, "set-key-cas-runner.mjs");
+
+	it("stores a key through the exported flow without echoing it", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await setKey("relay", { modelsPath: join(dir, "models.json"), reader: async () => "sk-new-secret" });
+		} finally {
+			log.mockRestore();
+		}
 		const saved = JSON.parse(readFileSync(join(dir, "models.json"), "utf8"));
 		expect(saved).toEqual({ providers: { relay: { apiKey: "sk-new-secret", models: [] } } });
-		expect(output).not.toContain("sk-new-secret");
 	});
 
-	it("escapes Pi config metacharacters in literal keys", () => {
-		run(["set-key", "relay"], { input: "!literal$HOME\n" });
+	it("escapes Pi config metacharacters in literal keys", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await setKey("relay", { modelsPath: join(dir, "models.json"), reader: async () => "!literal$HOME" });
+		} finally {
+			log.mockRestore();
+		}
 		expect(JSON.parse(readFileSync(join(dir, "models.json"), "utf8")).providers.relay.apiKey).toBe("$!literal$$HOME");
 	});
 
-	it("does not change the file when the provider is missing", () => {
+	it("refuses a piped stdin instead of hanging forever", () => {
+		let output = "";
+		expect(() => {
+			output = run(["set-key", "relay"], { input: "sk-new-secret\n" });
+		}).toThrow(/interactive terminal/);
+		expect(JSON.parse(readFileSync(join(dir, "models.json"), "utf8")).providers.relay.apiKey).toBe("old");
+		expect(output).not.toContain("sk-new-secret");
+	});
+
+	it("does not change the file when the provider is missing", async () => {
 		const before = readFileSync(join(dir, "models.json"), "utf8");
-		expect(() => run(["set-key", "missing"], { input: "sk-new-secret\n" })).toThrow();
+		await expect(setKey("missing", { modelsPath: join(dir, "models.json"), reader: async () => "sk-new-secret" })).rejects.toThrow(/not found/i);
 		expect(readFileSync(join(dir, "models.json"), "utf8")).toBe(before);
 	});
 
 	it("aborts instead of overwriting a concurrent edit", async () => {
-		const path = join(dir, "models.json");
-		const child = spawn(process.execPath, [script, "set-key", "relay"], {
-			env: { ...process.env, PI_CODING_AGENT_DIR: dir },
-			stdio: ["pipe", "pipe", "pipe"],
+		const code = await new Promise<number>((resolve, reject) => {
+			const child = spawn(process.execPath, [casRunner, dir], {
+				env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+				stdio: ["ignore", "ignore", "pipe"],
+			});
+			let stderr = "";
+			child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+			child.on("error", reject);
+			child.on("close", resolve);
 		});
-		await new Promise<void>((resolve) => child.stderr.once("data", () => resolve()));
-		writeFileSync(path, `${JSON.stringify({ providers: { relay: { apiKey: "old", models: [] }, concurrent: { apiKey: "other", models: [] } } }, null, 2)}\n`);
-		child.stdin.end("sk-new-secret\n");
-		const code = await new Promise<number | null>((resolve) => child.once("close", resolve));
 		expect(code).toBe(1);
-		expect(JSON.parse(readFileSync(path, "utf8"))).toHaveProperty("providers.concurrent.apiKey", "other");
+		expect(JSON.parse(readFileSync(join(dir, "models.json"), "utf8"))).toHaveProperty("providers.concurrent.apiKey", "other");
 	});
 });

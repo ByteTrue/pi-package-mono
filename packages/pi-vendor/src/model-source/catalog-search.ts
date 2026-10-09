@@ -1,7 +1,7 @@
+import { CATALOG_SEARCH_MAX_QUERY_BYTES, searchCatalogShared } from "../shared/vendor-shared.js";
 import { loadOfficialCatalog } from "./official-catalog.js";
 import { ModelSourceError } from "./model-source-error.js";
 
-const MAX_QUERY_BYTES = 512;
 const DEFAULT_LIMIT = 50;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 100;
@@ -10,25 +10,23 @@ function utf8ByteLength(s: string): number {
 	return new TextEncoder().encode(s).length;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 /**
  * Search the official Pi model catalog for models matching a query string.
  *
- * - Query is matched case-insensitively against `modelId` and `name`.
+ * - Matching follows the bundled script's semantics (tokenized, separator-
+ *   insensitive; see src/shared/vendor-shared.js) so TUI and Skill produce the
+ *   same candidates for the same query.
  * - Query must be ≤512 UTF-8 bytes; invalid input throws `ModelSourceError("invalid_request")`.
  * - `limit` defaults to 50 and is clamped to 1–100.
  * - Catalog unavailable throws `ModelSourceError("catalog_unavailable")`.
- * - Results are ordered by: exact modelId match first, then prefix matches, then
- *   substring matches; within each group, first-seen catalog order is preserved.
+ * - Results are model ids ordered by: exact matches first, then normalized
+ *   exact, then token matches, then substring; stable within each group.
  */
 export async function searchOfficialModels(
 	query: string,
 	limit?: number,
 ): Promise<string[]> {
-	if (utf8ByteLength(query) > MAX_QUERY_BYTES) {
+	if (utf8ByteLength(query) > CATALOG_SEARCH_MAX_QUERY_BYTES) {
 		throw new ModelSourceError("invalid_request", "Query exceeds maximum length");
 	}
 
@@ -37,37 +35,7 @@ export async function searchOfficialModels(
 	const catalog = await loadOfficialCatalog();
 	if (!catalog) throw new ModelSourceError("catalog_unavailable", "Official model catalog is unavailable");
 
-	const lowerQuery = query.toLowerCase();
-	const exact: string[] = [];
-	const prefix: string[] = [];
-	const substring: string[] = [];
-
-	for (const providerModels of Object.values(catalog)) {
-		for (const [modelId, raw] of Object.entries(providerModels)) {
-			if (!isRecord(raw) || typeof raw.id !== "string") continue;
-			const lowerId = modelId.toLowerCase();
-			const lowerName = typeof raw.name === "string" ? raw.name.toLowerCase() : "";
-
-			const idExact = lowerId === lowerQuery;
-			const nameExact = lowerName === lowerQuery;
-			const idPrefix = !idExact && lowerId.startsWith(lowerQuery);
-			const namePrefix = !nameExact && lowerName.startsWith(lowerQuery);
-			const idContains = !idExact && !idPrefix && lowerId.includes(lowerQuery);
-			const nameContains = !nameExact && !namePrefix && lowerName.includes(lowerQuery);
-
-			if (!(idExact || nameExact || idPrefix || namePrefix || idContains || nameContains)) continue;
-
-			const entry = modelId;
-
-			if (idExact || nameExact) {
-				exact.push(entry);
-			} else if (idPrefix || namePrefix) {
-				prefix.push(entry);
-			} else {
-				substring.push(entry);
-			}
-		}
-	}
-
-	return [...new Set([...exact, ...prefix, ...substring])].slice(0, effectiveLimit);
+	return searchCatalogShared(catalog, query, effectiveLimit)
+		.map((entry) => (typeof entry.model?.id === "string" ? entry.model.id : ""))
+		.filter(Boolean);
 }
