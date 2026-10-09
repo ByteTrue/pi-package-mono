@@ -60,6 +60,19 @@ describe("background_run tool", () => {
     await manager.clearSession(SESSION);
   });
 
+  it("treats degenerate timeouts (0, negative, NaN, Infinity) as absent and falls back to the 600s default", async () => {
+    // 0 must not reach ops.exec (Node convention reads it as "unbounded" — the opposite of
+    // this tool's hard lifetime cap); NaN/Infinity carry no meaningful bound either.
+    const t = tool();
+    for (const timeout of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = await call(t, { command: "echo degenerate", timeout }, SESSION);
+      expect(result.content[0]?.text).toContain("Hard timeout: 600s");
+      const id = result.content[0]?.text.match(/(bg_[0-9a-f]+)/)?.[1];
+      expect(manager.get(id!, SESSION)?.timeoutSeconds).toBe(600);
+    }
+    await manager.clearSession(SESSION);
+  });
+
   it("a short explicit timeout hard-kills the task as timed_out", { timeout: 10_000 }, async () => {
     const exits: string[] = [];
     manager.init((task) => exits.push(task.id));

@@ -14,8 +14,10 @@ type ShellToolInput = {
 
 /** A usable timeout: finite, positive, a real number. Anything else counts as absent.
  * Note: `0` is treated as absent on purpose — Node convention reads it as "infinite",
- * and an unbounded foreground command is exactly what this hook exists to prevent. */
-function isUsableTimeout(value: unknown): value is number {
+ * and an unbounded foreground command is exactly what this hook exists to prevent.
+ * Shared with background_run's lifetime guard (BYTE-7) so both surfaces answer "was a
+ * timeout actually passed?" with the same semantics. */
+export function isUsableTimeout(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
