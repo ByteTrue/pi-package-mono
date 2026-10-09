@@ -149,6 +149,11 @@ function commitWithDependencies(
 	}
 	const issues = validateModelsJson(input.models);
 	if (issues.length > 0) throw new ConfigCoreError("invalid_config", "Models configuration is invalid", { issues });
+	// The CAS compares here, just before write+rename: a writer landing inside
+	// these few syscalls is overwritten silently. Closing that window for real
+	// needs file locking; a post-write re-read (audit nice-to-have suggestion)
+	// can only report a loss it cannot undo. Races any wider are caught by
+	// this very re-read, so the residual gap is the narrowest possible slice.
 	const currentRevision = readRevision(path, deps);
 	if (currentRevision !== input.expectedRevision) {
 		throw new ConfigCoreError("config_changed", "Models configuration changed before save");

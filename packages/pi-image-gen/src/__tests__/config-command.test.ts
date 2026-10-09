@@ -425,6 +425,27 @@ describe('/image-gen provider settings', () => {
     expect(notices.join('\n')).not.toContain('sk-stored');
   });
 
+  // Audit BYTE-4 #16 follow-up: "Keep current headers" must survive a
+  // credential clear too — wiping the key must not silently wipe headers.
+  it('keeps headers when the credential is cleared in the same pass', async () => {
+    const { notices } = await inProvider(
+      OPENAI,
+      'Edit endpoint, credential, headers…',
+      {
+        default: { provider: 'openai', model: 'gpt-image-2' },
+        providers: { openai: { baseUrl: 'https://gateway.example/v1', apiKey: 'sk-stored', headers: { 'x-a': 'b' } } },
+      },
+      { Credential: 'No API key', 'Extra request headers': 'Keep current headers' },
+    );
+
+    expect(savedSettings().providers.openai).toEqual({
+      baseUrl: 'https://gateway.example/v1',
+      apiKey: '',
+      headers: { 'x-a': 'b' },
+    });
+    expect(notices.at(-1)).toMatch(/saved/);
+  });
+
   it('changes a custom provider protocol without touching its model list', async () => {
     await inProvider(
       CORP_LABEL,
@@ -524,6 +545,31 @@ describe('/image-gen model list', () => {
       },
     );
     expect(savedSettings().providers.corp.models).toEqual([{ id: 'image-v1' }]);
+  });
+
+  // Audit BYTE-4 #16 follow-up: the list rewrite is a delta against the list
+  // on disk at commit time, so a model another window added after this menu's
+  // snapshot survives the save instead of being clobbered by it.
+  it('keeps a model another window added while the menu was open', async () => {
+    const concurrent = () => {
+      writeSettings({
+        providers: {
+          corp: { ...CORP_ROW, models: [{ id: 'image-v1' }, { id: 'image-v0' }, { id: 'from-another-window' }] },
+        },
+      });
+      return 'Remove from list';
+    };
+    const { ctx } = setup({
+      'Image generation': 'Manage providers',
+      Providers: (options: string[]) => options.find((option) => option.startsWith(CORP_LABEL)) ?? undefined,
+      'Provider: corp (custom)': 'Manage model list…',
+      'Model list — corp (2 declared)': 'image-v0',
+      'Model — corp/image-v0': concurrent,
+    });
+    writeSettings({ providers: { corp: { ...CORP_ROW, models: [{ id: 'image-v1' }, { id: 'image-v0' }] } } });
+    await runImageGenCommand(ctx);
+
+    expect(savedSettings().providers.corp.models).toEqual([{ id: 'image-v1' }, { id: 'from-another-window' }]);
   });
 
   it('drops the models key when the last entry is removed', async () => {

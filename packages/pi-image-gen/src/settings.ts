@@ -84,11 +84,6 @@ export function imageGenSettingsPath(): string {
   return settingsLocation().path;
 }
 
-/** Writes never touch the legacy path, so name that one for save failures. */
-export function writableImageGenSettingsPath(): string {
-  return newSettingsPath();
-}
-
 /** For status lines: says out loud when the older file is still the live one. */
 export function describeImageGenSettingsPath(): string {
   const { path, legacy } = settingsLocation();

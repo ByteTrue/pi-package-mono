@@ -51,12 +51,20 @@ BYTE-4 全仓审计(主报告 #8–#20 + 增补 A1/A3/A4/A5)与 Lean 清理约 -
 - `README.md`:补 pi-subagent 行(包表/安装/能力划分),five 改 six。
 
 **Nice to have 处置**
-- 已修:vendor 空 API 名/未 trim key、bounded-discover 死常量与冗余检查、web-search engines 字段、localhost:8080 双份默认(收敛到 registry 单源)、usage 串漏列 set-key。
-- 记录不修(性价比低或需上游配合):STRIPPED_FIELDS 双份拷贝(vendor-shared 单源后仅剩 TS/JS 语言差异,契约测试守护)、URL 下载大小上限、content-type 压过魔数嗅探、markdown 路径转义、Windows 保留文件名、resolvePiCli Windows 全局兜底、formatPiOutput 前缀剥离复用、BBC 截断替换符、image_ask 全有或全无、vision 常量别名、含换行 base64 预检、subagent 别名死代码(已是公共导出)。如需全清建议另开小批次。
+- 已修:vendor 空 API 名/未 trim key、bounded-discover 死常量与冗余检查、web-search engines 字段、localhost:8080 双份默认(收敛到 registry 单源)、usage 串漏列 set-key、credentialEcho 最小长度(第一批 #6 已落 `CREDENTIAL_MIN_LENGTH = 8`,Authorization token 剥 scheme 后同阈;修复发生在第一批,本批未重复列)。
+- 记录不修(性价比低或需上游配合):STRIPPED_FIELDS 双份拷贝(vendor-shared 单源后仅剩 TS/JS 语言差异,契约测试守护)、URL 下载大小上限、content-type 压过魔数嗅探、markdown 路径转义、Windows 保留文件名、resolvePiCli Windows 全局兜底、formatPiOutput 前缀剥离复用、BBC 截断替换符、image_ask 全有或全无、vision 常量别名、含换行 base64 预检、subagent 别名死代码(已是公共导出)、config-core CAS 写后复核(竞窗仅剩 rename 前几个系统调用,真正关窗需文件锁;写后复核只能报告丢失不能挽回,已在 `commitWithDependencies` 落决策注释)。如需全清建议另开小批次。
 
-## 验证
+## 验收补齐(2026-10-09,BYTE-6 验收反馈 3 类小项)
 
-- 全仓 `npm test`:**700 通过 / 10 跳过**(跳过数与基线持平:bg-terminal 1 + web-search live e2e 组 9;基线 664/10,新增 36 个行为测试全绿,零回退)。分计:bg-terminal 52+1skip、image-gen 132、subagent 80、vendor 193、vision 95、web-search 148+9skip。
+1. **#16 两个子修复补直接测试**(`config-command.test.ts`,各 1 条):「清凭据保留 headers」——清空 apiKey 的同一次编辑里选 "Keep current headers",断言落盘 `headers` 原样、`apiKey` 为空;「模型列表 delta 写入」——菜单开着时另一窗写盘新增 `from-another-window`,本窗按旧快照预览删除 `image-v0`,断言提交后并发新增存活、被删项仍删(delta 语义,非整份快照写回)。
+2. **Nice-to-have 3 项去向补记**:① config-core CAS——不修,理由与决策注释落点见下方"Nice to have 处置";② credentialEcho——第一批 #6 修复(`CREDENTIAL_MIN_LENGTH = 8`)已覆盖此项,非本批遗漏;③ URL 下载整图 base64 解码(嗅探用)——已修,`classifyImageOutput` 裸 base64 分支改为只解码 16 个 base64 字符(=12 字节,覆盖全部签名所需)的前缀探针,padding 处截断与 Buffer 解码器语义一致,接受/拒绝与整图解码逐例一致。
+3. **image-gen Lean 子项(-30 行)交代**:执行时未单列,现补记——实测后发现无 -30 行可删,故未动。逐符号核查:全部导出均有内部消费方,无一死导出;唯一同构近拷贝(gemini adapter 的 inline data 组装,约 5 行)过小,抽共享层反而加间接层;改前(e480899)与改后(HEAD)的导出面完全一致,该包改动均为 #14/#15/#16/A5 的修复本体。
+4. 顺手项:pi-web-search/package.json 补回行尾换行符(验收反馈"不阻塞"项)。
+5. vendor config-core CAS 决策注释落码:窗口为 compare→write+rename 几个系统调用,真正关窗需文件锁,写后复核只能报告不能挽回;竞窗外并发由同一次 re-read 兜住,残窗最小。
+
+## 验证(验收补齐后)
+
+- 全仓 `npm test`:**702 通过 / 10 跳过**(验收补齐 +2:#16 两条行为测试;基线 664/10,零回退)。分计:bg-terminal 52+1skip、image-gen **134**、subagent 80、vendor 193、vision 95、web-search 148+9skip。
 - `npm run typecheck --workspaces --if-present` 全绿(exit 0,六包 0 error)。
 - 关键行为测试锚点:vendor `vendor-script.test.ts`(set-key 非 TTY 拒绝)、`official-catalog.test.ts`(毒化 module 拒绝);web-search `html-fidelity.test.ts`(GBK 解码/PDF 拒绝/双转义)、`spill-cleanup.test.ts`(TTL 清扫)、`proxy-validation.test.ts`(socks 拒绝+warn-once);image-gen `byte6-fixes.test.ts`(n=3 三请求/discovery 插值/401 指向);subagent `byte6-fixes.test.ts`(真实子进程 abort 竞态/malformed resume 拒绝/reload flush);vision `byte6-fixes.test.ts`(无视 signal 的 60s 兜底/image/jpg 接受/5 张拒绝)。
 
