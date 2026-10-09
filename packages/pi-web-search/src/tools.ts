@@ -39,31 +39,31 @@ const SPILL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SPILL_SWEEP_THROTTLE_MS = 60 * 60 * 1000;
 let lastSpillSweep = 0;
 
-function sweepOldSpillFiles(now: number): void {
+async function sweepOldSpillFiles(now: number): Promise<void> {
 	if (now - lastSpillSweep < SPILL_SWEEP_THROTTLE_MS) return;
 	lastSpillSweep = now;
-	void readdir(FETCH_TEMP_ROOT)
-		.then((entries) =>
-			Promise.all(
-				entries.map(async (entry) => {
-					const full = join(FETCH_TEMP_ROOT, entry);
-					try {
-						const info = await stat(full);
-						if (now - info.mtimeMs > SPILL_TTL_MS) await rm(full, { recursive: true, force: true });
-					} catch {
-						// already gone or unreadable — nothing to clean
-					}
-				}),
-			),
-		)
-		.catch(() => {
-			// directory does not exist yet — nothing to clean
-		});
+	let entries: string[];
+	try {
+		entries = await readdir(FETCH_TEMP_ROOT);
+	} catch {
+		return; // directory does not exist yet — nothing to clean
+	}
+	await Promise.all(
+		entries.map(async (entry) => {
+			const full = join(FETCH_TEMP_ROOT, entry);
+			try {
+				const info = await stat(full);
+				if (now - info.mtimeMs > SPILL_TTL_MS) await rm(full, { recursive: true, force: true });
+			} catch {
+				// already gone or unreadable — nothing to clean
+			}
+		}),
+	);
 }
 
 async function spillToTempFile(content: string): Promise<string> {
 	const now = Date.now();
-	sweepOldSpillFiles(now);
+	await sweepOldSpillFiles(now);
 	const dir = join(FETCH_TEMP_ROOT, `fetch-${now}-${Math.random().toString(36).slice(2, 8)}`);
 	await mkdir(dir, { recursive: true, mode: 0o700 });
 	const file = join(dir, FETCH_TEMP_FILE_NAME);
