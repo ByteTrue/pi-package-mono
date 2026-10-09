@@ -15,6 +15,40 @@ const MAGIC: Array<{ mimeType: string; bytes: number[] }> = [
 /** Guards against handing a multi-hundred-MB file to an HTTP request. */
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Shared attachment cap for both the image_ask tool and auto analysis
+ * (BYTE-6 A3): the tool path had no count limit, so one model call could
+ * attach dozens of images — an oversized request and a huge base64 blob
+ * held in memory. One rule, two paths.
+ */
+export const MAX_ATTACHMENT_COUNT = 4;
+
+/**
+ * Decoded length of a base64 string, or undefined when it is not valid
+ * base64 (wrong padding/length or illegal characters).
+ */
+export function decodedBase64Length(data: string): number | undefined {
+  if (!data || data.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return;
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  const contentLength = data.length - padding;
+  if (padding && (data.length % 4 !== 0 || contentLength % 4 !== 4 - padding)) return;
+  return Math.floor((contentLength * 6) / 8);
+}
+
+/**
+ * Declared-MIME normalization (BYTE-6 A4): upstream pipelines commonly label
+ * JPEG as the non-standard image/jpg; sniffed values must still win, but the
+ * benign alias must not fail the whole batch.
+ */
+const MIME_ALIASES: Record<string, string> = {
+  "image/jpg": "image/jpeg",
+};
+
+export function normalizeDeclaredMime(mimeType: string): string {
+  const lower = mimeType.toLowerCase();
+  return MIME_ALIASES[lower] ?? lower;
+}
+
 export function sniffMime(bytes: Uint8Array): string | undefined {
   for (const { mimeType, bytes: magic } of MAGIC) {
     if (bytes.length < magic.length) continue;

@@ -5,7 +5,7 @@ import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readImageFile } from "./image-file.js";
+import { decodedBase64Length, MAX_ATTACHMENT_COUNT, MAX_IMAGE_BYTES, readImageFile } from "./image-file.js";
 import { resolveVisionModel, type VisionAuth } from "./vision-model.js";
 
 export const TOOL_NAME = "image_ask";
@@ -179,9 +179,24 @@ export async function runImageAsk(
     throw new Error("image_ask is unavailable because the current model already supports images.");
   }
 
+  // Same budget as the auto path (BYTE-6 A3): unbounded paths meant one model
+  // call could carry dozens of images — a giant request and a huge base64
+  // blob held in memory.
+  if (params.paths.length > MAX_ATTACHMENT_COUNT) {
+    throw new Error(
+      `Ask about at most ${MAX_ATTACHMENT_COUNT} images per call (got ${params.paths.length}). Group the most relevant ones.`,
+    );
+  }
   const images: ImageContent[] = [];
+  let totalBytes = 0;
   for (const path of params.paths) {
-    images.push(await readImageFile(path, ctx.cwd));
+    const image = await readImageFile(path, ctx.cwd);
+    const byteLength = decodedBase64Length(image.data) ?? 0;
+    totalBytes += byteLength;
+    if (totalBytes > MAX_IMAGE_BYTES) {
+      throw new Error(`${MAX_IMAGE_BYTES / 1024 / 1024}MB total image limit exceeded; use fewer or smaller images.`);
+    }
+    images.push(image);
   }
   const analysis = await analyzeImages(images, params.question, ctx, signal, completeFn);
 
