@@ -5,7 +5,7 @@
 <h1 align="center">Pi Package Mono</h1>
 
 <p align="center">
-  Five focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated vision, and web access.
+  Six focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated vision, subagent delegation, and web access.
 </p>
 
 <p align="center">
@@ -26,6 +26,7 @@ Each package is independent. Install one capability without inheriting a framewo
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |
 | Let a text-only model understand images | [`@bytetrue/pi-vision`](packages/pi-vision) | `image_ask`, optional attachment analysis, `/vision` | Run `/vision` |
 | Search the web and fetch pages safely | [`@bytetrue/pi-web-search`](packages/pi-web-search) | `web_search`, `web_fetch`, `/web` setup | Search immediately, or run `/web` |
+| Delegate a self-contained task to an isolated child agent | [`@bytetrue/pi-subagent`](packages/pi-subagent) | `subagent`, `subagent_status`, `subagent_stop`, `/subagent` | Just call `subagent` — the result arrives as a new message |
 
 ## Install
 
@@ -34,6 +35,7 @@ Install any package from npm:
 ```bash
 pi install npm:@bytetrue/pi-background-terminal
 pi install npm:@bytetrue/pi-image-gen
+pi install npm:@bytetrue/pi-subagent
 pi install npm:@bytetrue/pi-vendor
 pi install npm:@bytetrue/pi-vision
 pi install npm:@bytetrue/pi-web-search
@@ -48,9 +50,9 @@ Restart or reload Pi after installation. Each package README covers its own setu
 
 The repository keeps high-frequency and low-frequency capabilities separate:
 
-- **Agent tools** stay small and explicit: background terminal, delegated vision, and web access.
+- **Agent tools** stay small and explicit: background terminal, delegated vision, subagent delegation, and web access.
 - **Skills load on demand** for lower-frequency work: image generation and model configuration.
-- **TUI commands close the setup loop**: `/background`, `/image-gen`, `/vendor`, `/vision`, and `/web`.
+- **TUI commands close the setup loop**: `/background`, `/image-gen`, `/subagent`, `/vendor`, `/vision`, and `/web`.
 - **No package depends on another package here.** Install, upgrade, or remove each one independently.
 - **No package replaces Pi's built-in tools.** Background terminal, for example, complements `bash` rather than overriding it.
 
