@@ -20,4 +20,5 @@ created: 2026-10-09
   - `packages/pi-subagent`: 71 个 vitest 单元测试全部通过，`tsc --noEmit` 类型检查 0 报错。
   - 代码审查：子代理审查（Task sub_6a4eadfc8208）全面通过并采纳 3 项动态会话感知与单测优化建议。
   - 真机实测：`pi --mode json -p` 派发携带 `tools: ["find", "read"]` 的子代理，成功启动并在 2 秒内通过 codemode 仅调用 find 完成任务返回。
+- 发布：commit `018603b`，tag `pi-subagent-v0.15.1`，GitHub Actions release run `37895826694` 全绿发布成功，npm registry 确认 `latest = 0.15.1`。
 - byissue：同步更新 `byissue/spec/pi-subagent/index.md` 中关于 codemode 继承与 tools 白名单的说明。
