@@ -40,12 +40,27 @@ function proxyKey(routes: InstalledProxyRoutes, noProxy: string): string {
 	return `${routes.http ?? ""}\n${routes.https ?? ""}\n${noProxy}`;
 }
 
+// Only HTTP(S) proxies are valid here: undici's EnvHttpProxyAgent/ProxyAgent
+// speak HTTP CONNECT, so a socks5: URL would silently produce confusing
+// failures on every request (audit BYTE-4 #13). Config saves validate the
+// same way, so this mostly guards env-provided values.
 function isValidProxyUrl(raw: string): boolean {
 	try {
-		return ["http:", "https:", "socks:", "socks5:"].includes(new URL(raw).protocol);
+		return ["http:", "https:"].includes(new URL(raw).protocol);
 	} catch {
 		return false;
 	}
+}
+
+// An ignored proxy used to fail silently — "the network is broken" with no
+// clue. Warn once per process instead (audit BYTE-4 #13).
+let warnedInvalidProxy: string | undefined;
+function warnInvalidProxyOnce(raw: string, source: string): void {
+	if (warnedInvalidProxy === raw) return;
+	warnedInvalidProxy = raw;
+	console.warn(
+		`[pi-web-search] Ignoring ${source} proxy "${raw}": only http:// and https:// proxies are supported (socks:// is not). Requests will go direct.`,
+	);
 }
 
 async function clearProviderDispatcher(): Promise<void> {
@@ -67,11 +82,17 @@ export async function installProxyDispatcher(configuredProxy?: string): Promise<
 	}
 
 	const explicit = configuredProxy?.trim();
-	if (explicit && !isValidProxyUrl(explicit)) return installedProxyRoutes?.https ?? installedProxyRoutes?.http;
+	if (explicit && !isValidProxyUrl(explicit)) {
+		warnInvalidProxyOnce(explicit, "configured");
+		return installedProxyRoutes?.https ?? installedProxyRoutes?.http;
+	}
 
 	const routes: InstalledProxyRoutes = explicit ? { http: explicit, https: explicit } : detectEnvProxyRoutes();
 	const selected = routes.https ?? routes.http;
 	if ([routes.http, routes.https].some((url) => url && !isValidProxyUrl(url))) {
+		for (const url of [routes.http, routes.https]) {
+			if (url && !isValidProxyUrl(url)) warnInvalidProxyOnce(url, "environment");
+		}
 		return installedProxyRoutes?.https ?? installedProxyRoutes?.http;
 	}
 	if (!selected) {

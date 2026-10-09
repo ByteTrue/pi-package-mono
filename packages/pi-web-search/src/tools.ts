@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -30,8 +30,46 @@ const MIN_SEARCH_RESULTS = 1;
 const MAX_SEARCH_RESULTS = 10;
 const DEFAULT_SEARCH_RESULTS = 5;
 const API_KEY_MASK_VISIBLE = 4;
-const FETCH_TEMP_DIR_PREFIX = "byte-web-fetch-";
+// Spilled web_fetch overflow files live in one package-owned directory and are
+// sweep-cleaned by age. The old mkdtemp-per-fetch created an unbounded pile of
+// orphan directories under %TEMP% (audit A1).
+const FETCH_TEMP_ROOT = join(tmpdir(), "byte-web-fetch");
 const FETCH_TEMP_FILE_NAME = "content.txt";
+const SPILL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SPILL_SWEEP_THROTTLE_MS = 60 * 60 * 1000;
+let lastSpillSweep = 0;
+
+function sweepOldSpillFiles(now: number): void {
+	if (now - lastSpillSweep < SPILL_SWEEP_THROTTLE_MS) return;
+	lastSpillSweep = now;
+	void readdir(FETCH_TEMP_ROOT)
+		.then((entries) =>
+			Promise.all(
+				entries.map(async (entry) => {
+					const full = join(FETCH_TEMP_ROOT, entry);
+					try {
+						const info = await stat(full);
+						if (now - info.mtimeMs > SPILL_TTL_MS) await rm(full, { recursive: true, force: true });
+					} catch {
+						// already gone or unreadable — nothing to clean
+					}
+				}),
+			),
+		)
+		.catch(() => {
+			// directory does not exist yet — nothing to clean
+		});
+}
+
+async function spillToTempFile(content: string): Promise<string> {
+	const now = Date.now();
+	sweepOldSpillFiles(now);
+	const dir = join(FETCH_TEMP_ROOT, `fetch-${now}-${Math.random().toString(36).slice(2, 8)}`);
+	await mkdir(dir, { recursive: true, mode: 0o700 });
+	const file = join(dir, FETCH_TEMP_FILE_NAME);
+	await writeFile(file, content, "utf8");
+	return file;
+}
 const WEB_COMMAND_NAME = "web";
 const SHOW_FLAG = "--show";
 const UNSET_LABEL = "(not set)";
@@ -135,13 +173,6 @@ interface FetchDetails {
 	fullOutputPath?: string;
 }
 
-async function spillToTempFile(content: string): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), FETCH_TEMP_DIR_PREFIX));
-	const file = join(dir, FETCH_TEMP_FILE_NAME);
-	await writeFile(file, content, "utf8");
-	return file;
-}
-
 function truncationFooter(truncation: TruncationResult, tempFile: string): string {
 	const lines = truncation.totalLines - truncation.outputLines;
 	const bytes = truncation.totalBytes - truncation.outputBytes;
@@ -226,6 +257,16 @@ function formatShowConfig(config: WebConfig): string {
 	return lines.join("\n");
 }
 
+// Only http(s) proxies reach the config: undici speaks HTTP CONNECT, so a
+// saved socks5: URL would make every request fail opaquely (audit BYTE-4 #13).
+function isValidConfiguredProxy(raw: string): boolean {
+	try {
+		return ["http:", "https:"].includes(new URL(raw).protocol);
+	} catch {
+		return false;
+	}
+}
+
 async function configureProxy(
 	ctx: { ui: { input(title: string, placeholder?: string): Promise<string | undefined>; notify(message: string, type?: string): void } },
 	config: WebConfig,
@@ -240,8 +281,16 @@ async function configureProxy(
 		return;
 	}
 	const next: WebConfig = { ...config };
-	if (input.trim().toLowerCase() === "off") delete next.proxy;
-	else next.proxy = input.trim();
+	if (input.trim().toLowerCase() === "off") {
+		delete next.proxy;
+	} else {
+		const candidate = input.trim();
+		if (!isValidConfiguredProxy(candidate)) {
+			ctx.ui.notify('Only http:// or https:// proxy URLs are supported (socks:// is not). Config unchanged.', "error");
+			return;
+		}
+		next.proxy = candidate;
+	}
 	if (!writeConfig(next)) {
 		ctx.ui.notify(`Failed to save proxy to ${getWritableConfigPath()}`, "error");
 		return;
