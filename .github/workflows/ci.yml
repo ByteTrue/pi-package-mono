@@ -5,7 +5,30 @@ on:
     branches: [main]
   pull_request:
 
+# Superseded runs on the same branch/PR are cancelled automatically.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  pr-title:
+    # Enforce the PR title convention (CONTRIBUTING.md): "BYTE-N: ..." or "Release ...".
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! echo "$TITLE" | grep -qE '^(BYTE-[0-9]+:|Release) '; then
+            echo "PR title must start with 'BYTE-N: ' (issue key) or 'Release ' (release PRs)."
+            echo "Got: $TITLE"
+            exit 1
+          fi
+
   test:
     runs-on: ubuntu-latest
     steps:
