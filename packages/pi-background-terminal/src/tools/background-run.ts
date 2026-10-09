@@ -7,7 +7,7 @@ import {
 import { delimiter, join } from "node:path";
 import { homedir } from "node:os";
 import { Type } from "typebox";
-import { SHELL_TIMEOUT_SECONDS } from "../bash-default-timeout.js";
+import { isUsableTimeout, SHELL_TIMEOUT_SECONDS } from "../bash-default-timeout.js";
 import { manager } from "../background/manager.js";
 
 /** Default total lifetime: hard-kill bound for a background task with no explicit timeout. */
@@ -73,7 +73,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
         Type.Number({
           minimum: 0.001,
           maximum: 2147483,
-          description: `Hard lifetime cap in seconds. Defaults to ${DEFAULT_LIFETIME_SECONDS}; clamped to ${HARD_CAP_LIFETIME_SECONDS} — restart with background_run on the timeout notification to renew long-running services.`,
+          description: `Hard lifetime cap in seconds. Defaults to ${DEFAULT_LIFETIME_SECONDS}; clamped to ${HARD_CAP_LIFETIME_SECONDS} — restart with background_run on the timeout notification to renew long-running services. Non-positive or non-finite values are treated as absent and fall back to the default.`,
         }),
       ),
     }),
@@ -84,7 +84,14 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
       if (cached?.key !== key) {
         cached = { key, settings: resolveShellOptions(ctx.cwd, ctx.isProjectTrusted()) };
       }
-      const timeoutSeconds = Math.min(params.timeout ?? DEFAULT_LIFETIME_SECONDS, HARD_CAP_LIFETIME_SECONDS);
+      // Degenerate timeouts (0, negatives, NaN, ±Infinity) count as absent — same semantics
+      // as bash-default-timeout's isUsableTimeout. A bare `?? DEFAULT` would leak them through:
+      // 0 reaching ops.exec risks meaning "never time out", the exact opposite of this tool's
+      // hard lifetime cap, and non-finite values pass no meaningful bound either.
+      const timeoutSeconds = Math.min(
+        isUsableTimeout(params.timeout) ? params.timeout : DEFAULT_LIFETIME_SECONDS,
+        HARD_CAP_LIFETIME_SECONDS,
+      );
       const task = manager.start(params.command, ctx.cwd, ctx.sessionManager.getSessionId(), {
         timeoutSeconds,
         operations: createLocalBashOperations({ shellPath: cached.settings.shellPath }),
