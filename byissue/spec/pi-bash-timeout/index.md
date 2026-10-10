@@ -39,7 +39,7 @@ Peer：`@earendil-works/pi-coding-agent >=0.80.5`（CI typecheck peer）。决�
 ```text
 small-extensions/pi-bash-timeout/
   pi-bash-timeout.ts           单文件运行时：SHELL_TIMEOUT_SECONDS + isUsableTimeout + tool_call/tool_result 钩子 + 默认导出 registerBashTimeout
-  pi-bash-timeout.test.ts      CI-only：完整 hook 测试套件（13 用例，含包契约断言）
+  pi-bash-timeout.test.ts      CI-only：完整 hook 测试套件（14 用例，含包契约断言）
   package.json                 private，永不发布；仅为 workspaces 收编 CI
   README.md                    安装（双平台脚本）、卸载、机制、边界
 scripts/install-small-extension.sh    macOS/Linux 安装脚本（raw 下载 → ~/.pi/agent/extensions/）
@@ -51,7 +51,7 @@ scripts/install-small-extension.ps1   Windows 安装脚本（同逻辑）
 ```bash
 npm --workspace pi-bash-timeout test
 npm --workspace pi-bash-timeout run typecheck
-npm --workspace pi-bash-timeout pack --dry-run   # 元数据反验：private，永不发布
+npm --workspace pi-bash-timeout pack --dry-run   # private 使 npm publish 拒绝发布；pack 仅验证 files 面
 ```
 
 真实 Pi 回归还应确认：bash 无 timeout 调用被注入 300s；>300s 显式值被钳；超时错误后出现引导块；删除扩展文件后 bash 恢复原生（无默认超时）。
