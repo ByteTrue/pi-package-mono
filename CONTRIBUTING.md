@@ -76,7 +76,15 @@ Additional rules for parallel runs:
 
 - The member may push or merge directly to `main` when a release or security
   issue blocks on process — the member holds final authority over `main`.
-  Follow up with a PR or an issue record within 24 hours so the history stays
-  explainable.
 - Agents have no emergency lane. If something is urgent, set the issue to
   `blocked` and ping the member; do not bypass review.
+
+Direct-push checklist — all three steps, every use (worked record:
+`byissue/decisions/005-direct-push-retroactive-record.md`):
+
+1. **When it may be used** — the member explicitly authorizes it, and a PR
+   cannot land in time (release or security blocked on process).
+2. **Register it** — leave the standard record as a `byissue/decisions/`
+   entry: authorizer + time + scope + the full list of pushed SHAs.
+3. **Afterwards** — open the PR or issue record within 24 hours so the
+   history stays explainable.

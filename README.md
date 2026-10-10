@@ -4,6 +4,7 @@
 
 <h1 align="center">Pi Package Mono</h1>
 
+<!-- Decision record (BYTE-14): the slogan/tagline above is final — "delegated subagents" is the origin/BYTE-2 wording, concluded in b6d28c7f's README conflict resolution. Keep it on future README conflicts; do not re-litigate. -->
 <p align="center">
   Six focused extensions for <a href="https://pi.dev">Pi</a>: background processes, image generation, model configuration, delegated subagents, delegated vision, and web access.
 </p>
