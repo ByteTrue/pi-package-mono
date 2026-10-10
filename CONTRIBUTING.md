@@ -23,6 +23,16 @@ commands and code conventions; this file covers the review and CI process.
 - **One PR per issue, kept small and single-purpose.** Unrelated fixes get
   their own issue and PR.
 
+## Tracking work (workspace issues)
+
+- **Work starts from an issue, and the issue is self-contained.** The issue
+  description carries the context its executor needs; an executing agent does
+  not re-read the chat history to reconstruct intent.
+- **Deliverables land on the issue.** Conclusions, code, and PR links are
+  written back as issue comments. Chat is for coordination and decisions only —
+  an answer that lives only in chat leaves no record for the next run.
+- One issue, one PR (see the review process above).
+
 ## What CI checks
 
 `.github/workflows/ci.yml` runs on every PR and every push to `main`:
