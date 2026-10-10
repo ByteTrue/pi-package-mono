@@ -93,6 +93,13 @@ describe("registerBashDefaultTimeout", () => {
     expect(call.input.timeout).toBe(300);
   });
 
+  it("treats a negative timeout as absent and injects the 300s default", async () => {
+    const handlers = harness(registerBashDefaultTimeout);
+    const call = event("bash", { command: "sleep 5", timeout: -5 });
+    await handlers["tool_call"]?.(call, {});
+    expect(call.input.timeout).toBe(300);
+  });
+
   it("covers the powershell tool (same schema, same hang risk on Windows)", async () => {
     const handlers = harness(registerBashDefaultTimeout);
     const call = event("powershell", { command: "Get-ChildItem" });
