@@ -16,7 +16,8 @@ extension share compiled code).
 
 | Path | What it is |
 | --- | --- |
-| `packages/pi-background-terminal` | `background_run` / `background_status` / `background_kill` tools + `/background` menu. Pure-background execution: built-in `bash`/`powershell` stay untouched (only a 300s safety-net hook) |
+| `packages/pi-background-terminal` | `background_run` / `background_status` / `background_kill` tools + `/background` menu. Pure-background execution: built-in `bash`/`powershell` stay untouched (no foreground-timeout hook — that lives in `pi-bash-timeout`) |
+| `packages/pi-bash-timeout` | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools). Install it only when the cap is wanted |
 | `packages/pi-image-gen` | `/image-gen` TUI setup, on-demand Skill + bundled CLI. The only package with `build`/`prepack` |
 | `packages/pi-subagent` | `subagent` / `subagent_status` / `subagent_stop` tools + `/subagent` menu. Tool schemas stay tiny (~200 tokens total) |
 | `packages/pi-vendor` | AI-first `models.json` management: Skill for everyday CRUD, on-demand `vendor.mjs` script, `/vendor` cold-start wizard |
