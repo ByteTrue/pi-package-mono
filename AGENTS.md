@@ -16,13 +16,13 @@ extension share compiled code).
 
 | Path | What it is |
 | --- | --- |
-| `packages/pi-background-terminal` | `background_run` / `background_status` / `background_kill` tools + `/background` menu. Pure-background execution: built-in `bash`/`powershell` stay untouched (no foreground-timeout hook — that lives in `pi-bash-timeout`) |
-| `packages/pi-bash-timeout` | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools). Install it only when the cap is wanted |
+| `packages/pi-background-terminal` | `background_run` / `background_status` / `background_kill` tools + `/background` menu. Pure-background execution: built-in `bash`/`powershell` stay untouched (no foreground-timeout hook — that lives in `small-extensions/pi-bash-timeout`) |
 | `packages/pi-image-gen` | `/image-gen` TUI setup, on-demand Skill + bundled CLI. The only package with `build`/`prepack` |
 | `packages/pi-subagent` | `subagent` / `subagent_status` / `subagent_stop` tools + `/subagent` menu. Tool schemas stay tiny (~200 tokens total) |
 | `packages/pi-vendor` | AI-first `models.json` management: Skill for everyday CRUD, on-demand `vendor.mjs` script, `/vendor` cold-start wizard |
 | `packages/pi-vision` | `image_ask` tool + opt-in attachment pre-analysis + `/vision`. Auto mode stays opt-in by design |
 | `packages/pi-web-search` | `web_search` / `web_fetch` tools + `/web` setup. `npm test` auto-skips its live e2e file |
+| `small-extensions/` | Tiny single-file extensions, **not published to npm**: one subdirectory each (single `.ts` + tests + private `package.json`), installed by `scripts/install-small-extension.sh`/`.ps1` from GitHub raw. In root `workspaces` only so CI typecheck/tests cover them |
 | `byissue/` | Project memory: current spec (`byissue/spec/index.md`), decisions, past epics/issues, pitfall notes. Mostly Chinese |
 | `byspace.json` | Worktree setup (`npm ci`) and typecheck/test scripts for agent worktrees |
 | `tsconfig.base.json` | Shared strict TS config: ES2022, NodeNext, `noUncheckedIndexedAccess`, `verbatimModuleSyntax` |
@@ -82,6 +82,11 @@ by adding a failing test first, then the fix.
 - **Architecture**: packages stay independent — never add a cross-package
   dependency. Pi tool names must be unique; do not register names taken by Pi
   built-ins or other extensions (e.g. `web_search`).
+- **Small extensions** (`small-extensions/`): the shipped artifact is the single
+  `.ts` file itself, so it must have **zero runtime imports** (type-only imports
+  are fine) and must not import sibling repo files. Its `package.json` is
+  `private: true` and exists only for workspace CI; never add
+  `publishConfig`/`pi` fields there.
 - **Docs are part of the change**: a user-visible behavior change also updates the
   package README and its `byissue/spec/<pkg>/index.md` sub-spec.
 - **Releases (only when explicitly asked)**: bump the package version, push tag

@@ -51,10 +51,10 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
   );
 
   registerBackgroundCommand(pi);
-  // No foreground-timeout hook here: the inject-and-clamp for bash/powershell lives in the
-  // separate @bytetrue/pi-bash-timeout package (BYTE-10, GitHub #3) so an install of this
-  // package contains no hook source at all. background_run still keys its lifetime guard
-  // on the shared shell-timeout.ts constants below.
+  // No foreground-timeout hook here: the inject-and-clamp for bash/powershell lives in
+  // the separate small-extensions/pi-bash-timeout extension (BYTE-10, GitHub #3) so an
+  // install of this package contains no hook source at all. background_run still keys
+  // its lifetime guard on the shared shell-timeout.ts constants below.
   registerBackgroundRunTool(pi);
   registerBackgroundStatusTool(pi);
   registerBackgroundKillTool(pi);
