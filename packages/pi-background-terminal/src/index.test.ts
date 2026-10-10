@@ -51,14 +51,10 @@ describe("pi-background-terminal extension", () => {
     const { toolNames, commandNames, events, rendererTypes } = harness();
     expect(toolNames.sort()).toEqual(["background_kill", "background_run", "background_status"]);
     expect(commandNames).toEqual(["background"]);
-    expect(events.sort()).toEqual([
-      "agent_settled",
-      "agent_start",
-      "session_shutdown",
-      "session_start",
-      "tool_call",
-      "tool_result",
-    ]);
+    // No tool_call/tool_result subscription: the foreground-timeout hook moved to the
+    // separate small-extensions/pi-bash-timeout extension (BYTE-10) — this package's
+    // installed source contains no hook code at all.
+    expect(events.sort()).toEqual(["agent_settled", "agent_start", "session_shutdown", "session_start"]);
     // No renderer: Pi's default custom-message rendering already labels and boxes the content.
     expect(rendererTypes).toEqual([]);
     expect(toolNames).not.toContain("bash");

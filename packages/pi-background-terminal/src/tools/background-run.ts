@@ -7,7 +7,7 @@ import {
 import { delimiter, join } from "node:path";
 import { homedir } from "node:os";
 import { Type } from "typebox";
-import { isUsableTimeout, SHELL_TIMEOUT_SECONDS } from "../bash-default-timeout.js";
+import { isUsableTimeout, SHELL_TIMEOUT_SECONDS } from "../shell-timeout.js";
 import { manager } from "../background/manager.js";
 
 /** Default total lifetime: hard-kill bound for a background task with no explicit timeout. */
@@ -65,7 +65,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
       "When you need a command's output to decide your next step, use bash — it blocks and returns the output",
       "After background_run returns, the command is already running: continue with other work or end your turn. Its exit arrives as a new message that starts your next turn — that notification is how you wait. background_status is for a one-off look at partial output",
       `timeout is a hard lifetime cap (default ${DEFAULT_LIFETIME_SECONDS}s, hard cap ${HARD_CAP_LIFETIME_SECONDS}s — larger values are clamped); pass a larger value for dev servers and watch modes, and restart with background_run when the timeout notification arrives to renew them`,
-      `bash/powershell are hard-killed after ${SHELL_TIMEOUT_SECONDS}s (this extension injects the default and caps explicit values at ${SHELL_TIMEOUT_SECONDS}); when a command needs longer, run it with background_run and a larger timeout instead of blocking on bash`,
+      `Pi caps bash/powershell foreground calls at ${SHELL_TIMEOUT_SECONDS}s only when the optional pi-bash-timeout extension is installed (it injects the default and caps explicit values); when a command needs longer, run it with background_run and a larger timeout instead of blocking on bash`,
     ],
     parameters: Type.Object({
       command: Type.String({ minLength: 1, description: "The shell command to run in the background" }),
@@ -85,7 +85,7 @@ export function registerBackgroundRunTool(pi: ExtensionAPI): void {
         cached = { key, settings: resolveShellOptions(ctx.cwd, ctx.isProjectTrusted()) };
       }
       // Degenerate timeouts (0, negatives, NaN, ±Infinity) count as absent — same semantics
-      // as bash-default-timeout's isUsableTimeout. A bare `?? DEFAULT` would leak them through:
+      // as shell-timeout's isUsableTimeout. A bare `?? DEFAULT` would leak them through:
       // 0 reaching ops.exec risks meaning "never time out", the exact opposite of this tool's
       // hard lifetime cap, and non-finite values pass no meaningful bound either.
       const timeoutSeconds = Math.min(

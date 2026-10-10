@@ -1,0 +1,23 @@
+{
+  "name": "pi-bash-timeout",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Small extension (never published to npm): optional 300s default-and-cap for Pi's built-in bash/powershell tools. Installed from source by scripts/install-small-extension.sh / .ps1; kept as a workspace only so CI typecheck/test cover it.",
+  "type": "module",
+  "files": [
+    "pi-bash-timeout.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.80.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.11"
+  }
+}

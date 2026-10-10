@@ -6,6 +6,9 @@
 
 <p align="center">Pure background execution: <code>background_run</code> starts a command, returns a task id immediately, and notifies you when it exits.</p>
 
+> [!IMPORTANT]
+> As of 0.12.0 the optional 300s foreground shell cap is **not part of this package** — it moved to the small extension [`pi-bash-timeout`](../../small-extensions/pi-bash-timeout) (a single `.ts` file in this repo's `small-extensions/`, installed by the repo's install script — **not an npm package**). Installing only this package leaves the built-in `bash`/`powershell` tools exactly as Pi ships them (no timeout by default). If you relied on the cap, see [small-extensions/pi-bash-timeout](../../small-extensions/pi-bash-timeout) for the one-line install.
+
 <p align="center">
   <a href="https://www.npmjs.com/package/@bytetrue/pi-background-terminal"><img src="https://img.shields.io/npm/v/@bytetrue/pi-background-terminal?style=flat-square" alt="npm version"></a>
 </p>
@@ -45,7 +48,7 @@ No built-in tool is overridden, shadowed, or registered under a built-in name.
 
 ## Staying out of the built-ins' way
 
-- `bash` (and `powershell`) keep their exact built-in behavior; the only touches are two event hooks — a `tool_call` hook injecting `timeout: 300` when a call passes none and clamping explicit values above 300s down to it, and a `tool_result` hook appending one steering block ("long commands belong in background_run") to timeout errors. A safety net for runaway foreground commands, not a coupling.
+- `bash` (and `powershell`) keep their exact built-in behavior — no default timeout, no clamping, no steering on timeout errors. The optional 300s inject-and-clamp hook (plus the timeout-error steering block) lives in the [`pi-bash-timeout`](../../small-extensions/pi-bash-timeout) small extension; install it alongside this package if you want that safety net.
 - The `background_run` path applies your `shellPath` / `shellCommandPrefix` settings (read through Pi's own `SettingsManager`, honoring project trust) and the same session environment the built-in tools set (`PI_*` variables plus the agent bin dir on `PATH`).
 - Uninstalling removes exactly the three tools above; the built-ins were never touched.
 
@@ -67,10 +70,10 @@ Output is stored under `$TMPDIR/pi-background-terminal/` and removed at real ses
 ## Deliberate limits
 
 - Pure background: no foreground wait, no inline output (that is `bash`'s job)
-- No override of any built-in tool (the 300s input default is the only touch)
+- No override of any built-in tool, and no foreground shell timeout hook (see the [`pi-bash-timeout`](../../small-extensions/pi-bash-timeout) small extension for the optional 300s cap)
 - No PTY or interactive stdin
 - No custom `cwd` or environment input
-- No configurable defaults (300s shell cap, 600s task lifetime / 50 MiB cap are fixed)
+- No configurable defaults (600s task lifetime / 50 MiB output cap are fixed)
 - No daemon, tmux dependency, Web UI, or cross-session persistence
 - No output pagination in tool results—`read` handles large output
 

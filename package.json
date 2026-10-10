@@ -5,7 +5,8 @@
   "description": "Monorepo of personal pi coding-agent packages.",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "small-extensions/*"
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present"

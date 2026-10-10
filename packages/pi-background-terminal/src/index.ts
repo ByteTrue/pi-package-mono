@@ -1,6 +1,5 @@
 import { truncateLine, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { manager, sweepOrphanLogs, type BackgroundTask } from "./background/manager.js";
-import { registerBashDefaultTimeout } from "./bash-default-timeout.js";
 import { registerBackgroundCommand } from "./background-command.js";
 import { registerBackgroundKillTool } from "./tools/background-kill.js";
 import { registerBackgroundStatusTool } from "./tools/background-status.js";
@@ -52,7 +51,10 @@ export default function registerBackgroundTerminal(pi: ExtensionAPI): void {
   );
 
   registerBackgroundCommand(pi);
-  registerBashDefaultTimeout(pi);
+  // No foreground-timeout hook here: the inject-and-clamp for bash/powershell lives in
+  // the separate small-extensions/pi-bash-timeout extension (BYTE-10, GitHub #3) so an
+  // install of this package contains no hook source at all. background_run still keys
+  // its lifetime guard on the shared shell-timeout.ts constants below.
   registerBackgroundRunTool(pi);
   registerBackgroundStatusTool(pi);
   registerBackgroundKillTool(pi);
