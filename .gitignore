@@ -5,8 +5,7 @@ dist/
 coverage/
 *.tsbuildinfo
 .claude
-.pi/*
-!.pi/settings.json
+.pi/
 .tmp/
 .pi-subagents/
 .playwright-mcp/

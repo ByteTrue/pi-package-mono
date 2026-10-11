@@ -2,7 +2,7 @@
 kind: decision
 title: "2026-10-09 的 16 笔直推 main 为成员本人意外操作，已追溯确认；后续直推走 CONTRIBUTING 紧急通道登记"
 created: 2026-10-10
-superseded-by: ""
+superseded-by: "006-direct-push-policy"
 ---
 
 # 2026-10-09 的 16 笔直推 main 为成员本人意外操作，已追溯确认

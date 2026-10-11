@@ -101,6 +101,46 @@ describe("vendor skill script", () => {
 		expect(result.results[0]).toEqual({ officialProvider: "official", model: { id: "sibling-model" } });
 	});
 
+	it("finds a catalog beside pi-coding-agent inside a pnpm/aube virtual-store entry", () => {
+		// The production layout: the store entry dir holds both packages as
+		// siblings, and the .bin shim points into pi-coding-agent. The TUI used to
+		// miss this and blame every model id; see
+		// byissue/issues/113-x-vendor-catalog-lookup.md.
+		const prefix = join(dir, "node_modules");
+		const entry = join(prefix, "virtual-store", "@earendil-works+pi-coding-agent@1.1.0-a6ca00a866368823", "node_modules", "@earendil-works");
+		const packageDir = join(entry, "pi-coding-agent");
+		const catalogDir = join(entry, "pi-ai", "dist");
+		mkdirSync(join(prefix, ".bin"), { recursive: true });
+		mkdirSync(join(packageDir, "dist", "bundle"), { recursive: true });
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { deepseek: { "deepseek-flash": { id: "deepseek-flash", name: "DeepSeek V4.1 Flash" } } };`);
+		// The shim target must exist: the resolver realpaths the entry to find the
+		// package root, exactly as it does for a real shim.
+		writeFileSync(join(packageDir, "dist", "bundle", "cli.js"), "// cli\n");
+		writeFileSync(join(prefix, ".bin", "pi"), `#!/bin/sh\nexec node "${join(packageDir, "dist", "bundle", "cli.js")}" "$@"\n`);
+
+		const result = JSON.parse(run(["catalog", "deepseek-flash"], { env: { PI_VENDOR_PI_ROOT: undefined, PATH: join(prefix, ".bin") } }));
+		expect(result.results).toEqual([{ officialProvider: "deepseek", model: { id: "deepseek-flash", name: "DeepSeek V4.1 Flash" } }]);
+	});
+
+	it("accepts a pi-coding-agent package dir as PI_VENDOR_PI_ROOT", () => {
+		// The documented value is the install prefix, but a package dir must work
+		// too: that is what a user derives when they follow the recovery hint.
+		const prefix = join(dir, "prefix");
+		const packageDir = join(prefix, "node_modules", "@earendil-works", "pi-coding-agent");
+		const catalogDir = join(prefix, "node_modules", "@earendil-works", "pi-ai", "dist");
+		mkdirSync(packageDir, { recursive: true });
+		mkdirSync(catalogDir, { recursive: true });
+		writeFileSync(join(packageDir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+		writeFileSync(join(catalogDir, "package.json"), JSON.stringify({ type: "module" }));
+		writeFileSync(join(catalogDir, "models.generated.js"), `export const MODELS = { official: { m: { id: "package-dir-model" } } };`);
+
+		const result = JSON.parse(run(["catalog", "package-dir"], { env: { PI_VENDOR_PI_ROOT: packageDir, PATH: "" } }));
+		expect(result.results[0]).toEqual({ officialProvider: "official", model: { id: "package-dir-model" } });
+	});
+
 	it("reports the recovery hint when no catalog can be located", () => {
 		let message = "";
 		try { run(["catalog", "anything"], { env: { PI_VENDOR_PI_ROOT: undefined, PATH: "" } }); } catch (error) {

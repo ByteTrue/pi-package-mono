@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { collectOfficialCandidates, findOfficialCatalogPath, formatOfficialCandidate, stripOfficialRoutingFields } from "./official-catalog.js";
 
@@ -22,6 +22,79 @@ describe("official catalog helpers", () => {
 			rmSync(secondRoot, { recursive: true, force: true });
 		}
 	});
+
+	// The roots handed to candidateCatalogPaths in production are pi-coding-agent
+	// *package directories*, not install prefixes. Regression for the shipped bug
+	// where every lookup missed and /vendor blamed the model id.
+	// See byissue/issues/113-x-vendor-catalog-lookup.md.
+	describe("resolves pi-ai from real install layouts", () => {
+		/** Build a package dir plus the catalog path the layout should reach. */
+		function layout(mk: (root: string) => string): { root: string; catalogPath: string } {
+			const root = mkdtempSync(join(tmpdir(), "pi-vendor-catalog-layout-"));
+			const catalogPath = mk(root);
+			mkdirSync(dirname(catalogPath), { recursive: true });
+			writeFileSync(catalogPath, "export const MODELS = {};\n");
+			// The root must look like the pi-coding-agent package itself.
+			writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+			return { root, catalogPath };
+		}
+
+		it("finds a sibling pi-ai in a virtual-store entry (pnpm/aube)", () => {
+			// <store>/@earendil-works+pi-coding-agent@1.1.0-hash/node_modules/@earendil-works/{pi-coding-agent,pi-ai}
+			const { root, catalogPath } = layout((entry) =>
+				join(entry, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"),
+			);
+			try {
+				const pkgDir = join(root, "node_modules", "@earendil-works", "pi-coding-agent");
+				mkdirSync(pkgDir, { recursive: true });
+				writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+
+				expect(findOfficialCatalogPath([pkgDir])).toBe(catalogPath);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		it("finds a hoisted pi-ai beside pi-coding-agent", () => {
+			// <project>/node_modules/@earendil-works/{pi-coding-agent,pi-ai}
+			const { root, catalogPath } = layout((dir) =>
+				join(dir, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"),
+			);
+			try {
+				const pkgDir = join(root, "node_modules", "@earendil-works", "pi-coding-agent");
+				mkdirSync(pkgDir, { recursive: true });
+				writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent" }));
+
+				expect(findOfficialCatalogPath([pkgDir])).toBe(catalogPath);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		it("finds pi-ai nested inside the pi-coding-agent package", () => {
+			const { root, catalogPath } = layout((dir) =>
+				join(dir, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"),
+			);
+			try {
+				expect(findOfficialCatalogPath([root])).toBe(catalogPath);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		it("accepts an install prefix as PI_VENDOR_PI_ROOT", () => {
+			const { root, catalogPath } = layout((dir) =>
+				join(dir, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"),
+			);
+			try {
+				// The documented value: the prefix that owns node_modules.
+				expect(findOfficialCatalogPath([root])).toBe(catalogPath);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+	});
+
 	it("returns every exact model-id candidate across providers", () => {
 		const catalog = {
 			openai: {

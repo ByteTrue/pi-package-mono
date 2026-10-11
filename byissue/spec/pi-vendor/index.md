@@ -41,7 +41,7 @@ AI-facing script 固定只有四个只读查询：
 
 AI 不得用 `catalog all`、手工 route 循环或完整输出 `models.json` 替代这些查询，也不得手工抓取 models.dev 逐条比对替代 `order`。Exact sync 的本地结构化 set 运算属于 Skill 固定 Node 模板，不是第五个 bundled 命令；模板内部只读取目标 provider 的 `models`，只输出 model ID plan 与摘要表格，且固定执行计划生成、写前 stale、写后 exact-set、最终 discovery-union 四次断言。
 
-catalog 安装定位依次尝试 `PI_VENDOR_PI_ROOT`、PATH 中 `pi` 的 realpath 上溯、mise/aube bin shim 文本中的包路径（`target=` 与 `$basedir` 引用）、`node_modules/.mise/@earendil-works+pi-coding-agent@*` 布局，以及 pi-ai 与 pi-coding-agent 同层的 hoisted 布局；失败信息提示 `PI_VENDOR_PI_ROOT`。SKILL 要求环境失败时至多做一次文档化恢复、向用户报告后停下。`modelOverrides` 不进入 exact sync。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
+catalog 安装定位依次尝试 `PI_VENDOR_PI_ROOT`（安装前缀或 pi-coding-agent 包目录均可）、PATH 中 `pi` 的 realpath 上溯、mise/aube bin shim 文本中的包路径（`target=` 与 `$basedir` 引用）、`node_modules/.mise/@earendil-works+pi-coding-agent@*` 布局。从每个 root 出发，候选路径按 **Node 式祖先遍历**生成（逐级 `<ancestor>/node_modules/@earendil-works/pi-ai/dist/models.generated.js`，nearest-first），再补 pi-ai 嵌套在 pi-coding-agent 包内的形状；这覆盖 hoisted、pnpm/aube 虚拟 store（pi-ai 与 pi-coding-agent 在 store entry 内同级）、安装前缀与包目录四种入参。失败信息提示 `PI_VENDOR_PI_ROOT`。SKILL 要求环境失败时至多做一次文档化恢复、向用户报告后停下。`modelOverrides` 不进入 exact sync。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
 
 ### `/vendor` 冷启动 TUI
 
@@ -78,7 +78,7 @@ TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited
 
 ### Active catalog
 
-Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；token 与去除空格/连字符/下划线后的文本参与匹配，按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。Skill 把“千问 3.7”一类自然称呼当成搜索意图，必要时改用 `qwen 3.7` 等 catalog 关键词重试；匹配只产生候选，不静默决定 canonical ID。TUI 与脚本共用同一 catalog 搜索实现（`src/shared/vendor-shared.js`，语义即脚本原语义：token 化 + 归一化 + exact/prefix/substring 稳定排序，排序按 id 字母序），autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。两侧的 catalog 动态加载统一过数据形状守卫（函数/getter/setter/类实例/循环引用等非纯数据树直接拒绝）。
+Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；token 与去除空格/连字符/下划线后的文本参与匹配，按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。Skill 把“千问 3.7”一类自然称呼当成搜索意图，必要时改用 `qwen 3.7` 等 catalog 关键词重试；匹配只产生候选，不静默决定 canonical ID。TUI 与脚本共用同一 catalog 搜索实现（`src/shared/vendor-shared.js`，语义即脚本原语义：token 化 + 归一化 + exact/prefix/substring 稳定排序，排序按 id 字母序），autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。两侧的 catalog 动态加载统一过数据形状守卫（函数/getter/setter/类实例/循环引用等非纯数据树直接拒绝）。**catalog 路径形状同样只在 `vendor-shared.js` 的 `candidateCatalogPaths` 里定义**，TUI 与脚本共用：两份各写一遍曾导致脚本补了 sibling 回退而 TUI 没补，`/vendor` 把每个模型都报成无官方模板（`byissue/issues/113-x-vendor-catalog-lookup.md`）。**catalog 不可用与「查到但无匹配」必须是两种结果**：前者是环境问题，TUI 不得声称该 id 不在官方库，只报 catalog 不可用并仍允许 minimal entry。
 
 ### Discovery 安全边界
 

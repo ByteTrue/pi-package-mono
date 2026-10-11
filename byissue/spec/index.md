@@ -106,6 +106,7 @@
 - **配置 fail-closed 写路径**：运行时可读可 soft-fail；交互写配置必须先证明基底有效。
 - **包私有配置收在 `<pkg-config 根>`**：本仓包自己读写的文件进 `<agent dir>/pi-pkg-cfg/<包名>/`（vision / subagent 另有 local 的 `<project>/.pi/pi-pkg-cfg/<包名>/settings.json` 项目层，受信任闸约束）；Pi 本体按固定路径读的 `settings.json` / `models.json` / `mcp.json` / `auth.json` 留在 agent dir 根。**不为此新开共享包**——四个包各留约十行路径解析，互不依赖比抽公共运行时值；防漂移靠测试里的同一组场景断言。
 - **真相分层**：稳定结论进 project spec；一次执行进 issue；大变更线进 epic；旧流水与 gate JSON 进 archive。
+- **项目级 Pi 配置由 Skill 生成，不跟踪**：`.pi/` 整目录不入库；`.agents/skills/pi-dev-setup/setup.mjs`（幂等）扫描有 `pi` 字段的包生成 `.pi/settings.json`（本地路径条目 + 同名 npm 屏蔽条目成对出现）并复制小扩展进 `.pi/extensions/`。新 worktree 跑一次 Skill 即得完整本地调试面，产物漂移靠重跑而非手改。
 
 ## 证据索引（按需）
 
@@ -113,7 +114,7 @@
 - BySpace worktree 准备：`byspace.json`
 - 本地 package / worktree 加载边界：`byissue/notes/005-pi-local-package-loading.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
-- 已删除的 pi-ask-user 历史：`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`
+- pi-ask-user 历史：曾为 npm 包后按 minimal-tool 原则删除（`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`）；2026-10-11 以最小单文件 small-extension 形态回归（`small-extensions/pi-ask-user/`，`byissue/issues/113-x-ff-ask-user-small-extension.md`）——理由是稳定提问格式 + 点选回答的日常收益被用户重新判定为值得一个 tool；形态边界：内置对话框、plain JSON Schema、无批量/超时/配置/print 通道
 - 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
 - background terminal 历史重写：`byissue/issues/025-x-background-terminal-package.md`（第一版 PTY）、`byissue/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`byissue/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）；当前独立工具：`byissue/issues/039-x-background-terminal-standalone-tools.md`；不限时、清理与用户菜单：`byissue/issues/042-x-background-terminal-menu-lifecycle.md`
 - Pi 本地包加载坑点：`byissue/notes/005-pi-local-package-loading.md`

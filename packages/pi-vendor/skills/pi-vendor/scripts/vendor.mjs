@@ -6,7 +6,7 @@ import { delimiter, basename, dirname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
-import { encodeConfigLiteral as encodeConfigLiteralShared, isPlainDataTree, stripRoutingFields as cleanTemplate } from "../../../src/shared/vendor-shared.js";
+import { candidateCatalogPaths, encodeConfigLiteral as encodeConfigLiteralShared, isPlainDataTree, stripRoutingFields as cleanTemplate } from "../../../src/shared/vendor-shared.js";
 
 const [, , command, ...args] = process.argv;
 const modelsPath = join(process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"), "models.json");
@@ -107,14 +107,9 @@ function catalogPaths() {
 		// npm's Windows shim lives beside node_modules rather than inside the package.
 		roots.add(join(dir, "node_modules", "@earendil-works", "pi-coding-agent"));
 	}
-	const paths = [];
-	for (const root of roots) {
-		paths.push(join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
-		paths.push(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
-		// Hoisted installs keep pi-ai beside the pi-coding-agent package in the same scope.
-		paths.push(join(root, "..", "pi-ai", "dist", "models.generated.js"));
-	}
-	return paths;
+	// Path shapes live in vendor-shared.js so the TUI and this script cannot
+	// drift apart again; see byissue/issues/113-x-vendor-catalog-lookup.md.
+	return candidateCatalogPaths([...roots]);
 }
 
 // (cleanTemplate moved to vendor-shared.mjs as stripRoutingFields; the script

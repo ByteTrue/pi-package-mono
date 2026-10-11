@@ -113,6 +113,14 @@ created: 2026-10-11
 | 「`grep/find/ls` 在 pi 中默认关闭，角色文档声明它们等于替子代理打开」 | spec | **已并入** `spec/pi-subagent/index.md` 的 `reviewer` 条目——这是选择 `read, bash` 的原因，不是能从代码重建的事实 |
 | 无 | —— | 其余无候选 |
 
+## 发布记录（2026-10-11）
+
+- 分支 `feat/subagent-single-builtin-reviewer` → PR **#17**，合并提交 `4e9a965`（CI 绿）。
+- tag `pi-subagent-v0.17.0` 触发 release.yml，run `38141435289` success（typecheck + 全仓 test + OIDC Trusted Publishing）。
+- registry 直查确认（`npm view` 本地缓存当时仍显示 0.16.0，以 registry 为准）：`dist-tags.latest` = **0.17.0**；`gitHead` = `4e9a965`；provenance 已签名，Sigstore `logIndex=3207665202`。
+- tarball 解包核对：10 文件，`agents/` 下**只有 `reviewer.md`**，`explore` / `plan` / `general-purpose` 均不在包内。
+- **版本号说明**：原计划 0.16.0，因该号已被 main 的 BYTE-13 审计批次占用并发布，改用 0.17.0。
+
 ## PR 与协作约束（执行中发现）
 
 `origin/main:CONTRIBUTING.md` 要求**所有改动经 PR 落地、agent 不得自行 merge**；本变更因此落在分支 `feat/subagent-single-builtin-reviewer` 并开 PR。关闭改名与毕业回写是这个变更集的一部分，随分支一起交付。

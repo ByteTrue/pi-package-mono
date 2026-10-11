@@ -93,9 +93,10 @@ describe("runAddProviderFlow", () => {
 
 		expect(result.kind).toBe("saved");
 		if (result.kind !== "saved") return;
-		// No official catalog match: keep the model minimal and report it.
+		// The catalog is absent here, so keep the model minimal and report the
+		// environment problem rather than blaming the id.
 		expect(result.models.providers?.relay?.models).toEqual([{ id: "hand-typed", api: "openai-completions" }]);
-		expect(ui.notifies.some((n) => n.level === "warning" && n.message.includes("minimal model entry"))).toBe(true);
+		expect(ui.notifies.some((n) => n.level === "warning" && n.message.includes("Official catalog unavailable"))).toBe(true);
 	});
 
 	it("rejects a provider key that already exists", async () => {
