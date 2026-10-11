@@ -9,8 +9,8 @@ commands and code conventions; this file covers the review and CI process.
 - **Humans review; agents wait.** The member reviews and merges. Agents never
   approve or merge their own work.
 - **Agent-produced changes always go through a PR and wait for review:**
-  1. Open the PR with title `BYTE-N: <summary>` — the issue key auto-links it
-     to the tracking issue in our workspace.
+  1. Open the PR and link its tracking issue in the body. No title format is
+     required — a summary that names the change is enough.
   2. Set the issue to `in_review` and stop there. Merging is the member's
      decision; an agent may run the merge only after the member explicitly
      authorizes it on the issue (the authorization stays as a comment).
@@ -44,7 +44,6 @@ commands and code conventions; this file covers the review and CI process.
 | `pi-vendor` pack dry-run | the publishable file list stays sane |
 | `pi-image-gen` pack smoke | real tarball: pack → allowlist → extract → production install → load extension entry |
 | README ↔ packages check | root README's package table and install list match `packages/*` — no missing package, no stale reference |
-| PR title | must match `BYTE-N: ...` or `Release ...` (enforced via a CI job) |
 
 Superseded runs on the same branch are cancelled automatically (concurrency
 group). `.github/workflows/release.yml` publishes on version tags: typecheck +

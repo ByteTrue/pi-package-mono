@@ -72,8 +72,8 @@ by adding a failing test first, then the fix.
 - **Commits**: Conventional Commits, package-scoped — `feat(pi-web-search): ...`,
   `fix(pi-subagent): ...`, `docs(byissue): ...`. Releases use
   `release(<pkg>): <version> - <summary>`.
-- **PRs**: title format `BYTE-N: <summary>` — the `BYTE-N` issue key is how a PR
-  links back to its tracking issue in our workspace.
+- **PRs**: no title format is enforced. A title that names the package and the
+  change is enough (`feat(pi-subagent): ...` style is fine).
 - **TypeScript**: strict, `noUncheckedIndexedAccess` (index access returns
   `T | undefined`), `verbatimModuleSyntax` (use `import type`). Do not relax the
   config to make code compile; fix the code.
