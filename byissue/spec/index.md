@@ -113,7 +113,7 @@
 - BySpace worktree 准备：`byspace.json`
 - 本地 package / worktree 加载边界：`byissue/notes/005-pi-local-package-loading.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
-- 已删除的 pi-ask-user 历史：`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`
+- pi-ask-user 历史：曾为 npm 包后按 minimal-tool 原则删除（`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`）；2026-10-11 以最小单文件 small-extension 形态回归（`small-extensions/pi-ask-user/`，`byissue/issues/113-x-ff-ask-user-small-extension.md`）——理由是稳定提问格式 + 点选回答的日常收益被用户重新判定为值得一个 tool；形态边界：内置对话框、plain JSON Schema、无批量/超时/配置/print 通道
 - 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
 - background terminal 历史重写：`byissue/issues/025-x-background-terminal-package.md`（第一版 PTY）、`byissue/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`byissue/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）；当前独立工具：`byissue/issues/039-x-background-terminal-standalone-tools.md`；不限时、清理与用户菜单：`byissue/issues/042-x-background-terminal-menu-lifecycle.md`
 - Pi 本地包加载坑点：`byissue/notes/005-pi-local-package-loading.md`

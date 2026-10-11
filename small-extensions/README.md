@@ -20,3 +20,4 @@ Restart or reload Pi afterwards; extensions in that directory load automatically
 | Extension | What it does |
 | --- | --- |
 | [`pi-bash-timeout`](./pi-bash-timeout/) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
+| [`pi-ask-user`](./pi-ask-user/) | Minimal `ask_user` tool: one decision question per call with typed options, answered via Pi's built-in dialogs |

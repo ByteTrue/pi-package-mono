@@ -13,6 +13,7 @@ EXTENSIONS_DIR="${HOME}/.pi/agent/extensions"
 # One line per extension file to install, repo-relative. Update = re-run.
 EXTENSION_FILES=(
   "small-extensions/pi-bash-timeout/pi-bash-timeout.ts"
+  "small-extensions/pi-ask-user/pi-ask-user.ts"
 )
 
 if [ "$#" -ne 0 ]; then
