@@ -48,6 +48,10 @@ Restart or reload Pi after installation. Each package README covers its own setu
 > [!IMPORTANT]
 > Pi tool names must be unique. Before installing `pi-web-search`, remove any extension that already registers `web_search` or `web_fetch`.
 
+## Developing this repo's packages in Pi
+
+Project-level Pi config is **generated, not tracked**: run `node .agents/skills/pi-dev-setup/setup.mjs` in a fresh worktree (after `npm ci`) and it writes `.pi/settings.json` — every `packages/*` workspace loaded from local source, with shadow entries that silence any globally installed `@bytetrue/*` package of the same name — and copies the `small-extensions/` single files into `.pi/extensions/`. Idempotent; re-run after adding a package. Restart or /reload Pi to apply.
+
 ## Small extensions
 
 A few extensions are deliberately tiny and are **not published to npm** — they live in [`small-extensions/`](small-extensions) and install straight from this repo (GitHub raw → `~/.pi/agent/extensions/`). Re-running the script is the update path; there is no versioning.

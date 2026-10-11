@@ -106,6 +106,7 @@
 - **配置 fail-closed 写路径**：运行时可读可 soft-fail；交互写配置必须先证明基底有效。
 - **包私有配置收在 `<pkg-config 根>`**：本仓包自己读写的文件进 `<agent dir>/pi-pkg-cfg/<包名>/`（vision / subagent 另有 local 的 `<project>/.pi/pi-pkg-cfg/<包名>/settings.json` 项目层，受信任闸约束）；Pi 本体按固定路径读的 `settings.json` / `models.json` / `mcp.json` / `auth.json` 留在 agent dir 根。**不为此新开共享包**——四个包各留约十行路径解析，互不依赖比抽公共运行时值；防漂移靠测试里的同一组场景断言。
 - **真相分层**：稳定结论进 project spec；一次执行进 issue；大变更线进 epic；旧流水与 gate JSON 进 archive。
+- **项目级 Pi 配置由 Skill 生成，不跟踪**：`.pi/` 整目录不入库；`.agents/skills/pi-dev-setup/setup.mjs`（幂等）扫描有 `pi` 字段的包生成 `.pi/settings.json`（本地路径条目 + 同名 npm 屏蔽条目成对出现）并复制小扩展进 `.pi/extensions/`。新 worktree 跑一次 Skill 即得完整本地调试面，产物漂移靠重跑而非手改。
 
 ## 证据索引（按需）
 
