@@ -60,12 +60,29 @@ describe("model enrichment", () => {
 	});
 
 	it("uses a minimal entry when the official catalog has no match", async () => {
-		const result = await enrichModelId("mystery-model", { catalog: null });
+		// An empty catalog is a real lookup that found nothing.
+		const result = await enrichModelId("mystery-model", { catalog: {} });
 		expect(result).toMatchObject({
 			kind: "ready",
 			warning: expect.stringContaining("mystery-model"),
 			model: { id: "mystery-model" },
 		});
 		if (result.kind === "ready") expect(result.model).toEqual({ id: "mystery-model" });
+	});
+
+	// A missing catalog is an environment problem, not a verdict on the id.
+	// Conflating the two shipped the misleading "no official catalog match"
+	// message for every model. See byissue/issues/113-x-vendor-catalog-lookup.md.
+	it("reports a missing catalog separately from a missing model", async () => {
+		const result = await enrichModelId("deepseek-flash", { catalog: null });
+
+		expect(result.kind).toBe("catalog-unavailable");
+		if (result.kind !== "catalog-unavailable") return;
+		expect(result.modelId).toBe("deepseek-flash");
+		// The caller can still write a minimal entry, but the message must not
+		// claim the model is unknown to the catalog.
+		expect(result.model).toEqual({ id: "deepseek-flash" });
+		expect(result.warning).not.toContain("No official catalog match");
+		expect(result.warning).toContain("deepseek-flash");
 	});
 });

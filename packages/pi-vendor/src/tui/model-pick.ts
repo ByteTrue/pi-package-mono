@@ -77,6 +77,7 @@ export async function pickModelId(ui: QuickUI, ids: string[]): Promise<string | 
 
 /**
  * Resolve the model config for `modelId` against the official catalog.
+ * - catalog unavailable: minimal entry, reported as an environment problem
  * - no candidate: minimal entry, reported to the user
  * - one candidate: applied automatically, source reported
  * - several candidates: the user picks the official source provider
@@ -91,6 +92,13 @@ export async function resolveModelConfig(
 
 	if (enriched.kind === "ready") {
 		if (enriched.warning) ui.notify(enriched.warning, "warning");
+		return applyProviderRouting(enriched.model, provider);
+	}
+
+	// The catalog itself is missing, so no lookup happened. Say that instead of
+	// "no official catalog match", which wrongly blames the model id.
+	if (enriched.kind === "catalog-unavailable") {
+		ui.notify(enriched.warning, "warning");
 		return applyProviderRouting(enriched.model, provider);
 	}
 

@@ -1,9 +1,53 @@
 // Pure helpers shared by the pi-vendor TUI (TypeScript) and the bundled skill
-// script vendor.mjs. No process/env/network access. The .d.ts next to this file
-// is the single source of types; tsc never reads the .js (allowJs stays off),
-// vitest/jiti/node load it directly. Keep this file dependency-free.
+// script vendor.mjs. No filesystem, process/env, or network access, and no
+// package dependencies (node:path is used only for separator-correct joining).
+// The .d.ts next to this file is the single source of types; tsc never reads
+// the .js (allowJs stays off), vitest/jiti/node load it directly.
+
+import { dirname, join } from "node:path";
 
 export const CATALOG_SEARCH_MAX_QUERY_BYTES = 512;
+
+// Candidate paths for the official Pi model catalog, given Pi install roots.
+//
+// A root may be a pi-coding-agent *package directory* or an install prefix that
+// owns node_modules. Resolve pi-ai the way Node resolves a bare specifier: try
+// every ancestor's node_modules, nearest first. That covers npm hoisted
+// installs, the pnpm/aube virtual store (where pi-ai sits beside pi-coding-agent
+// inside the store entry dir), and an install prefix. Then try the nested
+// install shape, where pi-ai lives inside the pi-coding-agent package.
+//
+// Shared on purpose: the TUI and the script each used to hardcode their own
+// relative shapes, the script grew a ".."-sibling fallback the TUI never got,
+// and /vendor silently reported every model as missing from the official
+// catalog. See byissue/issues/113-x-vendor-catalog-lookup.md.
+export function candidateCatalogPaths(roots) {
+	const paths = [];
+	const seen = new Set();
+	const add = (candidate) => {
+		if (seen.has(candidate)) return;
+		seen.add(candidate);
+		paths.push(candidate);
+	};
+
+	for (const root of roots ?? []) {
+		if (typeof root !== "string" || root === "") continue;
+
+		let current = root;
+		for (;;) {
+			add(join(current, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
+			const parent = dirname(current);
+			if (parent === current) break;
+			current = parent;
+		}
+
+		add(
+			join(root, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"),
+		);
+	}
+
+	return paths;
+}
 
 // Encode a raw credential for storage in models.json as a Pi config literal:
 // '$' -> '$$', and a leading '!' -> '$!' so it can never become a command.
