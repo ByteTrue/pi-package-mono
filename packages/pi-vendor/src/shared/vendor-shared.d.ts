@@ -19,3 +19,8 @@ export type SharedCatalogEntry = {
 
 // Script-semantics catalog search; see the .js implementation for the contract.
 export function searchCatalogShared(models: unknown, query: string, limit?: number): SharedCatalogEntry[];
+
+// Candidate paths for the official Pi model catalog, given install roots.
+// Roots may be pi-coding-agent package dirs or install prefixes; the returned
+// list is ordered best-first and deduplicated. See the .js implementation.
+export function candidateCatalogPaths(roots: readonly (string | null | undefined)[]): string[];

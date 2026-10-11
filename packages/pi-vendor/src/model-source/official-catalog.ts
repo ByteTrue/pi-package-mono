@@ -2,7 +2,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { isCatalogObject, isPlainDataTree, stripRoutingFields } from "../shared/vendor-shared.js";
+import { candidateCatalogPaths, isCatalogObject, isPlainDataTree, stripRoutingFields } from "../shared/vendor-shared.js";
 import type { ProviderModelConfig } from "../models-json.js";
 
 export type OfficialModelConfig = Record<string, unknown> & {
@@ -72,7 +72,14 @@ function resolveCandidateRoots(): string[] {
 	};
 
 	// Pi sessions use argv[1]. `dev:web` resolves the Pi executable from PATH.
-	add(resolvePackageRoot(process.env.PI_VENDOR_PI_ROOT ?? ""));
+	// PI_VENDOR_PI_ROOT is documented as the install prefix that owns
+	// node_modules, but a pi-coding-agent package dir also has to work, so both
+	// the raw value and its resolved package root become roots.
+	const envRoot = process.env.PI_VENDOR_PI_ROOT?.trim();
+	if (envRoot) {
+		add(resolvePackageRoot(envRoot));
+		add(existsSync(envRoot) ? envRoot : null);
+	}
 	add(piRootFromEntry(process.argv[1]));
 	add(piRootFromPath());
 
@@ -87,28 +94,10 @@ function resolveCandidateRoots(): string[] {
 	return [...roots];
 }
 
-function candidateCatalogPaths(roots: readonly string[]): string[] {
-	const paths = new Set<string>();
-	for (const root of roots) {
-		paths.add(join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"));
-
-		let current = root;
-		for (;;) {
-			paths.add(
-				join(current, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "@earendil-works", "pi-ai", "dist", "models.generated.js"),
-			);
-			const parent = dirname(current);
-			if (parent === current) break;
-			current = parent;
-		}
-	}
-	return [...paths];
-}
-
 let cachedCatalogPath: string | null = null;
 let cachedCatalog: OfficialModelsCatalog | null = null;
 
-export function findOfficialCatalogPath(roots = resolveCandidateRoots()): string | null {
+export function findOfficialCatalogPath(roots: readonly string[] = resolveCandidateRoots()): string | null {
 	for (const candidate of candidateCatalogPaths(roots)) {
 		if (existsSync(candidate)) return candidate;
 	}
