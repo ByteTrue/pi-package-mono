@@ -95,9 +95,11 @@ created: 2026-10-11
 
 **判断：可关。** 四条验收口径全部有相称证据（见「验证」），范围未暗扩——没有顺手改 `--tools` 语义、settings 回退、模型/思考链或 BySpace report 桥；两个「顺手发现」都按性质分了流（见「沉淀」）。
 
-**质量证据**：维护性——默认路径不再有第二个真相源（已删的 `general-purpose` 文档正文），`DEFAULT_AGENT_NAME` 全仓零引用；安全性——`reviewer` 只授 `read, bash`，`edit`/`write` 由能力边界而非提示词挡住，且用例断言其不含这两个工具。功能正确性——73 项包测试 + 全仓 8 workspace 全绿，typecheck 干净。
+**质量证据**：维护性——默认路径不再有第二个真相源（已删的 `general-purpose` 文档正文），`DEFAULT_AGENT_NAME` 全仓零引用；安全性——`reviewer` 只授 `read, bash`，`edit`/`write` 由能力边界而非提示词挡住，且用例断言其不含这两个工具。功能正确性——82 项包测试（含 main 侧 `byte6-fixes.test.ts`）+ 全仓 8 workspace 全绿，typecheck 干净。
 
-**回写位置**：`byissue/spec/pi-subagent/index.md`（当前表面、模型/思考链、使用路径表、codemode 示例；已随改动完成，不另起流程）；README（含 `Migrating from ≤ 0.15.x`，`### Attribution` 已删）。
+**关闭时机**：关闭改名（`112-o-` → `112-x-`）与毕业回写**作为本变更的一部分**，与代码同分支同提交序列完成（`close.md`：代码未被先行提交时，关闭随业务代码一并交付）。这一步不等待 PR 合并——PR 是变更集的外层闸门，不是关闭的前置条件。
+
+**回写位置**：`byissue/spec/pi-subagent/index.md`（当前表面、模型/思考链、使用路径表、codemode 示例；已随改动完成，不另起流程）；README（含 `Migrating from ≤ 0.16.x`，`### Attribution` 已删）。另立 `byissue/decisions/006-subagent-single-builtin-role.md`、`byissue/notes/015-two-subagent-tools-share-one-name.md`，并就地更正 notes/011。
 
 **遗留**：发布 `0.17.0` 需用户单独授权。注意 `pi-subagent-v0.16.0` 这个 tag **已被 BYTE-13 批次占用**，本 issue 必须用 `0.17.0` + 新 tag。
 
@@ -113,6 +115,6 @@ created: 2026-10-11
 
 ## PR 与协作约束（执行中发现）
 
-`origin/main:CONTRIBUTING.md` 要求**所有改动经 PR 落地、agent 不得自行 merge**。本 issue 因此落到分支 `feat/subagent-single-builtin-reviewer`，由成员开 PR。
+`origin/main:CONTRIBUTING.md` 要求**所有改动经 PR 落地、agent 不得自行 merge**；本变更因此落在分支 `feat/subagent-single-builtin-reviewer` 并开 PR。关闭改名与毕业回写是这个变更集的一部分，随分支一起交付。
 
-标题的 `BYTE-N: …` 硬性格式（CI 的 `pr-title` job）已在执行期间由成员裁决去除，落地于 PR #15（`chore/drop-pr-title-gate`）。本 issue 编号（112）与工作区 issue 编号（BYTE-N）是两套体系，PR 只需在正文里链接跟踪 issue。
+执行期间成员裁决去除了两套外部流程规定，各自经独立 PR 落地：标题的 `BYTE-N: …` 硬性格式（PR #15，CI `pr-title` job 已删）、workspace issue 强制跟踪（PR #16）。本 issue 编号（112）属仓库自己的 `byissue/` 记忆层，与工作区 issue 编号是两套体系。
