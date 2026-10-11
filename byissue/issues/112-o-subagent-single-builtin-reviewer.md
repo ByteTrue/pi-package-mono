@@ -113,4 +113,6 @@ created: 2026-10-11
 
 ## PR 与协作约束（执行中发现）
 
-`origin/main:CONTRIBUTING.md` 要求**所有改动经 PR 落地、agent 不得自行 merge**，PR 标题须匹配 `BYTE-N: …` 或 `Release …`。本 issue 因此先落到分支 `feat/subagent-single-builtin-reviewer`，由成员开 PR。远端同一功能可能由 BYTE-N 跟踪，本 issue 编号（112）与 BYTE-N 是两套体系。
+`origin/main:CONTRIBUTING.md` 要求**所有改动经 PR 落地、agent 不得自行 merge**。本 issue 因此落到分支 `feat/subagent-single-builtin-reviewer`，由成员开 PR。
+
+标题的 `BYTE-N: …` 硬性格式（CI 的 `pr-title` job）已在执行期间由成员裁决去除，落地于 PR #15（`chore/drop-pr-title-gate`）。本 issue 编号（112）与工作区 issue 编号（BYTE-N）是两套体系，PR 只需在正文里链接跟踪 issue。
