@@ -12,6 +12,7 @@ import {
   resolveAgentRole,
   runSubagent,
   buildAgentRosterText,
+  buildSubagentPrompt,
   resolvePiCli,
   runPi,
   normalizeTask,
@@ -189,18 +190,18 @@ describe("pi-subagent unit tests", () => {
     expect(explicitCfg.tools).toEqual(["codemode", "read", "grep", "find"]);
     expect(buildPiArgs(explicitCfg)).toContain("codemode,read,grep,find");
 
-    // 2. Role-defined tools (e.g. explore agent) with inheritCodemode=true
-    const exploreDef = findAgentDefinition(process.cwd(), "explore");
-    const exploreCfg = resolveRunCfg(
-      { agent: "explore" },
-      exploreDef.config,
+    // 2. Role-defined tools (the reviewer agent) with inheritCodemode=true
+    const reviewerDef = findAgentDefinition(process.cwd(), "reviewer");
+    const reviewerCfg = resolveRunCfg(
+      { agent: "reviewer" },
+      reviewerDef.config,
       undefined,
       undefined,
       undefined,
       true,
     );
-    expect(exploreCfg.tools).toEqual(["codemode", "read", "grep", "find", "ls", "bash"]);
-    expect(buildPiArgs(exploreCfg)).toContain("codemode,read,grep,find,ls,bash");
+    expect(reviewerCfg.tools).toEqual(["codemode", "read", "bash"]);
+    expect(buildPiArgs(reviewerCfg)).toContain("codemode,read,bash");
 
     // 3. Already contains codemode: no duplicates
     const alreadyCodemodeCfg = resolveRunCfg(
@@ -213,7 +214,7 @@ describe("pi-subagent unit tests", () => {
     );
     expect(alreadyCodemodeCfg.tools).toEqual(["codemode", "read"]);
 
-    // 4. Default general-purpose (no tools specified): tools remains undefined
+    // 4. Omitted agent (no tools specified): tools remains undefined
     const defaultCfg = resolveRunCfg(
       {},
       {},
@@ -282,55 +283,78 @@ describe("pi-subagent unit tests", () => {
     expect(resumeSessionArgs).toContain("sub_123");
   });
 
-  it("resolves built-in roles from the package's agent documents", () => {
-    const explore = findAgentDefinition(process.cwd(), "explore");
-    expect(explore.found).toBe(true);
-    expect(explore.config.tools).toEqual(["read", "grep", "find", "ls", "bash"]);
-    expect(explore.config.thinking).toBe("minimal");
-    expect(explore.config.systemPrompt).toContain("file search specialist");
-
-    const plan = findAgentDefinition(process.cwd(), "plan");
-    expect(plan.found).toBe(true);
-    expect(plan.config.tools).toEqual(["read", "grep", "find", "ls", "bash"]);
-    expect(plan.config.thinking).toBeUndefined();
-    expect(plan.config.systemPrompt).toContain("Critical Files for Implementation");
-    // The read-only roles must not be able to modify the tree.
-    expect(plan.config.tools).not.toContain("edit");
-    expect(explore.config.tools).not.toContain("write");
-
-    const gp = findAgentDefinition(process.cwd(), "general-purpose");
-    expect(gp.found).toBe(true);
-    // No `tools:` line: the child inherits pi's full default set.
-    expect(gp.config.tools).toBeUndefined();
-    // Nor model/thinking: omitting `agent` must stay full inheritance, so an
-    // edit that pins these in the document would silently retune every
-    // agentless call. The document is a prompt template, nothing more.
-    expect(gp.config.model).toBeUndefined();
-    expect(gp.config.thinking).toBeUndefined();
-    expect(gp.config.systemPrompt).toContain("do not re-delegate");
+  it("ships exactly one built-in role: reviewer (issue 110)", () => {
+    const reviewer = findAgentDefinition(process.cwd(), "reviewer");
+    expect(reviewer.found).toBe(true);
+    expect(reviewer.config.tools).toEqual(["read", "bash"]);
+    expect(reviewer.config.thinking).toBe("max");
+    expect(reviewer.config.systemPrompt).toContain("disciplined review subagent");
+    expect(reviewer.config.description).toContain("Use it to inspect code, diffs, plans");
+    // The reviewer must not be able to modify the tree it reviews.
+    expect(reviewer.config.tools).not.toContain("edit");
+    expect(reviewer.config.tools).not.toContain("write");
+    // The removed roles are gone, not merely unlisted (issue 110).
+    expect(findAgentDefinition(process.cwd(), "explore").found).toBe(false);
+    expect(findAgentDefinition(process.cwd(), "plan").found).toBe(false);
+    expect(findAgentDefinition(process.cwd(), "general-purpose").found).toBe(false);
   });
 
-  it("uses the general-purpose document as the template when no role is named", () => {
+  it("keeps the issue 110 dispatch contract: role in, argv and prompt out", () => {
+    // Mirrors the tool's own wiring (resolveAgentRole → resolveRunCfg →
+    // buildPiArgs / buildSubagentPrompt) so the accepted surface stays fixed.
+    const cwd = process.cwd();
+
+    // 1. Omitted agent: verbatim task, no tool narrowing, inherited model.
+    const plain = resolveAgentRole(cwd, undefined, {});
+    const plainRun = resolveRunCfg({}, plain, "high", "vendor/model", {});
+    expect(buildSubagentPrompt("do the thing", plain)).toBe("do the thing");
+    expect(buildPiArgs(plainRun)).not.toContain("--tools");
+    expect(plainRun.model).toBe("vendor/model:high");
+
+    // 2. reviewer: read+bash only, thinking pinned to the top level.
+    const reviewer = resolveAgentRole(cwd, "reviewer", {});
+    const reviewerRun = resolveRunCfg({ agent: "reviewer" }, reviewer, undefined, undefined, {});
+    expect(reviewerRun.tools).toEqual(["read", "bash"]);
+    expect(buildPiArgs(reviewerRun)).toContain("read,bash");
+    expect(reviewerRun.thinking).toBe("max");
+
+    // 3. A removed built-in fails loudly and names the surviving role.
+    expect(() => resolveAgentRole(cwd, "explore", {})).toThrow(/reviewer/);
+  });
+
+  it("injects no role prompt when the agent is omitted (issue 110)", () => {
+    // Omitting the role is not "a default role": it resolves to an empty config,
+    // so the child gets pi's own prompt plus the task and nothing of ours.
     const omitted = resolveAgentRole(process.cwd(), undefined, {});
-    const gp = findAgentDefinition(process.cwd(), "general-purpose");
-    expect(omitted).toEqual(gp.config);
-    // The default template must not narrow the toolset or pin model/thinking.
+    expect(omitted).toEqual({});
+    expect(omitted.systemPrompt).toBeUndefined();
     expect(omitted.tools).toBeUndefined();
     expect(omitted.model).toBeUndefined();
     expect(omitted.thinking).toBeUndefined();
-    expect(omitted.systemPrompt).toBeTruthy();
     // Blank/whitespace names take the same path rather than erroring.
-    expect(resolveAgentRole(process.cwd(), "   ", {})).toEqual(gp.config);
+    expect(resolveAgentRole(process.cwd(), "   ", {})).toEqual({});
+  });
+
+  it("passes the task through verbatim when no role is named (issue 110)", () => {
+    // The omitted-agent path must hand the child exactly the task text: this is
+    // the acceptance criterion, kept as the guard that no prompt creeps back in.
+    const task = "Review the uncommitted diff in packages/pi-subagent";
+    expect(buildSubagentPrompt(task, resolveAgentRole(process.cwd(), undefined, {}))).toBe(task);
+    expect(buildSubagentPrompt(task, {})).toBe(task);
+    // A named role still frames the task as assigned work.
+    const withRole = buildSubagentPrompt(task, resolveAgentRole(process.cwd(), "reviewer", {}));
+    expect(withRole).toContain("## Assigned Task");
+    expect(withRole.endsWith(task)).toBe(true);
   });
 
   it("builds the agent roster with trigger descriptions (issue 102)", () => {
-    // Built-in roles render name + trigger sentence.
+    // The single built-in role renders name + trigger sentence.
     const roster = buildAgentRosterText(process.cwd());
-    expect(roster).toContain("- explore: Fast read-only search agent");
-    expect(roster).toContain("Use it to find files by pattern");
-    expect(roster).toContain("- plan: Software architect agent");
-    expect(roster).toContain("Use this when you need to plan the implementation strategy");
-    // The default child is not a selectable role; it is what omission selects.
+    expect(roster).toContain("- reviewer: Independent adversarial reviewer");
+    expect(roster).toContain("Use it to inspect code, diffs, plans");
+    // Removed roles and the (retired) default entry never reappear (issue 110).
+    expect(roster).not.toContain("- explore");
+    expect(roster).not.toContain("- plan");
     expect(roster).not.toContain("- general-purpose");
 
     // A custom .pi/agents document with a description joins the roster with its
@@ -358,30 +382,29 @@ describe("pi-subagent unit tests", () => {
     const dir = join(tmpdir(), `pi-subagent-agents-${Date.now()}`);
     mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
     writeFileSync(
-      join(dir, ".pi", "agents", "explore.md"),
-      "---\nmodel: cheap/model\nthinking: low\ntools: read, grep\n---\n\nCustom explore prompt.\n",
+      join(dir, ".pi", "agents", "reviewer.md"),
+      "---\nmodel: cheap/model\nthinking: low\ntools: read, grep\n---\n\nCustom reviewer prompt.\n",
     );
     try {
-      const explore = findAgentDefinition(dir, "explore");
-      expect(explore.found).toBe(true);
-      expect(explore.config.model).toBe("cheap/model");
-      expect(explore.config.thinking).toBe("low");
-      expect(explore.config.tools).toEqual(["read", "grep"]);
-      expect(explore.config.systemPrompt).toBe("Custom explore prompt.");
+      const reviewer = findAgentDefinition(dir, "reviewer");
+      expect(reviewer.found).toBe(true);
+      expect(reviewer.config.model).toBe("cheap/model");
+      expect(reviewer.config.thinking).toBe("low");
+      expect(reviewer.config.tools).toEqual(["read", "grep"]);
+      expect(reviewer.config.systemPrompt).toBe("Custom reviewer prompt.");
 
-      // Sibling built-ins stay untouched.
+      // A role the package no longer ships stays unknown (issue 110).
       const plan = findAgentDefinition(dir, "plan");
-      expect(plan.config.thinking).toBeUndefined();
-      expect(plan.config.tools).toEqual(["read", "grep", "find", "ls", "bash"]);
+      expect(plan.found).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("inherits the parent session's thinking level, off included", () => {
-    const { config } = findAgentDefinition(process.cwd(), "plan");
+    // No document/role setting: the parent session's level flows through, off included.
     for (const level of ["minimal", "medium", "max", "off"]) {
-      const cfg = resolveRunCfg({ agent: "plan" }, config, level, "p/m", {});
+      const cfg = resolveRunCfg({ agent: "reviewer" }, {}, level, "p/m", {});
       expect(cfg.thinking).toBe(level);
       expect(cfg.model).toBe(`p/m:${level}`);
       expect(buildPiArgs(cfg)).toContain(`p/m:${level}`);
@@ -696,24 +719,20 @@ You are an expert researcher. Read references carefully.
   });
 
   it("resolves a known role and rejects an unknown one with the available list (issue 097)", () => {
-    // Omitting `agent` uses the general-purpose document as the default template.
+    // Omitting `agent` injects no role prompt at all (issue 110).
     const defaultCfg = resolveAgentRole(process.cwd(), undefined);
-    expect(defaultCfg.systemPrompt).toContain("do not re-delegate");
-    expect(defaultCfg.tools).toBeUndefined();
-    // Whitespace-only is treated the same as omitted.
-    expect(resolveAgentRole(process.cwd(), "   ").systemPrompt).toContain("do not re-delegate");
-    expect(resolveAgentRole(process.cwd(), "explore").tools).toEqual([
-      "read",
-      "grep",
-      "find",
-      "ls",
-      "bash",
-    ]);
+    expect(defaultCfg).toEqual({});
+    expect(resolveAgentRole(process.cwd(), "   ")).toEqual({});
+    expect(resolveAgentRole(process.cwd(), "reviewer").tools).toEqual(["read", "bash"]);
     expect(() => resolveAgentRole(process.cwd(), "definitely-not-a-role")).toThrow(
       /Unknown agent role "definitely-not-a-role"/,
     );
     expect(() => resolveAgentRole(process.cwd(), "definitely-not-a-role")).toThrow(
-      /Omit 'agent' for the default general-purpose child/,
+      /Omit 'agent' for a plain child/,
+    );
+    // A removed built-in is now an unknown role the model gets told about.
+    expect(() => resolveAgentRole(process.cwd(), "explore")).toThrow(
+      /Unknown agent role "explore".*reviewer/,
     );
   });
 
@@ -1002,19 +1021,21 @@ You are an expert researcher. Read references carefully.
     // or models only ever fill `agent` with a role (issue 096). Nothing may gate
     // custom roles behind the built-in ones, and the model must see the actual
     // role choices with their trigger descriptions (issues 105, 102).
-    expect(String(main.description)).toContain("general-purpose by default");
-    expect(String(main.promptSnippet)).toContain("general-purpose by default");
+    expect(String(main.description)).toContain("Omit 'agent' for a plain child");
+    expect(String(main.promptSnippet)).toContain("plain child by default");
     const guidelines = (main.promptGuidelines as string[]).join("\n");
     expect(guidelines).toContain("Delegate any self-contained job");
-    expect(guidelines).toContain("Omit 'agent' for the general-purpose child");
+    expect(guidelines).toContain("Omit 'agent' for a plain child");
     expect(guidelines).not.toContain("pass 'agent' only when");
     const agentParam = props.agent as JsonObject;
-    expect(String(agentParam.description)).toContain("Omit it for a general-purpose child");
-    // Issue 102: the roster with trigger descriptions is embedded in the tool
-    // description; the default child stays out of it.
-    expect(String(main.description)).toContain("- explore: Fast read-only search agent");
-    expect(String(main.description)).toContain("- plan: Software architect agent");
+    expect(String(agentParam.description)).toContain("Omit it for a plain child");
+    // Issue 102 + 110: the roster with trigger descriptions is embedded in the
+    // tool description; the single built-in role is the reviewer.
+    expect(String(main.description)).toContain("- reviewer: Independent adversarial reviewer");
+    expect(String(main.description)).not.toContain("- explore");
+    expect(String(main.description)).not.toContain("- plan");
     expect(String(main.description)).not.toContain("- general-purpose");
+    expect(String(main.description)).not.toContain("general-purpose");
     // The exact-match threshold and self-deprecating "lowest thinking" wording
     // from 096/100 are gone (issue 102).
     expect(String(main.description)).not.toContain("matches the job exactly");

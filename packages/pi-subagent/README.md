@@ -7,10 +7,8 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 ## Features
 
 - **⚡️ Zero Bloat & Minimal Context**: Three lightweight tool schemas (~200 tokens) replace heavy multi-thousand-token multi-agent frameworks.
-- **🎭 Built-in Golden Roles**: `explore`, `plan`, and `general-purpose` ship as ordinary agent documents in `agents/` — copy one into `.pi/agents/` to customise it. The role design mirrors Claude Code's built-in subagents, ported from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) (MIT).
-  - `explore`: Fast read-only code search and reconnaissance (`read, grep, find, ls, bash`, minimal thinking).
-  - `plan`: Read-only implementation planning; ends every report with a `### Critical Files for Implementation` list.
-  - `general-purpose`: Full toolset for multi-step work — what omitting `agent` already gives you, available as an explicit role name.
+- **🎭 One Built-in Role, `reviewer`**: an independent adversarial reviewer (`read, bash`, maximum thinking) that reports evidence-backed findings and a merge verdict without touching the tree. It ships as an ordinary agent document in `agents/` — copy it into `.pi/agents/` to customise it.
+- **🪞 No Hidden Default Role**: omitting `agent` runs a plain child — your model, your thinking level, pi's own prompt, pi's default tools. Nothing is prepended to your task, so the call does exactly what you wrote.
 - **📋 Role Roster in the Tool Description**: each role document's `description:` frontmatter — a trigger sentence ("Use it to…") — is embedded in the `subagent` tool description, so the dispatching model sees when to use every role, including your custom `.pi/agents/*.md` (issue 102).
 - **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
@@ -21,7 +19,7 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
   - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect progress or output, or stop running tasks.
   - **Fuzzy Model Search**: Model picker with real-time text filter and wrap-around keyboard navigation (Up at top loops to bottom).
   - **Back Navigation**: Pressing `Esc` in any sub-menu smoothly returns to the parent menu level.
-  - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `explore`, `plan`, `general-purpose` or custom).
+  - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `reviewer` or custom).
 
 ## Installation
 
@@ -40,7 +38,7 @@ pi -e packages/pi-subagent/src/index.ts
 Run `/subagent` in the Pi TUI to interactively:
 - **View Active Subagents**: Browse all active/recent subagent tasks in the current session, view output, stop running tasks, or see resume instructions.
 - **Set default subagent model and thinking level**: Use real-time fuzzy search to pick models across all configured providers with wrap-around cursor movement (`Esc` to go back).
-- **Configure specific roles**: Customize `explore`, `plan`, `general-purpose`, or any custom role with dedicated model and thinking overrides.
+- **Configure specific roles**: Customize `reviewer` or any custom role with dedicated model and thinking overrides.
 - **Run `/subagent list` or `/subagent show`**: View effective configurations and discovered agent templates.
 
 ## Settings Files
@@ -78,7 +76,7 @@ Note: the `subagent-exit` completion notice is queued while the parent agent is 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `task` | `string` | **Yes** | The task instruction / prompt. |
-| `agent` | `string` | No | Optional role. **Omit it for a general-purpose child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`). Pass the name of a role from the roster embedded in the tool description: built-ins `explore` (fast, cheap, read-only code search) and `plan` (read-only implementation planning ending with a critical-files list), or any custom `.pi/agents/<name>.md` — the roster includes those too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to the general-purpose child. |
+| `agent` | `string` | No | Optional role. **Omit it for a plain child** that inherits your model, thinking level, and pi's default tools (`read, bash, edit, write`), with no role prompt added. Pass the name of a role from the roster embedded in the tool description: the built-in `reviewer` (independent adversarial review; `read, bash`, maximum thinking), or any custom `.pi/agents/<name>.md` — the roster includes those too. **A name matching no document is rejected** with the list of available roles rather than silently degrading to a role-less child. |
 | `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `cwd` | `string` | No | Optional working directory for the task. |
 | `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
@@ -93,20 +91,20 @@ General-purpose child — omit `agent`:
 { "task": "Dogfood the new onboarding flow and report what breaks" }
 ```
 
-A built-in role, when one matches exactly:
+The built-in reviewer, when the job is an independent adversarial review:
 
 ```json
 {
-  "agent": "plan",
-  "task": "Plan how to add retry handling to packages/pi-subagent/src/index.ts"
+  "agent": "reviewer",
+  "task": "Review the uncommitted diff for correctness and evidence-backed findings"
 }
 ```
 
 Parallel fanout is just several calls in one message:
 
 ```json
-[{ "agent": "explore", "task": "Locate relevant test and config files" },
- { "agent": "plan", "task": "Draft the implementation plan for the located files" }]
+[{ "agent": "reviewer", "task": "Review the diff in packages/pi-subagent/src/index.ts" },
+ { "task": "Locate the tests that cover this path and report the exact commands" }]
 ```
 
 ### `subagent_status`
@@ -128,11 +126,13 @@ Stop a running subagent task by id. Idempotent: stopping an already-finished tas
 
 #### Built-in roles
 
-The child is general-purpose by default: omitting `agent` inherits your model, thinking level, and pi's default toolset. The built-in roles — `explore`, `plan`, `general-purpose` — mirror Claude Code's built-in subagents (design ported from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents), MIT): two are strictly read-only, one is the full-toolset catch-all. They are ordinary agent documents shipped in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy one out to customise it:
+Omitting `agent` runs a plain child: your model, your thinking level, pi's default toolset, pi's own prompt — nothing of this package is prepended. The package ships exactly **one** built-in role, `reviewer`: a read-only adversarial reviewer (`read, bash`, maximum thinking) whose reports end with a merge verdict. There is no catch-all role to pick, because omission already is the catch-all. The document is an ordinary agent file in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy it out to customise it:
 
 ```bash
-mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/explore.md .pi/agents/explore.md
+mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/reviewer.md .pi/agents/reviewer.md
 ```
+
+**Migrating from ≤ 0.15.x**: the previous built-ins `explore`, `plan`, and `general-purpose` are gone (0.16.0). A call that still passes one of those names is rejected with the available roles; write your own `.pi/agents/<name>.md` to get the old behaviour back.
 
 ```markdown
 ---
@@ -153,11 +153,11 @@ tools: read, grep, find
 ---
 ```
 
-The roster is built when the extension registers the tool. Agent documents added mid-session still resolve immediately when passed as `agent`, but they appear in the advertised roster after a `/reload`. Roles without a `description:` fall back to the bare name. The default `general-purpose` child is deliberately absent from the roster — omitting `agent` already selects it.
+The roster is built when the extension registers the tool. Agent documents added mid-session still resolve immediately when passed as `agent`, but they appear in the advertised roster after a `/reload`. Roles without a `description:` fall back to the bare name. Omitting `agent` is not a roster entry: it picks no role at all, which the tool description states in prose.
 
 #### Extension tools and role documents
 
-`--tools` is an **allowlist that replaces the default selection**, so a role that names its own `tools:` receives only those names — extension tools are not added on top. The built-in `explore` and `plan` documents deliberately name only pi's read-only core (`read, grep, find, ls, bash`); they do **not** bake in another extension's tool names. `general-purpose` omits `tools:` entirely, so that child inherits pi's full default set, extension tools included.
+`--tools` is an **allowlist that replaces the default selection**, so a role that names its own `tools:` receives only those names — extension tools are not added on top. The built-in `reviewer` document deliberately names only `read, bash`: `grep`/`find`/`ls` are off by default in pi, so naming them would switch them on for the child, and `bash` already covers search and inspection. It grants no `edit`/`write`, so "reports, does not edit" is a capability boundary, not just a prompt. A role that omits `tools:` inherits pi's full default set, extension tools included.
 
 If you want a read-only child to also carry an extension's tool (for example the context tools from [billion-context-pi](https://github.com/ranxianglei/billion-context-pi)), add them through settings rather than editing a packaged document: an older billion-context-pi's `/acp-subagents <package-dir>` writes a combined tool list to `subagents.agentOverrides.<role>.tools`, which this extension reads as a per-role override. Note that an override **replaces** the document's `tools:`, so it must list the role's full baseline, not just the additions.
 
@@ -192,16 +192,12 @@ The model priority chain is:
 4. Parent session's current fully qualified provider/model (inherited)
 5. The child `pi` process's own default
 
-Thinking follows the same user-controlled chain: role settings, agent document, subagent default, then the parent session. `explore` asks for the lowest available thinking level; `plan` and `general-purpose` set none, so they inherit the parent session.
+Thinking follows the same user-controlled chain: role settings, agent document, subagent default, then the parent session. `reviewer` pins the highest available thinking level; the plain child (no `agent`) inherits the parent session.
 
-**Recommendation for `explore`**: no provider is hardcoded for it, but read-only search rarely needs the parent session's model — binding a cheap, fast model to the role (`/subagent` → Configure an Agent Role → `explore`, or `agents.explore.model` in settings) keeps delegated searches fast and inexpensive. The model picker shows this hint when you configure `explore`.
+**Recommendation for `reviewer`**: the document fixes thinking at the top level, but no provider is hardcoded — a strong model makes an independent review worth more than the tokens it costs (`/subagent` → Configure an Agent Role → `reviewer`, or `agents.reviewer.model` in settings). The model picker shows this hint when you configure `reviewer`.
 
 Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
 
 ## License
 
 MIT
-
-### Attribution
-
-The built-in agent prompts in `agents/` (`explore`, `plan`, `general-purpose`) are adapted from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents), which is MIT licensed — Copyright (c) 2026 tintinweb. That project in turn mirrors the role design of Claude Code's built-in subagents.
