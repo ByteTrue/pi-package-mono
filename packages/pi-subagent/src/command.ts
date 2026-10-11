@@ -213,7 +213,7 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
     if (pickedRole === customOption) {
       const input = await ctx.ui.input(
         "Role Name",
-        "Example: explore, plan, general-purpose",
+        "Example: reviewer",
       );
       if (input === undefined || !input.trim()) continue;
       roleName = input.trim().toLowerCase();
@@ -226,12 +226,12 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
     const existingRole = currentSettings.agents?.[roleName] ?? {};
 
     // Issue 102 (decision D2): no provider is hardcoded, so the menu nudges
-    // toward a cheap, fast model for this read-only searcher instead.
+    // toward a strong model for the adversarial reviewer instead.
     const model = await pickModel(
       ctx,
       existingRole.model,
-      roleName === "explore"
-        ? "explore is a fast read-only searcher — a cheap, fast model fits it best"
+      roleName === "reviewer"
+        ? "reviewer runs an independent adversarial review — a strong model fits it best"
         : undefined,
     );
     if (model === undefined) continue;
@@ -389,7 +389,7 @@ export async function runSubagentCommand(
           ? `👀 View Active Subagents (${runningCount} running)`
           : "👀 View Subagent Tasks";
       const actionDefault = "⚙️ Configure Default Subagent Model & Thinking";
-      const actionRole = "🎭 Configure an Agent Role (e.g. explore, plan)";
+      const actionRole = "🎭 Configure an Agent Role (e.g. reviewer)";
       const actionShow = "📋 Show Current Configuration";
 
       const choices = [

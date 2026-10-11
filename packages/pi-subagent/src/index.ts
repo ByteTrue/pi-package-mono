@@ -775,17 +775,14 @@ export function findAgentDefinition(
 
 /**
  * Load the agent document for a role, rejecting unknown names. A wrong role
- * name must not silently degrade to the general-purpose child: the caller asked
- * for specific tools/thinking and would get a different agent without knowing.
- * The error lists the available roles so the caller can correct itself.
+ * name must not silently degrade to a role-less child: the caller asked for
+ * specific tools/thinking and would get a different agent without knowing. The
+ * error lists the available roles so the caller can correct itself.
  *
- * Omitting `agent` does NOT mean "no prompt": the child is the default
- * general-purpose agent, and its document supplies the baseline system prompt.
- * A caller who wants a bare pi child can still omit the field — the template is
- * the contract, not an extra hop.
+ * Omitting `agent` means no role at all: the child is a plain pi process that
+ * inherits the parent model/thinking and pi's default toolset, with no system
+ * prompt of ours prepended. There is no hidden default role to keep in sync.
  */
-export const DEFAULT_AGENT_NAME = "general-purpose";
-
 export function resolveAgentRole(
   cwd: string,
   agentName?: string,
@@ -793,10 +790,7 @@ export function resolveAgentRole(
   projectTrusted: boolean = true,
 ): AgentConfig {
   const name = typeof agentName === "string" ? agentName.trim() : "";
-  // No role named: use the general-purpose document as the default template.
-  // It inherits the parent model/thinking and names no tools, so this is exactly
-  // the behaviour the omitted-agent path had, plus the baseline prompt.
-  if (!name) return findAgentDefinition(cwd, DEFAULT_AGENT_NAME).config;
+  if (!name) return {};
   const { config, found } = findAgentDefinition(cwd, name);
   if (found) return config;
   // A role explicitly configured in settings is still real even without a
@@ -807,12 +801,10 @@ export function resolveAgentRole(
     Object.prototype.hasOwnProperty.call(settings.agents, name)
   )
     return {};
-  const known = listDiscoveredAgentNames(cwd).filter(
-    (r) => r !== DEFAULT_AGENT_NAME,
-  );
+  const known = listDiscoveredAgentNames(cwd);
   throw new Error(
     `Unknown agent role "${name}". Available roles: ${known.join(", ") || "(none)"}. ` +
-      `Omit 'agent' for the default general-purpose child, or use one of the roles above.`,
+      `Omit 'agent' for a plain child, or use one of the roles above.`,
   );
 }
 
@@ -821,12 +813,12 @@ export function resolveAgentRole(
  * tintinweb's typeList: one line per role, the name plus the role document's
  * `description:` frontmatter — a trigger sentence written for the dispatching
  * model ("Use it to…"), not a property label. Documents without a description
- * and settings-only roles fall back to the bare name. The default
- * general-purpose child is omitted: omitting `agent` already selects it.
+ * and settings-only roles fall back to the bare name. Omitting `agent` picks
+ * no role at all; the tool description states that separately, so there is no
+ * hidden default entry to keep in sync here.
  */
 export function buildAgentRosterText(cwd: string): string {
   return listDiscoveredAgentNames(cwd)
-    .filter((name) => name !== DEFAULT_AGENT_NAME)
     .map((name) => {
       const description = findAgentDefinition(cwd, name).config.description?.trim();
       return description ? `- ${name}: ${description}` : `- ${name}`;
@@ -1484,7 +1476,7 @@ export function runPi(
   });
 }
 
-function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
+export function buildSubagentPrompt(task: string, agentDef: AgentConfig): string {
   if (agentDef.systemPrompt) {
     return `${agentDef.systemPrompt}\n\n---\n## Assigned Task\n${task}`;
   }
@@ -1998,13 +1990,13 @@ export default function subagentExtension(pi: {
   pi.registerTool?.({
     name: "subagent",
     label: "Subagent",
-    description: `Delegate ONE self-contained task to an isolated child agent session. The child is general-purpose by default: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), so any self-contained job you would otherwise do inline fits. Pass 'agent' to pick the role whose trigger description below matches the job; roles from .pi/agents/ (project or user) are picked up automatically:\n\n${roster}\n\nThe call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.`,
+    description: `Delegate ONE self-contained task to an isolated child agent session. Omit 'agent' for a plain child: it inherits your model, thinking level, and pi's default tools (read, bash, edit, write), and no role prompt is added — any self-contained job you would otherwise do inline fits. Pass 'agent' when a role's trigger description below matches the job; roles from .pi/agents/ (project or user) are picked up automatically:\n\n${roster}\n\nThe call returns at once with a task id; the full result arrives later as a new message that starts your next turn — until then, continue with other work or end your turn. To run several tasks at once, make multiple subagent calls in the same message; use subagent_status to check one and subagent_stop to stop one. Supports session resumption.`,
     promptSnippet:
-      "Delegate a self-contained job to a child agent — general-purpose by default, or a roster role from the tool description when its trigger matches; the call returns at once and the result arrives later as a new message.",
+      "Delegate a self-contained job to a child agent — a plain child by default, or a roster role from the tool description when its trigger matches; the call returns at once and the result arrives later as a new message.",
     // Positive-first wording (decision 001): state the wait model instead of only forbidding polling.
     promptGuidelines: [
       "Delegate any self-contained job to subagent so you stay free to keep working or hand control back to the user",
-      "Omit 'agent' for the general-purpose child (inherits your model, thinking level, and default tools); pass 'agent' when a roster role's trigger description matches the job — e.g. 'explore' for fast read-only code search, 'plan' for read-only implementation planning",
+      "Omit 'agent' for a plain child (inherits your model, thinking level, and default tools); pass 'agent' when a roster role's trigger description matches the job — e.g. 'reviewer' for an independent adversarial review",
       "After a subagent starts, continue with other work or end your turn; its complete output arrives as a new message that starts your next turn",
     ],
     parameters: {
@@ -2017,7 +2009,7 @@ export default function subagentExtension(pi: {
         agent: {
           type: "string",
           description:
-            "Optional agent role. Omit it for a general-purpose child that inherits your model, thinking level, and default tools. Pass the name of a role from the roster in the tool description — built-ins 'explore' (fast, cheap, read-only code search) and 'plan' (read-only implementation planning ending with a critical-files list), or any custom .pi/agents/<name>.md. A name that matches no document is rejected with the list of available roles.",
+            "Optional agent role. Omit it for a plain child that inherits your model, thinking level, and default tools. Pass the name of a role from the roster in the tool description — the built-in 'reviewer' (independent adversarial review of code, diffs, plans, or current state), or any custom .pi/agents/<name>.md. A name that matches no document is rejected with the list of available roles.",
         },
         tools: {
           type: "array",

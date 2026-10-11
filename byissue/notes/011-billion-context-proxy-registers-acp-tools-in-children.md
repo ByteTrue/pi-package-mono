@@ -51,7 +51,7 @@ function detectProxyBase(baseUrl) {
 { "subagent": { "env": { "BILLION_CONTEXT_PLUGIN": "0" } } }
 ```
 
-实测工具表：默认 **17 个（ACP 5 个）** → 带开关 **12 个（ACP 0 个）**。只影响 `general-purpose`（不写 `tools:`、继承全量）；`explore` / `plan` 的 `tools:` 白名单本来就挡住了。
+实测工具表：默认 **17 个（ACP 5 个）** → 带开关 **12 个（ACP 0 个）**。只影响**不写 `tools:` 的角色**（继承全量工具表）；任何声明了 `tools:` 的角色都靠白名单本来就挡住了。（当时的内置 `general-purpose` 属前者、`explore` / `plan` 属后者；三者均已在 issue 112 删除，现在只有 `reviewer` 声明白名单、省略 `agent` 走全量继承。）
 
 ## 附带事实：`pi --tools` 是替换型 allowlist
 
