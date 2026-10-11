@@ -5,10 +5,11 @@ commands and code conventions; this file covers the review and CI process.
 
 ## Review process
 
-- **Every change lands via PR.** No direct pushes to `main` — including docs.
-- **Humans review; agents wait.** The member reviews and merges. Agents never
-  approve or merge their own work.
-- **Agent-produced changes always go through a PR and wait for review:**
+- **PRs remain the default path.** A PR gives CI + review + traceability, and
+  it stays the right shape for anything risky or half-finished. But direct
+  pushes to `main` are allowed — see "Direct pushes" below.
+- **Humans review; agents wait.** Agents never approve or merge their own PRs.
+- **Agent-produced changes go through a PR and wait for review:**
   1. Open the PR. No title format and no tracking-issue link are required — a
      summary that names the change is enough.
   2. Stop there. Merging is the member's decision; an agent may run the merge
@@ -39,8 +40,8 @@ test first, then npm publish via OIDC Trusted Publishing.
 
 ## Low-risk changes
 
-Docs-only edits, comments, and formatting still go through a PR (everything on
-`main` stays traceable), but mark them `low-risk` in the PR body — review can be
+Docs-only edits, comments, and formatting can go through a PR like anything
+else, but mark them `low-risk` in the PR body — review can be
 a quick skim. The CI gate is identical; "low-risk" never skips CI.
 
 ## Parallel agent work
@@ -69,19 +70,20 @@ Additional rules for parallel runs:
   checkout — not recommended — see
   `byissue/notes/013-parallel-agent-sessions-sharing-one-worktree.md`.
 
-## Emergencies
+## Direct pushes
 
-- The member may push or merge directly to `main` when a release or security
-  issue blocks on process — the member holds final authority over `main`.
-- Agents have no emergency lane. If something is urgent, ping the member; do
-  not bypass review.
+Direct pushes to `main` are allowed. There is no branch protection and no
+emergency-lane ceremony.
 
-Direct-push checklist — all three steps, every use (worked record:
-`byissue/decisions/005-direct-push-retroactive-record.md`):
+- **Who may push directly:** the member, and an agent when the member
+  explicitly authorizes that specific push in the conversation.
+- **CI still runs on every push to `main`** — a red run after a direct push
+  means fix forward immediately.
+- **Keep the history explainable:** Conventional Commits with a package scope
+  remain the expectation on `main`, PR or not.
+- Decision `byissue/decisions/006-direct-push-policy.md` supersedes the former
+  emergency-lane rules recorded in
+  `byissue/decisions/005-direct-push-retroactive-record.md`.
 
-1. **When it may be used** — the member explicitly authorizes it, and a PR
-   cannot land in time (release or security blocked on process).
-2. **Register it** — leave the standard record as a `byissue/decisions/`
-   entry: authorizer + time + scope + the full list of pushed SHAs.
-3. **Afterwards** — open the PR record within 24 hours so the history stays
-   explainable.
+The former three-step emergency checklist (authorize → register → follow-up
+PR record) is retired by decision 006; decision 005 stays as history.
