@@ -9,29 +9,17 @@ commands and code conventions; this file covers the review and CI process.
 - **Humans review; agents wait.** The member reviews and merges. Agents never
   approve or merge their own work.
 - **Agent-produced changes always go through a PR and wait for review:**
-  1. Open the PR with title `BYTE-N: <summary>` — the issue key auto-links it
-     to the tracking issue in our workspace.
-  2. Set the issue to `in_review` and stop there. Merging is the member's
-     decision; an agent may run the merge only after the member explicitly
-     authorizes it on the issue (the authorization stays as a comment).
+  1. Open the PR. No title format and no tracking-issue link are required — a
+     summary that names the change is enough.
+  2. Stop there. Merging is the member's decision; an agent may run the merge
+     only after the member explicitly authorizes it.
 - **Self-check before requesting review.** An agent does not hand a red CI to
   review: mirror CI locally first (`npm ci` → workspaces typecheck → `npm test`,
   plus build + pack-smoke when `pi-image-gen` changed, plus
   `node scripts/check-readme-packages.mjs` when the root README or the package
   set changed), write a PR description
   that states what, why, and how it was verified, then push again if CI fails.
-- **One PR per issue, kept small and single-purpose.** Unrelated fixes get
-  their own issue and PR.
-
-## Tracking work (workspace issues)
-
-- **Work starts from an issue, and the issue is self-contained.** The issue
-  description carries the context its executor needs; an executing agent does
-  not re-read the chat history to reconstruct intent.
-- **Deliverables land on the issue.** Conclusions, code, and PR links are
-  written back as issue comments. Chat is for coordination and decisions only —
-  an answer that lives only in chat leaves no record for the next run.
-- One issue, one PR (see the review process above).
+- **Keep each PR small and single-purpose.** Unrelated fixes get their own PR.
 
 ## What CI checks
 
@@ -44,7 +32,6 @@ commands and code conventions; this file covers the review and CI process.
 | `pi-vendor` pack dry-run | the publishable file list stays sane |
 | `pi-image-gen` pack smoke | real tarball: pack → allowlist → extract → production install → load extension entry |
 | README ↔ packages check | root README's package table and install list match `packages/*` — no missing package, no stale reference |
-| PR title | must match `BYTE-N: ...` or `Release ...` (enforced via a CI job) |
 
 Superseded runs on the same branch are cancelled automatically (concurrency
 group). `.github/workflows/release.yml` publishes on version tags: typecheck +
@@ -78,16 +65,16 @@ Additional rules for parallel runs:
 - **Superseded CI runs are cancelled automatically.** CI runs with
   `cancel-in-progress`, so a new push to the same PR/branch cancels the
   previous run — only the latest run counts.
-- One issue, one PR (see the review process above). For the git-level pitfalls
-  of two sessions actually sharing a single checkout — not recommended — see
+- For the git-level pitfalls of two sessions actually sharing a single
+  checkout — not recommended — see
   `byissue/notes/013-parallel-agent-sessions-sharing-one-worktree.md`.
 
 ## Emergencies
 
 - The member may push or merge directly to `main` when a release or security
   issue blocks on process — the member holds final authority over `main`.
-- Agents have no emergency lane. If something is urgent, set the issue to
-  `blocked` and ping the member; do not bypass review.
+- Agents have no emergency lane. If something is urgent, ping the member; do
+  not bypass review.
 
 Direct-push checklist — all three steps, every use (worked record:
 `byissue/decisions/005-direct-push-retroactive-record.md`):
@@ -96,5 +83,5 @@ Direct-push checklist — all three steps, every use (worked record:
    cannot land in time (release or security blocked on process).
 2. **Register it** — leave the standard record as a `byissue/decisions/`
    entry: authorizer + time + scope + the full list of pushed SHAs.
-3. **Afterwards** — open the PR or issue record within 24 hours so the
-   history stays explainable.
+3. **Afterwards** — open the PR record within 24 hours so the history stays
+   explainable.
