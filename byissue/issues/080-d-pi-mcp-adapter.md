@@ -2,11 +2,20 @@
 kind: issue
 title: "pi-mcp：自研最小 MCP 适配器"
 type: feature
-status: open
+status: closed
 created: 2026-09-15
+closed: 2026-10-11
 ---
 
 # pi-mcp：自研最小 MCP 适配器
+
+> **放弃关闭（`-d-`，2026-10-11）。** 不做，也不毕业回写；下面是放弃前留下的设计与执行历史，仅作存档。
+
+## 放弃原因
+
+Pi 官方即将原生支持 MCP，自研适配器的存在理由消失。代码已于 2026-09-27 由 `3536deb chore: remove pi-mcp extension and its release pipeline` 整体删除（`packages/pi-mcp`、`release.yml` 的 `pi-mcp-v*` tag 与 case 分支、`.pi/settings.json` 里的本地挂载与全局 `pi-mcp-adapter`/`pi-magic-context` 屏蔽块一并清理），本 issue 当时漏关，此次补齐。
+
+已发布到 npm 的 `@bytetrue/pi-mcp`（最高 0.5.1）不再维护。`spec/` 与 `vision/` 中从未写入 pi-mcp 条目，因此无 spec 漂移需要处理。若将来重新需要自研 MCP，按关闭契约**新建新 issue**，不复用本编号。
 
 ## 做成以后是什么样
 
