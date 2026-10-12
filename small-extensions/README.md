@@ -28,8 +28,10 @@ pi --no-extensions -e small-extensions/pi-context-guard/pi-context-guard.ts
 ```
 
 `--no-extensions` drops every discovered extension (project, global, and built-in)
-while explicit `-e` paths still load. Disabling the installed copy instead
-(`pi config`) is global — it writes `extensions: ["-extensions/<file>.ts"]` to
+while explicit `-e` paths still load. A built-in extension the tested one needs can
+be re-added the same way — `pi-codemode-only`, for example, needs
+`-e builtin:codemode`. Disabling the installed copy instead (`pi config`) is
+global: it writes `extensions: ["-extensions/<file>.ts"]` to
 `~/.pi/agent/settings.json` and applies to every project, not just this one.
 
 ## What is here
