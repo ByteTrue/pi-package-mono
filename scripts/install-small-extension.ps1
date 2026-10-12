@@ -13,6 +13,8 @@ $ExtensionsDir = Join-Path $HOME ".pi/agent/extensions"
 $ExtensionFiles = @(
   "small-extensions/pi-bash-timeout/pi-bash-timeout.ts"
   "small-extensions/pi-ask-user/pi-ask-user.ts"
+  "small-extensions/pi-context-guard/pi-context-guard.ts"
+  "small-extensions/pi-codemode-only/pi-codemode-only.ts"
 )
 
 if ($args.Count -ne 0) {

@@ -14,6 +14,8 @@ EXTENSIONS_DIR="${HOME}/.pi/agent/extensions"
 EXTENSION_FILES=(
   "small-extensions/pi-bash-timeout/pi-bash-timeout.ts"
   "small-extensions/pi-ask-user/pi-ask-user.ts"
+  "small-extensions/pi-context-guard/pi-context-guard.ts"
+  "small-extensions/pi-codemode-only/pi-codemode-only.ts"
 )
 
 if [ "$#" -ne 0 ]; then
