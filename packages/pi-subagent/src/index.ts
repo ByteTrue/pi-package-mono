@@ -366,6 +366,26 @@ function runHeader(d: ProgressDetails, r: RunState): string {
  * Where pi persisted the child's session: `<agentDir>/sessions/<encoded cwd>/<ts>_<sessionId>.jsonl`.
  * Mirrors pi's getDefaultSessionDirPath (not exported). The full model behaviour history lives there.
  */
+// Session-dir listing cache, keyed by directory. toMessageDetails() runs on every
+// subagent_status poll and once per exit record; without the cache each call is a
+// synchronous readdir over a directory that grows with every session pi ever wrote.
+// pi only appends new files there, so the directory mtime is a sound freshness check.
+const sessionDirListings = new Map<string, { mtimeMs: number; files: string[] }>();
+
+function listSessionDir(dir: string): string[] | undefined {
+  try {
+    const mtimeMs = statSync(dir).mtimeMs;
+    const cached = sessionDirListings.get(dir);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.files;
+    const files = readdirSync(dir);
+    sessionDirListings.set(dir, { mtimeMs, files });
+    return files;
+  } catch {
+    sessionDirListings.delete(dir);
+    return undefined;
+  }
+}
+
 export function sessionLogPath(
   run: Pick<RunState, "cwd" | "sessionId">,
 ): string | undefined {
@@ -376,14 +396,18 @@ export function sessionLogPath(
     .replace(/^[/\\]/, "")
     .replace(/[/\\:]/g, "-")}--`;
   const dir = join(agentDir, "sessions", safe);
-  try {
-    const file = readdirSync(dir).find((n) =>
-      n.endsWith(`_${run.sessionId}.jsonl`),
-    );
-    return file ? join(dir, file) : undefined;
-  } catch {
-    return undefined;
+  const files = listSessionDir(dir);
+  if (!files) return undefined;
+  const suffix = `_${run.sessionId}.jsonl`;
+  // Sessions are named `<timestamp>_<sessionId>.jsonl`; when several files share a
+  // session id (should not happen — pi ids are unique — but the id may come from the
+  // caller on resume), the newest timestamp wins rather than readdir order.
+  let best: string | undefined;
+  for (const file of files) {
+    if (!file.endsWith(suffix)) continue;
+    if (best === undefined || file > best) best = file;
   }
+  return best ? join(dir, best) : undefined;
 }
 
 function renderRunBlock(
@@ -1510,6 +1534,11 @@ export function normalizeTask(input: SubagentInput): SubagentTaskItem {
   if (resume) assertSessionIdShape(resume, "resume");
   const id = input.id !== undefined ? (str(input.id) ?? "") : "";
   if (id) assertSessionIdShape(id, "id");
+  // Both name the child session; with different values the resolved session would
+  // depend on an invisible precedence rule, so make the caller pick one.
+  if (resume && id) {
+    throw new Error("Pass either 'resume' or 'id', not both.");
+  }
   return {
     task,
     agent: input.agent,

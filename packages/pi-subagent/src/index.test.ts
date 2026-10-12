@@ -1760,3 +1760,33 @@ describe("resolvePiCli resolution paths", () => {
     expect(() => resolvePiCli()).toThrow(/PI_CLI_JS missing/);
   });
 });
+
+it("sessionLogPath picks the newest file when several share a session id (issue 115 follow-up)", () => {
+  const agentDir = join(tmpdir(), `pi-subagent-agent-dup-${Date.now()}`);
+  const cwd = join(tmpdir(), `pi-subagent-cwd-dup-${Date.now()}`);
+  const safe = `--${resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  const dir = join(agentDir, "sessions", safe);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "2026-01-01T00-00-00-000Z_sub_dup.jsonl"), "");
+  writeFileSync(join(dir, "2026-01-02T00-00-00-000Z_sub_dup.jsonl"), "");
+  const prev = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    expect(sessionLogPath({ cwd, sessionId: "sub_dup" })).toBe(
+      join(dir, "2026-01-02T00-00-00-000Z_sub_dup.jsonl"),
+    );
+  } finally {
+    if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prev;
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
+
+it("normalizeTask rejects resume + id together (issue 115 follow-up)", () => {
+  expect(() => normalizeTask({ task: "x", resume: "resume_1", id: "sub_2" })).toThrow(
+    /either 'resume' or 'id', not both/,
+  );
+  // Each alone stays fine.
+  expect(normalizeTask({ task: "x", resume: "resume_1" }).resume).toBe("resume_1");
+  expect(normalizeTask({ task: "x", id: "sub_2" }).id).toBe("sub_2");
+});
