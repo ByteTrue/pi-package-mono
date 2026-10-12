@@ -1,5 +1,5 @@
 import { fauxAssistantMessage, type ImageContent } from "@earendil-works/pi-ai";
-import type { BeforeAgentStartEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_ANALYZE_TIMEOUT_MS,
@@ -9,6 +9,7 @@ import {
 } from "./auto-analyze.js";
 import type { CompleteFn } from "./image-ask.js";
 import {
+  beforeAgentStartEvent,
   legacyProjectSettingsFile,
   makeCtx,
   makeModel,
@@ -29,15 +30,7 @@ afterEach(() => {
 function image(bytes: Buffer, mimeType: string): ImageContent {
   return { type: "image", data: bytes.toString("base64"), mimeType };
 }
-function event(images: ImageContent[], prompt = "Compare the screenshots and fix the regression."): BeforeAgentStartEvent {
-  return {
-    type: "before_agent_start",
-    prompt,
-    images,
-    systemPrompt: "system",
-    systemPromptOptions: { cwd: "/tmp" },
-  };
-}
+const event = beforeAgentStartEvent;
 
 function scenario(autoAnalyzeAttachments: boolean, mainVision = false) {
   const { cwd } = makeSettingsSandbox({

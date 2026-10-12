@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.5"
+    "@earendil-works/pi-coding-agent": ">=1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

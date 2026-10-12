@@ -1,8 +1,10 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import type {
+  BeforeAgentStartEvent,
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  NormalizedBuildSystemPromptOptions,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -10,6 +12,38 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const PKG = ["pi-pkg-cfg", "pi-vision", "settings.json"] as const;
+
+/** Collection-complete systemPromptOptions for BeforeAgentStartEvent fixtures. Pi 1.1.0
+ * normalizes these before extensions see them; the normalizer is not exported from the
+ * package root, so tests spell out the defaults (nothing under test consumes the fields). */
+export function fixtureSystemPromptOptions(cwd = "/tmp"): NormalizedBuildSystemPromptOptions {
+  return {
+    cwd,
+    selectedTools: [],
+    hiddenTools: [],
+    toolSnippets: {},
+    toolGuidelines: {},
+    promptGuidelines: [],
+    appendSystemPrompt: "",
+    sections: {},
+    contextFiles: [],
+    skills: [],
+  };
+}
+
+/** A BeforeAgentStartEvent fixture carrying the given images. */
+export function beforeAgentStartEvent(
+  images: ImageContent[],
+  prompt = "Compare the screenshots and fix the regression.",
+): BeforeAgentStartEvent {
+  return {
+    type: "before_agent_start",
+    prompt,
+    images,
+    systemPrompt: "system",
+    systemPromptOptions: fixtureSystemPromptOptions(),
+  };
+}
 
 /** The package's own global config file: <agent dir>/pi-pkg-cfg/pi-vision/settings.json. */
 export function globalSettingsFile(agentDir: string): string {

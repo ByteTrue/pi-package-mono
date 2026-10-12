@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runAutoAnalyze } from "./auto-analyze.js";
 import { runImageAsk, type CompleteFn } from "./image-ask.js";
-import { makeCtx, makeModel, makeSettingsSandbox } from "./test-helpers.js";
+import { fixtureSystemPromptOptions, makeCtx, makeModel, makeSettingsSandbox } from "./test-helpers.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -28,7 +28,7 @@ function autoEvent(images: ReturnType<typeof imageContent>[]): BeforeAgentStartE
     prompt: "look",
     images,
     systemPrompt: "system",
-    systemPromptOptions: { cwd: "/tmp" },
+    systemPromptOptions: fixtureSystemPromptOptions(),
   };
 }
 
