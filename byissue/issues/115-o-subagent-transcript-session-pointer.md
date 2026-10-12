@@ -11,14 +11,14 @@ created: 2026-10-12
 
 BySpace 的 pi 子代理面板在 daemon 重启后永远空白转圈：descriptor 从父 transcript 回放（还停在 running），timeline 却只有 daemon 内存这一份，重启即丢；想从子会话 jsonl 重建，又不知道子任务对应哪个文件。
 
-根因是**父 transcript 不自描述**：extension 在 exit 消息和 tool result details 里都没有写子会话指针（`sessionId` / `sessionFile` / `cwd`），这些事实只活在 `progress.runs[0]` 里，而 `progress` 被 `toMessageDetails()` 有意剥掉（structuredClone 兼容，ff 073）。
+根因是**父 transcript 不自描述**：extension 在 exit 消息和 tool result details 里都没有写子会话指针（`sessionId` / `sessionFile` / `cwd`），这些事实只活在 `progress.runs[0]` 里，而 `progress` 被 `toMessageDetails()` 有意剥掉（structuredClone 兼容，见 pi-subagent spec 核心机制 3 的不变式）。
 
 本 issue 让 transcript 把指针落盘：
 
 1. **launch record**：`subagent` tool result details 从 `{ id, status }` 扩为 `{ id, status, sessionId, cwd }`；
 2. **exit/status/stop details**：`toMessageDetails()` 保留 `sessionId` / `cwd` / `sessionFile` 三个纯数据字段。
 
-全部字段是 clone-safe 字符串，不触碰 ff 073 的不变式。BySpace 侧的回放重建（server）是独立工作，在 byspace 仓库另立 issue；本 issue 只保证「指针在 transcript 里存在」。
+全部字段是 clone-safe 字符串，不触碰 pi-subagent spec 核心机制 3 的不变式（details 必须是纯数据，`toMessageDetails()` 剥活对象）。BySpace 侧的回放重建（server）是独立工作，在 byspace 仓库另立 issue；本 issue 只保证「指针在 transcript 里存在」。
 
 **不做单独的 `subagent-started` 兜底消息**（设计阶段曾计划，实现时砍掉）：subagent 是纯后台工具（088），`execute` 立即返回、tool result 几乎即时落盘——崩溃时 launch result 几乎总在 transcript 里，指针随它落盘已覆盖全部现实场景；唯一漏窗是「tool call 与 result 落盘之间被杀」的毫秒级窗口，而那时 BySpace 回放连 descriptor 都配不成（`replayPiSubagentObservations` 要求 toolCall 与 toolResult 配对），没有行就没有空白面板，不需要指针。且 pi core 的 `convertToLlm` 对 custom 消息不看 `display`，一律转 user 进 LLM 上下文——单独的 started 消息等于每次启动给模型塞一行噪音。两害相权，launch details 足够。
 
@@ -52,7 +52,7 @@ BySpace `agent-subagents.ts` 的 `parsePiSubagentRecordDetails` 已按「wrong-t
 
 - 不改 BySpace server/app（另立 issue）。
 - 不做 timeline 持久化或回放重建（同上）。
-- 不动 `progress` 的剥除规则（ff 073 不变式）。
+- 不动 `progress` 的剥除规则（spec 核心机制 3 不变式）。
 - 不为旧 transcript 补指针（用户确认放弃）。
 
 ## 验证
@@ -71,7 +71,7 @@ BySpace `agent-subagents.ts` 的 `parsePiSubagentRecordDetails` 已按「wrong-t
 
 验证：
 
-- `npm --workspace @bytetrue/pi-subagent test`：86/86 过（原 84 + 新 4：toMessageDetails 提升两例、launch details e2e 两例）。
+- `npm --workspace @bytetrue/pi-subagent test`：全包 86/86 过（提交前 97 例 → 101 例，新增 4：toMessageDetails 提升两例、launch details e2e 两例；其他测试文件的既有 13 例不变）。
 - `npm --workspace @bytetrue/pi-subagent run typecheck`：过。
 - e2e 探针用 fake pi CLI（`PI_CLI_JS`）验证：launch details 的 `sessionId` 与子进程实际 `--session-id` argv 一致；resume 调用时 `sessionId` 等于 resume 值；`structuredClone(details)` 不炸。
 
@@ -79,5 +79,21 @@ BySpace `agent-subagents.ts` 的 `parsePiSubagentRecordDetails` 已按「wrong-t
 
 ## 关闭候选
 
-- pi-subagent spec「核心机制 4」补一句：transcript 自描述——launch tool result、exit details、`subagent-started` custom 消息都携带 `sessionId`/`cwd`/`sessionFile`，供 BySpace 从磁盘重建子代理时间线。
+- pi-subagent spec「核心机制 4」补一句：transcript 自描述——launch tool result 与 exit/status/stop details 都携带 `sessionId`/`cwd`/`sessionFile`，供 BySpace 从磁盘重建子代理时间线。
 - ff 073 的不变式描述不受影响（剥的是活对象，保留的是字符串）。
+
+## 对抗性审查（2026-10-12，子代理审查）
+
+**Verdict：可合入。** 代码正确性实证通过（id 注入四组合穷举、structuredClone 安全、兼容性、测试有效性含两轮变异测试），无指针分歧组合。发现并修复的文档层问题：
+
+- 本文件「关闭候选」原承诺了已砍掉的 `subagent-started` 消息（与执行记录矛盾），已改写为 launch tool result + exit/status/stop details。
+- 「ff 073」引用悬空（该编号不存在，真实不变式在 spec 核心机制 3），已改指 spec。
+- 验证数字口径错误（"原 84 + 新 4" 实为逐文件 97→101、全包 86），已修正。
+- BySpace 侧注释版本门与未 bump 的 0.17.0 错位：本包发版时确认 0.17.0 是否已发布，未发布则指针特性随 0.17.0 落地（BySpace 注释的 "0.18" 改为跟随实际版本）。
+
+遗留（不阻塞，后续 issue 候选）：
+
+- `toMessageDetails()` 每次调用同步 `readdirSync`（exit 批量 N 次放大）；可缓存解析结果或加解析开关。
+- `sessionLogPath` 的 `find` 无时间戳排序，理论上同 id 多文件可能选错（提交前已有，非本次引入）。
+- `resume`+`id` 同传时 `id` 被静默丢弃（提交前已有语义）；可在 schema 层 reject 或文档注明优先级。
+- 本提交 commit 主题行过长（shell 转义丢换行所致），格式不合仓库惯例。
