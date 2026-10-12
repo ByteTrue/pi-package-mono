@@ -984,6 +984,79 @@ You are an expert researcher. Read references carefully.
     expect(() => structuredClone([task])).toThrow(); // the bug we just fixed
   });
 
+  it("hoists the child session pointer to top-level details without exposing progress (issue 115)", () => {
+    const task: SubagentTaskRecord = {
+      id: "sub_2",
+      parentSessionId: "session_123",
+      description: "audit task",
+      status: "succeeded",
+      output: "done",
+      startedAt: 1,
+      finishedAt: 2,
+      controller: new AbortController(),
+      notifyOnExit: true,
+      done: new Promise(() => {}),
+      progress: {
+        kind: "pi-subagent-progress",
+        agent: "subagent",
+        startedAt: 1,
+        updatedAt: 2,
+        final: true,
+        runs: [
+          {
+            id: "sub_child",
+            agent: "subagent",
+            prompt: "audit",
+            sessionId: "sub_child",
+            cwd: "/tmp/work",
+            status: "succeeded",
+            finalText: "done",
+            textTail: "",
+            thinkingTail: "",
+            stderrTail: "",
+            tools: [],
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              cost: 0,
+              ctxTokens: 0,
+              turns: 0,
+            },
+          },
+        ],
+      },
+    };
+
+    const details = toMessageDetails(task);
+    expect(details.sessionId).toBe("sub_child");
+    expect(details.cwd).toBe("/tmp/work");
+    // No PI_CODING_AGENT_DIR sessions dir exists for /tmp/work here: the key is
+    // omitted, never a wrong or thrown value.
+    expect(details).not.toHaveProperty("sessionFile");
+    expect(details).not.toHaveProperty("progress");
+    expect(() => structuredClone(details)).not.toThrow();
+  });
+
+  it("omits the pointer keys entirely when the task has no progress run", () => {
+    const task: SubagentTaskRecord = {
+      id: "sub_3",
+      parentSessionId: "session_123",
+      description: "audit task",
+      status: "failed",
+      output: "boom",
+      startedAt: 1,
+      finishedAt: 2,
+      controller: new AbortController(),
+      notifyOnExit: true,
+    };
+    const details = toMessageDetails(task);
+    expect(details).not.toHaveProperty("sessionId");
+    expect(details).not.toHaveProperty("cwd");
+    expect(details).not.toHaveProperty("sessionFile");
+  });
+
   it("exposes a flat single-task schema with no model/thinking controls (issue 095)", () => {
     const registered = new Map<string, JsonObject>();
     const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
@@ -1368,6 +1441,116 @@ function newRunState(id: string): RunState {
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, ctxTokens: 0, turns: 0 },
   };
 }
+
+describe("subagent launch details session pointer (issue 115, fake pi cli)", () => {
+  it("carries sessionId + cwd in the launch result and the child spawns with that same --session-id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagent-launch-ptr-"));
+    const fake = join(dir, "fake-pi.cjs");
+    const argsLog = join(dir, "args.log");
+    // Minimal pi: exit immediately with one assistant message so the tool result
+    // resolves; argv goes to a file so the test can read --session-id.
+    writeFileSync(
+      fake,
+      [
+        'require("node:fs").appendFileSync(process.env.FAKE_ARGS_LOG, JSON.stringify(process.argv) + "\\n");',
+        'process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");',
+        'process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }], usage: { input: 1, output: 1, cost: { total: 0 }, totalTokens: 2 } } }) + "\\n");',
+      ].join("\n"),
+    );
+    const prev = process.env.PI_CLI_JS;
+    process.env.PI_CLI_JS = fake;
+    process.env.FAKE_ARGS_LOG = argsLog;
+    const registered = new Map<string, JsonObject>();
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    try {
+      subagentExtension({
+        registerTool: (tool: JsonObject) => registered.set(String(tool.name), tool),
+      });
+      const execute = registered.get("subagent")!.execute as (
+        id: string,
+        input: unknown,
+        signal: undefined,
+        onUpdate: undefined,
+        ctx: Record<string, unknown>,
+      ) => Promise<{ details?: Record<string, unknown> }>;
+      const result = await execute(
+        "call_ptr",
+        { task: "pointer check", cwd: dir },
+        undefined,
+        undefined,
+        { sessionManager: { getSessionId: () => "sess-ptr" } },
+      );
+      const details = result.details ?? {};
+      expect(details.status).toBe("running");
+      expect(typeof details.id).toBe("string");
+      // Pointer fields: a pre-derived session id (not the manager task id) and
+      // the resolved target cwd. Clone-safe strings only.
+      expect(typeof details.sessionId).toBe("string");
+      expect(details.sessionId).not.toBe(details.id);
+      expect(details.sessionId).toMatch(/^sub_[0-9a-f]{12}$/);
+      expect(details.cwd).toBe(resolve(dir));
+      expect(() => structuredClone(details)).not.toThrow();
+      expect(details).not.toHaveProperty("sessionFile");
+
+      // The child really ran with the same session id the details advertise.
+      // execute is pure background: wait for the child to finish before reading
+      // its argv log.
+      await subagentManager.get(String(details.id))?.done;
+      const argv = JSON.parse(readFileSync(argsLog, "utf-8")) as string[];
+      const sidIndex = argv.indexOf("--session-id");
+      expect(sidIndex).toBeGreaterThan(-1);
+      expect(argv[sidIndex + 1]).toBe(details.sessionId);
+    } finally {
+      if (prev === undefined) delete process.env.PI_CLI_JS;
+      else process.env.PI_CLI_JS = prev;
+      delete process.env.FAKE_ARGS_LOG;
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it("keeps the resume session id untouched in the launch details", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagent-launch-resume-"));
+    const fake = join(dir, "fake-pi.cjs");
+    writeFileSync(
+      fake,
+      'process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");\n' +
+        'process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }], usage: { input: 1, output: 1, cost: { total: 0 }, totalTokens: 2 } } }) + "\\n");',
+    );
+    const prev = process.env.PI_CLI_JS;
+    process.env.PI_CLI_JS = fake;
+    const registered = new Map<string, JsonObject>();
+    const prevChildEnv = process.env.PI_SUBAGENT_CHILD;
+    delete process.env.PI_SUBAGENT_CHILD;
+    try {
+      subagentExtension({
+        registerTool: (tool: JsonObject) => registered.set(String(tool.name), tool),
+      });
+      const execute = registered.get("subagent")!.execute as (
+        id: string,
+        input: unknown,
+        signal: undefined,
+        onUpdate: undefined,
+        ctx: Record<string, unknown>,
+      ) => Promise<{ details?: Record<string, unknown> }>;
+      const result = await execute(
+        "call_ptr2",
+        { task: "resume check", resume: "resume_sess_1" },
+        undefined,
+        undefined,
+        { sessionManager: { getSessionId: () => "sess-ptr" } },
+      );
+      // resume wins: no injected id, and the advertised sessionId IS the resume value.
+      expect(result.details?.sessionId).toBe("resume_sess_1");
+    } finally {
+      if (prev === undefined) delete process.env.PI_CLI_JS;
+      else process.env.PI_CLI_JS = prev;
+      if (prevChildEnv !== undefined) process.env.PI_SUBAGENT_CHILD = prevChildEnv;
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  });
+});
 
 describe("runPi kill semantics (fake pi cli)", () => {
   it("aborts at maxTurns, kills the whole process tree, and reports paused exactly once", async () => {

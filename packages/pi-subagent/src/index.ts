@@ -1570,7 +1570,20 @@ export function toMessageDetails(
     progress: _progress,
     ...safe
   } = task;
-  return safe;
+  // Issue 115: hoist the child session pointer to clone-safe top-level fields so
+  // transcript replay can locate the child session log without the BySpace report
+  // bridge. progress itself stays stripped (ff 073); sessionFile resolves via a
+  // directory read that returns undefined until pi has written the log — absent
+  // keys mean "not known", never an error.
+  const run = task.progress?.runs[0];
+  if (!run) return safe;
+  const sessionFile = sessionLogPath(run);
+  return {
+    ...safe,
+    ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+    ...(run.cwd ? { cwd: run.cwd } : {}),
+    ...(sessionFile ? { sessionFile } : {}),
+  };
 }
 
 /**
@@ -2058,6 +2071,18 @@ export default function subagentExtension(pi: {
       // child (issue 097).
       resolveAgentRole(cwd, item.agent, undefined, projectTrusted);
 
+      // Issue 115: pre-derive the child session id so the launch details can carry
+      // the real pointer. runSubagent would otherwise generate its own random id
+      // internally, and the two must not diverge. resume wins untouched — injecting
+      // id alongside it would point --session and --session-id at the same id.
+      const childSessionId = item.resume || item.id || `sub_${randomBytes(6).toString("hex")}`;
+      const runInput: SubagentInput = item.resume
+        ? input
+        : { ...input, id: childSessionId };
+      // Mirror runPi's cwd resolution: the launch details land in the transcript at
+      // once, before the child process exists, so they cannot wait for spawn.
+      const launchCwd = item.cwd ? resolve(item.cwd) : cwd;
+
       // Pure background (issue 088): the call returns at once; progress streams into
       // the manager record (status bar + /subagent menu) and the result arrives as a
       // followUp message via subagentManager.complete → onExit.
@@ -2090,7 +2115,7 @@ export default function subagentExtension(pi: {
 
       const execution = runSubagent(
         cwd,
-        input,
+        runInput,
         controller.signal,
         onProgress,
         inheritedThinking,
@@ -2127,7 +2152,16 @@ export default function subagentExtension(pi: {
             text: `Subagent started (ID: ${taskId}). Its full result will arrive as a new message — continue with other work or end your turn now.`,
           },
         ],
-        details: { id: taskId, status: "running" },
+        // Issue 115: the transcript's launch record doubles as the durable pointer
+        // to the child session — the BySpace report bridge is memory-only and dies
+        // with the daemon. Clone-safe strings only; sessionFile is omitted (the
+        // child jsonl may not exist yet; replay locates it from sessionId + cwd).
+        details: {
+          id: taskId,
+          status: "running",
+          sessionId: childSessionId,
+          cwd: launchCwd,
+        },
       };
     },
   });
