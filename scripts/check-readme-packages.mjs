@@ -61,7 +61,9 @@ for (const name of smallNames) {
 if (smallNames.length > 0 && !readme.includes('install-small-extension')) {
   errors.push('README has no install-small-extension script mention for small-extensions/');
 }
-const smallRefs = new Set([...readme.matchAll(/small-extensions\/[\w-]+/g)].map((m) => m[0]));
+// .md must be part of the match, else a README.md link (small-extensions/README.md#x)
+// is truncated to small-extensions/README and fails existsSync.
+const smallRefs = new Set([...readme.matchAll(/small-extensions\/[\w.-]+/g)].map((m) => m[0].replace(/\.md#.*$/, '.md')));
 for (const ref of smallRefs) {
   if (!existsSync(join(repoRoot, ref))) {
     errors.push(`README references ${ref}, which does not exist under small-extensions/`);
