@@ -1,8 +1,9 @@
 ---
 kind: issue
 type: feature
-status: open
+status: closed
 created: 2026-10-12
+closed: 2026-10-12
 ---
 
 # 115 · subagent：把子会话指针写进 transcript，让 BySpace 能从磁盘重建子代理时间线
