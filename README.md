@@ -56,6 +56,8 @@ Project-level Pi config is **generated, not tracked**: run `node .agents/skills/
 
 A few extensions are deliberately tiny and are **not published to npm** — they live in [`small-extensions/`](small-extensions) and install straight from this repo (GitHub raw → `~/.pi/agent/extensions/`). Re-running the script is the update path; there is no versioning.
 
+Working on one? Run it without discovery — `pi --no-extensions -e small-extensions/<name>/<name>.ts` — so the installed copy does not load alongside the one you are editing. See [`small-extensions/README.md`](small-extensions/README.md#developing-one).
+
 ```bash
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash

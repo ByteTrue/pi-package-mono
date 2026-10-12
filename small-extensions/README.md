@@ -15,6 +15,23 @@ The scripts take no arguments: they download the extension files from this repo 
 
 Restart or reload Pi afterwards; extensions in that directory load automatically.
 
+## Developing one
+
+An installed copy in `~/.pi/agent/extensions/` and a local copy in `.pi/extensions/`
+are both loaded — Pi dedupes extensions by resolved absolute path, not by file name,
+so the same extension installed twice registers twice (duplicate `tool_result`
+steering, duplicate compaction requests). When working on an extension, load only
+the file under test and skip discovery entirely:
+
+```bash
+pi --no-extensions -e small-extensions/pi-context-guard/pi-context-guard.ts
+```
+
+`--no-extensions` drops every discovered extension (project, global, and built-in)
+while explicit `-e` paths still load. Disabling the installed copy instead
+(`pi config`) is global — it writes `extensions: ["-extensions/<file>.ts"]` to
+`~/.pi/agent/settings.json` and applies to every project, not just this one.
+
 ## What is here
 
 | Extension | What it does |
