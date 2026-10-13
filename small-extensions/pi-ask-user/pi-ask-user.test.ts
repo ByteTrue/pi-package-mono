@@ -60,6 +60,18 @@ describe("registration", () => {
     expect(Object.getOwnPropertySymbols(parameters)).toHaveLength(0);
     expect(parameters.required).toEqual(["question"]);
   });
+
+  it("leads with the trigger condition and keeps the do-not-ask rules", () => {
+    const tool = harness();
+    // Under codemode-only the tool's own text is all the model sees, so the
+    // first sentence must say *when* to reach for it, not just what it does.
+    expect(tool.description.startsWith("When the next step depends on a decision only the user can make")).toBe(true);
+    expect(tool.description).toContain("instead of ending your turn with a prose question");
+    expect(tool.promptGuidelines).toContain(
+      "Prefer ask_user over a prose question whenever your turn would otherwise end with a question only the user can answer",
+    );
+    expect(tool.promptGuidelines?.some((g) => g.includes("Never ask what the context"))).toBe(true);
+  });
 });
 
 describe("askUserExecute — option questions", () => {

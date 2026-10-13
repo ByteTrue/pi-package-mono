@@ -157,13 +157,14 @@ export default function askUserExtension(pi: ExtensionAPI): void {
     name: "ask_user",
     label: "Ask user",
     description:
-      "Ask the user ONE decision or clarification question and wait for their answer. Pass 2-4 concrete options when the choice can be enumerated; the user picks one, and an 'Other (type your answer)' row is always available for a custom reply. Omit options for an open question. The user can dismiss the dialog — treat that as 'no answer' and fall back to asking in plain prose. Use this instead of prose questions with A/B/C lists so the user answers with keystrokes instead of typing.",
+      "When the next step depends on a decision only the user can make, ask it here instead of ending your turn with a prose question — the user answers by picking an option. Covers a choice among concrete options, an ambiguous requirement, a preference, or confirming something risky. Pass 2-4 options when the choice can be enumerated; omit options for a genuinely open question, answered in the free-form editor. An 'Other (type your answer)' row is always appended; a dismissed dialog means no answer — fall back to plain prose once and do not re-ask.",
     promptSnippet:
       "Ask the user a single decision question with typed options — they pick one instead of typing.",
     promptGuidelines: [
-      "When a user decision has 2-4 concrete choices, call ask_user instead of writing a prose question",
+      "Prefer ask_user over a prose question whenever your turn would otherwise end with a question only the user can answer",
       "Put your recommended option first and append '(Recommended)' to its label",
-      "One question per call; never ask what you can infer from context or what this session already answered",
+      "One question per call: ask the most blocking decision first, never a bundle",
+      "Never ask what the context, the repo, or this session already answered — ask in prose only when you have no options to offer",
     ],
     parameters: askUserParameters as unknown as TSchema,
     async execute(

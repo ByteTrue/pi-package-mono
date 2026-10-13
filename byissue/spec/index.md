@@ -113,6 +113,7 @@
 - 根 `package.json` workspaces、`npm test`
 - BySpace worktree 准备：`byspace.json`
 - 本地 package / worktree 加载边界：`byissue/notes/005-pi-local-package-loading.md`
+- 面向 LLM 的工具文案在 codemode-only 下的落点：`byissue/notes/019-hidden-tool-guidelines-skip-rules.md`（hidden declaration 的 guidelines 进不了 `<rules>`，只有 description 保证渲染）；ask_user 据此改为触发优先：`byissue/issues/119-x-ff-ask-user-trigger-first-wording.md`
 - `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
 - pi-ask-user 历史：曾为 npm 包后按 minimal-tool 原则删除（`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`）；2026-10-11 以最小单文件 small-extension 形态回归（`small-extensions/pi-ask-user/`，`byissue/issues/113-x-ff-ask-user-small-extension.md`）——理由是稳定提问格式 + 点选回答的日常收益被用户重新判定为值得一个 tool；形态边界：内置对话框、plain JSON Schema、无批量/超时/配置/print 通道
 - pi 依赖升级至 1.1.0 与两个新 small-extension（`pi-context-guard`、`pi-codemode-only`）：`byissue/issues/116-x-pi-1.1.0-and-two-small-extensions.md`；踩坑记录 `byissue/notes/017-before-agent-start-normalized-options.md`、`byissue/notes/018-allow-scripts-exact-version-keys.md`
