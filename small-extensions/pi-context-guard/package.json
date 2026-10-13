@@ -2,7 +2,7 @@
   "name": "pi-context-guard",
   "version": "0.0.0",
   "private": true,
-  "description": "Small extension (never published to npm): two context rules — models with a window above 400k tokens compact at 400k instead of Pi's default reserve, and the system prompt names the session file so details a compaction summary dropped stay searchable. Installed from source by scripts/install-small-extension.sh / .ps1; kept as a workspace only so CI typecheck/test cover it.",
+  "description": "Small extension (never published to npm): provides /context slash command to surgically configure contextWindow thresholds for selected models in models.json, and names the session file in the system prompt so details a compaction summary dropped stay searchable. Installed from source by scripts/install-small-extension.sh / .ps1; kept as a workspace only so CI typecheck/test cover it.",
   "type": "module",
   "files": [
     "pi-context-guard.ts",
