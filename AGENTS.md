@@ -22,7 +22,7 @@ extension share compiled code).
 | `packages/pi-vendor` | AI-first `models.json` management: Skill for everyday CRUD, on-demand `vendor.mjs` script, `/vendor` cold-start wizard |
 | `packages/pi-vision` | `image_ask` tool + opt-in attachment pre-analysis + `/vision`. Auto mode stays opt-in by design |
 | `packages/pi-web-search` | `web_search` / `web_fetch` tools + `/web` setup. `npm test` auto-skips its live e2e file |
-| `small-extensions/` | Tiny single-file extensions, **not published to npm**: one subdirectory each (single `.ts` + tests + private `package.json`), installed by `scripts/install-small-extension.sh`/`.ps1` from GitHub raw. In root `workspaces` only so CI typecheck/tests cover them |
+| `small-extensions/` | Tiny single-file extensions, **not published to npm**: one subdirectory each (single `.ts` + tests + private `package.json`), installed by `scripts/install-small-extension.mjs` (Node arrow-key picker, or `--all`) from GitHub raw. In root `workspaces` only so CI typecheck/tests cover them |
 | `byissue/` | Project memory: current spec (`byissue/spec/index.md`), decisions, past epics/issues, pitfall notes. Mostly Chinese |
 | `.agents/skills/` | Project-level skills (tracked). `pi-dev-setup` regenerates this worktree's project-level Pi debug config (`.pi/settings.json` + `.pi/extensions/`); the `.pi/` outputs themselves are gitignored |
 | `byspace.json` | Worktree setup (`npm ci`) and typecheck/test scripts for agent worktrees |

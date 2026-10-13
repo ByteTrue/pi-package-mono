@@ -25,6 +25,8 @@ jobs:
       # Docs drift gate: root README must stay in sync with packages/
       # (package table + install list complete, no stale references).
       - run: node scripts/check-readme-packages.mjs
+      # Install-channel gate: small-extensions/ and the installer's list stay in sync.
+      - run: node scripts/check-small-extension-installer.mjs
       - run: npm ci
       # Type-check any workspace that defines a `typecheck` script.
       - run: npm run typecheck --workspaces --if-present

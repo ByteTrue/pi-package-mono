@@ -18,8 +18,6 @@ compacts, or whether a compaction happened at all.
 
 ## Install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash
-```
+Run the repo's installer and tick `pi-context-guard` in the menu — the command is in [small-extensions → Install](../#install).
 
 Restart or reload Pi afterwards.

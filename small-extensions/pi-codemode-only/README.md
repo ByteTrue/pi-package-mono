@@ -23,8 +23,6 @@ those lines the rewrite silently degrades (the block still enforces only-mode).
 
 ## Install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash
-```
+Run the repo's installer and tick `pi-codemode-only` in the menu — the command is in [small-extensions → Install](../#install).
 
 Restart or reload Pi afterwards. Requires `codemode.mode: "only"` in Pi settings.

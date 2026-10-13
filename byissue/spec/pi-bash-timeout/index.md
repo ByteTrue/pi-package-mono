@@ -4,7 +4,7 @@
 
 `small-extensions/pi-bash-timeout` 是一个可选的事件钩子小扩展：给 Pi 内建 `bash`/`powershell` 前台工具补 300s 默认超时、钳制显式超大值，并在超时被杀瞬间追加引导块。不注册任何工具、不接管执行——`tool_call` + `tool_result` 两个事件钩子是它的全部表面。
 
-**发行形态：small extension，非 npm 包**（BYTE-10，2026-10-10 成员拍板）。单个 `.ts` 文件即全部运行时（`pi-bash-timeout.ts`，零运行时导入——运行时守卫直接比较 `event.toolName`，type-only import 加载即消失；jiti 直跑 TypeScript）。安装走仓库脚本（`scripts/install-small-extension.sh` / `.ps1`）：从 GitHub raw（main 分支）下载文件，复制进 `~/.pi/agent/extensions/`；零参数、幂等覆盖、失败非零退出。更新 = 重跑脚本；无版本锚点、无缓存、无 `--ref`（成员定稿，作废清单：持久缓存目录、`pi install <本地路径>`、Windows 手动 clone 指引）。
+**发行形态：small extension，非 npm 包**（BYTE-10，2026-10-10 成员拍板）。单个 `.ts` 文件即全部运行时（`pi-bash-timeout.ts`，零运行时导入——运行时守卫直接比较 `event.toolName`，type-only import 加载即消失；jiti 直跑 TypeScript）。安装走仓库脚本（`scripts/install-small-extension.mjs`，Node 18+ 单文件；2026-10-13 由 `.sh`/`.ps1` 双平台脚本合并而来）：从 GitHub raw（main 分支）下载文件，复制进 `~/.pi/agent/extensions/`；默认方向键多选（`--all` 非交互全装；非 TTY 无 `--all` 报 64）、幂等覆盖、失败非零退出。更新 = 重跑脚本；无版本锚点、无缓存、无 `--ref`（成员定稿，作废清单：持久缓存目录、`pi install <本地路径>`、Windows 手动 clone 指引）。
 
 目录内 `package.json` 为 `private: true`、永不发布——存在仅为根 workspaces（`small-extensions/*`）把 typecheck/test 纳入 CI；`files` 字段只列单文件 + README。测试不进用户机器。
 
@@ -42,8 +42,7 @@ small-extensions/pi-bash-timeout/
   pi-bash-timeout.test.ts      CI-only：完整 hook 测试套件（14 用例，含包契约断言）
   package.json                 private，永不发布；仅为 workspaces 收编 CI
   README.md                    安装（双平台脚本）、卸载、机制、边界
-scripts/install-small-extension.sh    macOS/Linux 安装脚本（raw 下载 → ~/.pi/agent/extensions/）
-scripts/install-small-extension.ps1   Windows 安装脚本（同逻辑）
+scripts/install-small-extension.mjs 安装脚本（跨平台；raw 下载 → 多选 → ~/.pi/agent/extensions/）
 ```
 
 ## 验证
@@ -60,4 +59,4 @@ npm --workspace pi-bash-timeout pack --dry-run   # private 使 npm publish 拒�
 
 - README：`small-extensions/pi-bash-timeout/README.md`（+ `small-extensions/README.md` 约定）
 - 拆出动因与原 hook 语义：`byissue/spec/pi-background-terminal/index.md`（065/099/102 决策链与历史 issue 记录）
-- 安装脚本：`scripts/install-small-extension.sh` / `scripts/install-small-extension.ps1`
+- 安装脚本：`scripts/install-small-extension.mjs`

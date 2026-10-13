@@ -12,17 +12,7 @@ No tool is registered, overridden, or executed here — only a missing parameter
 
 ## Install
 
-From the repository root, run the one-liner for your platform (see [small-extensions](../#install)); it copies `pi-bash-timeout.ts` into `~/.pi/agent/extensions/`:
-
-```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash
-```
-
-```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.ps1 | iex
-```
+Run the repo's installer and tick `pi-bash-timeout` in the menu — the command is in [small-extensions → Install](../#install). It copies `pi-bash-timeout.ts` into `~/.pi/agent/extensions/`.
 
 Restart or reload Pi. There is nothing to configure and nothing to invoke — the cap is simply there.
 

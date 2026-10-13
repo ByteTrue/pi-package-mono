@@ -55,11 +55,7 @@ revisit only with evidence that the wording alone is not enough.
 
 ## Install
 
-Same channel as the other small extensions — from this repo's `main` branch:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash
-```
+Same channel as the other small extensions — run the repo's installer and tick `pi-ask-user` in the menu; the command is in [small-extensions → Install](../#install).
 
 Restart or reload Pi afterwards.
 

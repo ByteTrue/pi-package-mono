@@ -2,7 +2,7 @@
   "name": "pi-ask-user",
   "version": "0.0.0",
   "private": true,
-  "description": "Small extension (never published to npm): a minimal ask_user tool — the model asks one decision question with typed options, the user picks instead of typing. Installed from source by scripts/install-small-extension.sh / .ps1; kept as a workspace only so CI typecheck/test cover it.",
+  "description": "Small extension (never published to npm): a minimal ask_user tool — the model asks one decision question with typed options, the user picks instead of typing. Installed from source by scripts/install-small-extension.mjs; kept as a workspace only so CI typecheck/test cover it.",
   "type": "module",
   "files": [
     "pi-ask-user.ts",

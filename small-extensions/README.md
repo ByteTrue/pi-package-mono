@@ -6,12 +6,21 @@ Extensions here are intentionally not npm packages: no versioning ceremony for a
 
 ## Install
 
-| Platform | Command |
-| --- | --- |
-| macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash` |
-| Windows (PowerShell) | `irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.ps1 | iex` |
+One Node script (Node 18+) downloads the extension files from this repo (`main` branch, GitHub raw) and copies them into `~/.pi/agent/extensions/`, overwriting whatever was there. It opens with an arrow-key checklist — `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` installs — so a machine keeps only the extensions it wants. `--all` skips the menu and installs everything (for scripts, where there is no terminal).
 
-The scripts take no arguments: they download the extension files from this repo (`main` branch, GitHub raw) and copy them into `~/.pi/agent/extensions/`, overwriting whatever was there. Re-running the script is the update path — there is no versioning and no pinning.
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.mjs -o /tmp/install-small-extension.mjs
+node /tmp/install-small-extension.mjs
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.mjs -OutFile "$env:TEMP\install-small-extension.mjs"
+node "$env:TEMP\install-small-extension.mjs"
+```
+
+Re-running the script is the update path — there is no versioning and no pinning. Picking a subset never deletes anything: extensions you leave unticked simply stay as they are.
 
 Restart or reload Pi afterwards; extensions in that directory load automatically.
 

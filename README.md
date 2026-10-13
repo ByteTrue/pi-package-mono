@@ -54,17 +54,21 @@ Project-level Pi config is **generated, not tracked**: run `node .agents/skills/
 
 ## Small extensions
 
-A few extensions are deliberately tiny and are **not published to npm** — they live in [`small-extensions/`](small-extensions) and install straight from this repo (GitHub raw → `~/.pi/agent/extensions/`). Re-running the script is the update path; there is no versioning.
+A few extensions are deliberately tiny and are **not published to npm** — they live in [`small-extensions/`](small-extensions) and install straight from this repo (GitHub raw → `~/.pi/agent/extensions/`). Installation is one Node script (Node 18+) that shows an arrow-key checklist, so you install only the extensions you want. Re-running it is the update path; there is no versioning.
 
 ```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash
+# macOS / Linux — download, then pick from the menu
+curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.mjs -o /tmp/install-small-extension.mjs
+node /tmp/install-small-extension.mjs
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.ps1 | iex
+irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.mjs -OutFile "$env:TEMP\install-small-extension.mjs"
+node "$env:TEMP\install-small-extension.mjs"
 ```
+
+In the menu: `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` installs. Add `--all` to the `node` line to skip the menu and install every extension (scripts, CI, no terminal).
 
 | Extension | What it adds |
 | --- | --- |
