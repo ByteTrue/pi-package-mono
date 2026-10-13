@@ -15,30 +15,11 @@ The scripts take no arguments: they download the extension files from this repo 
 
 Restart or reload Pi afterwards; extensions in that directory load automatically.
 
-## Developing one
-
-An installed copy in `~/.pi/agent/extensions/` and a local copy in `.pi/extensions/`
-are both loaded — Pi dedupes extensions by resolved absolute path, not by file name,
-so the same extension installed twice registers twice (duplicate `tool_result`
-steering, duplicate compaction requests). When working on an extension, load only
-the file under test and skip discovery entirely:
-
-```bash
-pi --no-extensions -e small-extensions/pi-context-guard/pi-context-guard.ts
-```
-
-`--no-extensions` drops every discovered extension (project, global, and built-in)
-while explicit `-e` paths still load. A built-in extension the tested one needs can
-be re-added the same way — `pi-codemode-only`, for example, needs
-`-e builtin:codemode`. Disabling the installed copy instead (`pi config`) is
-global: it writes `extensions: ["-extensions/<file>.ts"]` to
-`~/.pi/agent/settings.json` and applies to every project, not just this one.
-
 ## What is here
 
 | Extension | What it does |
 | --- | --- |
 | [`pi-bash-timeout`](./pi-bash-timeout/) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
 | [`pi-ask-user`](./pi-ask-user/) | Minimal `ask_user` tool: one decision question per call with typed options, answered via Pi's built-in dialogs |
-| [`pi-context-guard`](./pi-context-guard/) | `/context` command to surgically configure model `contextWindow` thresholds in `models.json` with multi-select TUI; the system prompt names the session file so details dropped by compaction stay searchable |
+| [`pi-context-guard`](./pi-context-guard/) | Large-window models (>400k) compact at 400k instead of Pi's window−reserve default; the system prompt names the session file so details a compaction summary dropped stay searchable (two event hooks; registers no tools) |
 | [`pi-codemode-only`](./pi-codemode-only/) | Makes `codemode.mode: "only"` mean what it says on Pi ≥1.1.0: blocks direct tool calls (nested script calls pass) and rewrites the prompt's two direct-tool pointers to codemode (two event hooks; registers no tools) |

@@ -56,8 +56,6 @@ Project-level Pi config is **generated, not tracked**: run `node .agents/skills/
 
 A few extensions are deliberately tiny and are **not published to npm** — they live in [`small-extensions/`](small-extensions) and install straight from this repo (GitHub raw → `~/.pi/agent/extensions/`). Re-running the script is the update path; there is no versioning.
 
-Working on one? Run it without discovery — `pi --no-extensions -e small-extensions/<name>/<name>.ts` — so the installed copy does not load alongside the one you are editing. See [`small-extensions/README.md`](small-extensions/README.md#developing-one).
-
 ```bash
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.sh | bash
@@ -72,7 +70,7 @@ irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/inst
 | --- | --- |
 | [`pi-bash-timeout`](small-extensions/pi-bash-timeout) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
 | [`pi-ask-user`](small-extensions/pi-ask-user) | Minimal `ask_user` tool: one decision question per call with typed options, answered via Pi's built-in dialogs |
-| [`pi-context-guard`](small-extensions/pi-context-guard) | `/context` command to surgically configure model `contextWindow` in `models.json`; name the session file in the system prompt |
+| [`pi-context-guard`](small-extensions/pi-context-guard) | Compact above 400k context on large-window models; name the session file in the system prompt so compaction-lost details stay searchable |
 | [`pi-codemode-only`](small-extensions/pi-codemode-only) | Enforce `codemode.mode: "only"` at runtime: block direct tool calls, rewrite the two direct-tool prompt pointers |
 
 ## How the packages fit Pi
