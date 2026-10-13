@@ -460,6 +460,15 @@ export function sessionFileSection(sessionFile: string): string {
 	);
 }
 
+/** Check whether a model capacity is eligible to be clamped down to threshold. */
+export function isEligibleForThreshold(
+	capacity: number | null | undefined,
+	threshold: number,
+): boolean {
+	if (typeof capacity !== "number" || capacity <= 0) return false;
+	return capacity > threshold;
+}
+
 export const makeKey = (provider: string, modelId: string, kind: "model" | "override") =>
 	`${provider}::${kind}::${modelId}`;
 
@@ -505,15 +514,42 @@ async function runSetThresholdFlow(
 		return;
 	}
 
+	const store = readOriginalsStore();
+
+	// Only models whose real capacity is larger than the threshold can be clamped
+	const eligibleModels: DiscoveredModel[] = [];
+	let skippedCount = 0;
+
+	for (const m of models) {
+		const key = makeKey(m.provider, m.modelId, m.kind);
+		const registryWindow = (ctx as { modelRegistry?: { find: (p: string, id: string) => { contextWindow?: number } | undefined } })
+			.modelRegistry?.find(m.provider, m.modelId)?.contextWindow;
+		const capacity = store[key]?.contextWindow ?? m.contextWindow ?? registryWindow;
+
+		if (isEligibleForThreshold(capacity, threshold)) {
+			eligibleModels.push(m);
+		} else {
+			skippedCount++;
+		}
+	}
+
+	if (eligibleModels.length === 0) {
+		ctx.ui.notify(
+			`No models found with contextWindow larger than ${threshold.toLocaleString()} tokens (${skippedCount} model(s) are already <= ${threshold.toLocaleString()}).`,
+			"info",
+		);
+		return;
+	}
+
 	const selected = new Set<string>();
 
 	while (true) {
-		const allSelected = selected.size === models.length;
-		const toggleAllLabel = allSelected ? "[x] Clear all selection" : "[ ] Select all models";
-		const confirmLabel = `[✔ Confirm and save (${selected.size}/${models.length})]`;
+		const allSelected = selected.size === eligibleModels.length;
+		const toggleAllLabel = allSelected ? "[x] Clear all selection" : "[ ] Select all eligible models";
+		const confirmLabel = `[✔ Confirm and save (${selected.size}/${eligibleModels.length})]`;
 		const cancelLabel = "[Cancel]";
 
-		const modelOptions = models.map((m) => {
+		const modelOptions = eligibleModels.map((m) => {
 			const checked = selected.has(makeKey(m.provider, m.modelId, m.kind)) ? "[✔]" : "[ ]";
 			const cwStr = m.contextWindow !== undefined ? `cur: ${m.contextWindow.toLocaleString()}` : "cur: unset";
 			const kindTag = m.kind === "override" ? " override" : "";
@@ -527,8 +563,9 @@ async function runSetThresholdFlow(
 			cancelLabel,
 		];
 
+		const skippedNote = skippedCount > 0 ? `, ${skippedCount} skipped <= ${threshold.toLocaleString()}` : "";
 		const pick = await ctx.ui.select(
-			`Select models to set contextWindow to ${threshold.toLocaleString()} tokens:`,
+			`Select models to clamp contextWindow to ${threshold.toLocaleString()} tokens (${eligibleModels.length} eligible > ${threshold.toLocaleString()}${skippedNote}):`,
 			choices,
 		);
 
@@ -549,7 +586,7 @@ async function runSetThresholdFlow(
 			if (allSelected) {
 				selected.clear();
 			} else {
-				for (const m of models) {
+				for (const m of eligibleModels) {
 					selected.add(makeKey(m.provider, m.modelId, m.kind));
 				}
 			}
@@ -557,8 +594,8 @@ async function runSetThresholdFlow(
 		}
 
 		const modelIndex = choices.indexOf(pick) - 2;
-		if (modelIndex >= 0 && modelIndex < models.length) {
-			const targetModel = models[modelIndex];
+		if (modelIndex >= 0 && modelIndex < eligibleModels.length) {
+			const targetModel = eligibleModels[modelIndex];
 			if (targetModel) {
 				const key = makeKey(targetModel.provider, targetModel.modelId, targetModel.kind);
 				if (selected.has(key)) selected.delete(key);
@@ -567,10 +604,9 @@ async function runSetThresholdFlow(
 		}
 	}
 
-	const selectedModels = models.filter((m) => selected.has(makeKey(m.provider, m.modelId, m.kind)));
+	const selectedModels = eligibleModels.filter((m) => selected.has(makeKey(m.provider, m.modelId, m.kind)));
 
 	// Preserve original values in originals backup before overwriting
-	const store = readOriginalsStore();
 	let storeUpdated = false;
 	for (const m of selectedModels) {
 		const key = makeKey(m.provider, m.modelId, m.kind);

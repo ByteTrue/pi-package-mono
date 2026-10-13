@@ -5,7 +5,7 @@ Three context features for Pi:
 1. **`/context` slash command**: surgically configures the `contextWindow` parameter
    for user models in `models.json`.
    - Supports direct arguments (e.g. `/context 300k`, `/context 400000`) or interactive input prompts.
-   - Interactive multi-select menu using Pi's built-in dialogs: toggle individual models, one-click select-all or clear-all, and confirm to save.
+   - Interactive multi-select menu with capacity filtering: only lists models whose true capacity is larger than the requested threshold, automatically skipping and protecting smaller models (e.g. 272k <= 400k) from accidental misconfiguration. One-click select-all safely selects only eligible large models.
    - **Surgical text replacement**: only updates or inserts `contextWindow` for chosen models without reformatting the file, keeping comments, custom indentation, field orders, and untouched models completely intact.
    - Prompts the user to run `/reload` to apply changes immediately.
 2. **Restore original parameters**:

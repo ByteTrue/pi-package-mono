@@ -15,7 +15,11 @@ epic: ""
   1. 注册 `/context` 斜杠命令：
      - 支持传参设置阈值（例如 `/context 300k`、`/context 400000`）或无参时弹出菜单引导选择（1. 调整阈值；2. 还原原版）。
      - 支持传参直接还原（例如 `/context restore` 或 `/context reset`）。
-  2. 交互式多选列表：扫描 `~/.pi/agent/models.json` 中所有自定义 provider 模型与 `modelOverrides`，通过 `ctx.ui.select` 实现多选 Toggle 循环（支持单项切换勾选、一键全选/清空、确认保存、取消退出）。
+  2. 交互式多选列表与智能容量过滤（方案 A）：
+     - 识别每个模型的真实原生上限容量：`capacity = originalsStore[key] ?? model.contextWindow ?? registryModel.contextWindow`。
+     - 自动过滤排除小于等于目标阈值的模型（如 272k <= 400k），避免用户一键全选时误把小模型改大导致上游报 context 溢出错误。
+     - 列表仅展示真正需要收窄的大模型（`capacity > threshold`），标题实时提示 eligible 与 skipped 数量，一键全选 100% 安全。若无合格大模型，直接友好提示退出。
+     - 通过 `ctx.ui.select` 实现多选 Toggle 循环（支持单项切换勾选、一键全选/清空、确认保存、取消退出）。
   3. **外科手术式精确文本替换（Surgical text replacement）**：更新选定模型的 `contextWindow` 时，定位原文本中对应模型的代码块，只替换该数字或在其 `id` / 顶层花括号后精准插入，绝不使用全文件 `JSON.stringify`，完整保留原文件的换行、缩进、字段顺序、注释（带安全注释剥离校验状态机）以及未选中模型。
   4. **原版参数持久化与精准还原（Restore originals）**：
      - 在首次修改任何模型前，自动将该模型当前的真实上下文窗口（包含数值或未配置 `null`）持久化记录在 `<agent-dir>/pi-pkg-cfg/pi-context-guard/originals.json`（符合仓库 spec 私有配置收归规范，不污染 `models.json`）。后续多次修改不会覆盖首次原版。

@@ -8,6 +8,7 @@ import contextGuardDefault, {
 	applyContextWindowUpdates,
 	discoverModels,
 	findModelObjectRange,
+	isEligibleForThreshold,
 	makeKey,
 	parseThreshold,
 	readOriginalsStore,
@@ -57,6 +58,24 @@ describe("parseThreshold", () => {
 		expect(parseThreshold("-500")).toBeNull();
 		expect(parseThreshold(null)).toBeNull();
 		expect(parseThreshold(undefined)).toBeNull();
+	});
+});
+
+describe("isEligibleForThreshold", () => {
+	it("returns true only when real capacity is strictly greater than threshold", () => {
+		expect(isEligibleForThreshold(1_000_000, 400_000)).toBe(true);
+		expect(isEligibleForThreshold(1_048_576, 400_000)).toBe(true);
+		expect(isEligibleForThreshold(400_001, 400_000)).toBe(true);
+	});
+
+	it("returns false when capacity is less than or equal to threshold, or unknown", () => {
+		expect(isEligibleForThreshold(400_000, 400_000)).toBe(false);
+		expect(isEligibleForThreshold(272_000, 400_000)).toBe(false);
+		expect(isEligibleForThreshold(128_000, 400_000)).toBe(false);
+		expect(isEligibleForThreshold(null, 400_000)).toBe(false);
+		expect(isEligibleForThreshold(undefined, 400_000)).toBe(false);
+		expect(isEligibleForThreshold(0, 400_000)).toBe(false);
+		expect(isEligibleForThreshold(-100, 400_000)).toBe(false);
 	});
 });
 
@@ -381,6 +400,70 @@ describe("registerContextGuard & slash command flow", () => {
 		expect(event.systemPromptOptions.sections.session_file).toBe(sessionFileSection("/tmp/session-123.jsonl"));
 	});
 
+	it("filters out models <= threshold to protect smaller models from incorrect parameter changes", async () => {
+		const modelsJsonPath = join(testDir, "models.json");
+		const initialJson = `{
+  "providers": {
+    "bytetrueapi": {
+      "models": [
+        {
+          "id": "claude-fable",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "gpt-6-astra",
+          "contextWindow": 272000
+        }
+      ]
+    }
+  }
+}`;
+		writeFileSync(modelsJsonPath, initialJson, "utf8");
+
+		let commandHandler: Function | undefined;
+		const pi = {
+			registerCommand(_name: string, def: { handler: Function }) {
+				commandHandler = def.handler;
+			},
+			on: () => {},
+		} as unknown as ExtensionAPI;
+		registerContextGuard(pi);
+
+		const notifications: { message: string; type?: string }[] = [];
+		let selectCallCount = 0;
+		let presentedChoices: string[] = [];
+
+		const mockCtx = {
+			hasUI: true,
+			ui: {
+				notify: (message: string, type?: string) => notifications.push({ message, type }),
+				select: async (_title: string, choices: string[]) => {
+					selectCallCount++;
+					presentedChoices = choices;
+					if (selectCallCount === 1) {
+						// Select all eligible models
+						return choices.find((c) => c.includes("Select all"));
+					}
+					// Confirm
+					return choices.find((c) => c.includes("Confirm and save"));
+				},
+			},
+		} as unknown as ExtensionCommandContext;
+
+		await commandHandler?.("400k", mockCtx);
+
+		// gpt-6-astra (272k <= 400k) must NEVER appear in choices
+		expect(presentedChoices.some((c) => c.includes("gpt-6-astra"))).toBe(false);
+		expect(presentedChoices.some((c) => c.includes("claude-fable"))).toBe(true);
+
+		const updatedJson = readFileSync(modelsJsonPath, "utf8");
+		const parsed = JSON.parse(updatedJson);
+		// claude-fable clamped to 400k
+		expect(parsed.providers.bytetrueapi.models[0].contextWindow).toBe(400_000);
+		// gpt-6-astra untouched at 272k
+		expect(parsed.providers.bytetrueapi.models[1].contextWindow).toBe(272_000);
+	});
+
 	it("modifies models.json and then restores original parameters end-to-end", async () => {
 		const modelsJsonPath = join(testDir, "models.json");
 		const initialJson = `{
@@ -392,7 +475,8 @@ describe("registerContextGuard & slash command flow", () => {
           "contextWindow": 1000000
         },
         {
-          "id": "deepseek"
+          "id": "deepseek",
+          "contextWindow": 1048576
         }
       ]
     }
@@ -421,8 +505,8 @@ describe("registerContextGuard & slash command flow", () => {
 				select: async (_title: string, choices: string[]) => {
 					selectCallCount++;
 					if (selectCallCount === 1) {
-						// Select all models
-						return choices.find((c) => c.includes("Select all models"));
+						// Select all eligible models
+						return choices.find((c) => c.includes("Select all"));
 					}
 					// Confirm
 					return choices.find((c) => c.includes("Confirm and save"));
@@ -440,7 +524,7 @@ describe("registerContextGuard & slash command flow", () => {
 		// Verify originals store captured correct values
 		const store = readOriginalsStore();
 		expect(store["local::model::qwen"]?.contextWindow).toBe(1_000_000);
-		expect(store["local::model::deepseek"]?.contextWindow).toBeNull();
+		expect(store["local::model::deepseek"]?.contextWindow).toBe(1_048_576);
 
 		// 2. Second run: restore all models
 		let restoreSelectCount = 0;
@@ -465,7 +549,7 @@ describe("registerContextGuard & slash command flow", () => {
 		const restoredJson = readFileSync(modelsJsonPath, "utf8");
 		const parsedRestored = JSON.parse(restoredJson);
 		expect(parsedRestored.providers.local.models[0].contextWindow).toBe(1_000_000);
-		expect(parsedRestored.providers.local.models[1].contextWindow).toBeUndefined();
+		expect(parsedRestored.providers.local.models[1].contextWindow).toBe(1_048_576);
 
 		// Originals store should have cleared restored records
 		const storeAfter = readOriginalsStore();
