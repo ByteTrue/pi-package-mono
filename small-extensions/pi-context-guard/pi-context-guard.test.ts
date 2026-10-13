@@ -556,4 +556,72 @@ describe("registerContextGuard & slash command flow", () => {
 		expect(storeAfter["local::model::qwen"]).toBeUndefined();
 		expect(storeAfter["local::model::deepseek"]).toBeUndefined();
 	});
+
+	it("hot-refreshes modelRegistry and updates active session model via pi.setModel immediately", async () => {
+		const modelsJsonPath = join(testDir, "models.json");
+		const initialJson = `{
+  "providers": {
+    "local": {
+      "models": [
+        {
+          "id": "qwen",
+          "contextWindow": 1000000
+        }
+      ]
+    }
+  }
+}`;
+		writeFileSync(modelsJsonPath, initialJson, "utf8");
+
+		let commandHandler: Function | undefined;
+		let setModelCalledWith: any = null;
+		let registryRefreshed = false;
+
+		const pi = {
+			registerCommand(_name: string, def: { handler: Function }) {
+				commandHandler = def.handler;
+			},
+			setModel: async (model: any) => {
+				setModelCalledWith = model;
+				return true;
+			},
+			on: () => {},
+		} as unknown as ExtensionAPI;
+		registerContextGuard(pi);
+
+		const notifications: { message: string; type?: string }[] = [];
+		let selectCallCount = 0;
+		const mockCtx = {
+			hasUI: true,
+			model: { provider: "local", id: "qwen", contextWindow: 1_000_000 },
+			modelRegistry: {
+				refresh: async () => {
+					registryRefreshed = true;
+				},
+				find: (provider: string, id: string) => {
+					if (provider === "local" && id === "qwen") {
+						return { provider: "local", id: "qwen", contextWindow: 300_000 };
+					}
+					return undefined;
+				},
+			},
+			ui: {
+				notify: (message: string, type?: string) => notifications.push({ message, type }),
+				select: async (_title: string, choices: string[]) => {
+					selectCallCount++;
+					if (selectCallCount === 1) {
+						return choices.find((c) => c.includes("Select all"));
+					}
+					return choices.find((c) => c.includes("Confirm and save"));
+				},
+			},
+		} as unknown as ExtensionCommandContext;
+
+		await commandHandler?.("300k", mockCtx);
+
+		expect(registryRefreshed).toBe(true);
+		expect(setModelCalledWith).toEqual({ provider: "local", id: "qwen", contextWindow: 300_000 });
+		expect(notifications.some((n) => n.message.includes("Applied immediately"))).toBe(true);
+	});
+
 });

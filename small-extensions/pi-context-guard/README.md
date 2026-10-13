@@ -7,7 +7,7 @@ Three context features for Pi:
    - Supports direct arguments (e.g. `/context 300k`, `/context 400000`) or interactive input prompts.
    - Interactive multi-select menu with capacity filtering: only lists models whose true capacity is larger than the requested threshold, automatically skipping and protecting smaller models (e.g. 272k <= 400k) from accidental misconfiguration. One-click select-all safely selects only eligible large models.
    - **Surgical text replacement**: only updates or inserts `contextWindow` for chosen models without reformatting the file, keeping comments, custom indentation, field orders, and untouched models completely intact.
-   - Prompts the user to run `/reload` to apply changes immediately.
+   - Automatically hot-refreshes the model registry and re-applies the active session model so changes take effect in the TUI immediately without restarting Pi.
 2. **Restore original parameters**:
    - Run `/context restore` (or choose "2. Restore original parameters" from the `/context` root menu).
    - Preserves original `contextWindow` values before first modification in private config (`<agent-dir>/pi-pkg-cfg/pi-context-guard/originals.json`).

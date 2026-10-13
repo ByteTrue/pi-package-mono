@@ -476,6 +476,7 @@ export const makeKey = (provider: string, modelId: string, kind: "model" | "over
 async function runSetThresholdFlow(
 	initialArg: string | undefined,
 	ctx: ExtensionCommandContext,
+	pi: ExtensionAPI,
 ): Promise<void> {
 	let threshold = parseThreshold(initialArg);
 	if (threshold === null) {
@@ -635,8 +636,24 @@ async function runSetThresholdFlow(
 	try {
 		const updatedText = applyContextWindowUpdates(rawText, updates);
 		atomicWriteFileSync(configPath, updatedText);
+
+		// Hot-refresh model registry so Pi picks up models.json immediately without restart
+		await ctx.modelRegistry?.refresh?.();
+
+		// If current active session model was updated, re-apply it to update TUI footer immediately
+		if (ctx.model) {
+			const activeKey = makeKey(ctx.model.provider, ctx.model.id, "model");
+			const activeOverrideKey = makeKey(ctx.model.provider, ctx.model.id, "override");
+			if (selected.has(activeKey) || selected.has(activeOverrideKey)) {
+				const refreshed = ctx.modelRegistry?.find?.(ctx.model.provider, ctx.model.id);
+				if (refreshed) {
+					await pi.setModel?.(refreshed);
+				}
+			}
+		}
+
 		ctx.ui.notify(
-			`Updated contextWindow to ${threshold.toLocaleString()} for ${selectedModels.length} model(s). Please run /reload to apply changes.`,
+			`Updated contextWindow to ${threshold.toLocaleString()} for ${selectedModels.length} model(s). Applied immediately.`,
 			"info",
 		);
 	} catch (err: unknown) {
@@ -645,7 +662,7 @@ async function runSetThresholdFlow(
 }
 
 /** Run the flow to restore original model parameters. */
-async function runRestoreOriginalsFlow(ctx: ExtensionCommandContext): Promise<void> {
+async function runRestoreOriginalsFlow(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
 	const store = readOriginalsStore();
 	const records = Object.values(store);
 	if (records.length === 0) {
@@ -742,8 +759,23 @@ async function runRestoreOriginalsFlow(ctx: ExtensionCommandContext): Promise<vo
 		}
 		writeOriginalsStore(store);
 
+		// Hot-refresh model registry so Pi picks up models.json immediately without restart
+		await ctx.modelRegistry?.refresh?.();
+
+		// If current active session model was restored, re-apply it to update TUI footer immediately
+		if (ctx.model) {
+			const activeKey = makeKey(ctx.model.provider, ctx.model.id, "model");
+			const activeOverrideKey = makeKey(ctx.model.provider, ctx.model.id, "override");
+			if (selected.has(activeKey) || selected.has(activeOverrideKey)) {
+				const refreshed = ctx.modelRegistry?.find?.(ctx.model.provider, ctx.model.id);
+				if (refreshed) {
+					await pi.setModel?.(refreshed);
+				}
+			}
+		}
+
 		ctx.ui.notify(
-			`Restored original parameters for ${selectedRecords.length} model(s). Please run /reload to apply changes.`,
+			`Restored original parameters for ${selectedRecords.length} model(s). Applied immediately.`,
 			"info",
 		);
 	} catch (err: unknown) {
@@ -764,12 +796,12 @@ export function registerContextGuard(pi: ExtensionAPI): void {
 			const lowerArg = trimmedArg.toLowerCase();
 
 			if (lowerArg === "restore" || lowerArg === "reset") {
-				await runRestoreOriginalsFlow(ctx);
+				await runRestoreOriginalsFlow(ctx, pi);
 				return;
 			}
 
 			if (parseThreshold(trimmedArg) !== null) {
-				await runSetThresholdFlow(trimmedArg, ctx);
+				await runSetThresholdFlow(trimmedArg, ctx, pi);
 				return;
 			}
 
@@ -790,9 +822,9 @@ export function registerContextGuard(pi: ExtensionAPI): void {
 			}
 
 			if (action.startsWith("1")) {
-				await runSetThresholdFlow(undefined, ctx);
+				await runSetThresholdFlow(undefined, ctx, pi);
 			} else if (action.startsWith("2")) {
-				await runRestoreOriginalsFlow(ctx);
+				await runRestoreOriginalsFlow(ctx, pi);
 			}
 		},
 	});

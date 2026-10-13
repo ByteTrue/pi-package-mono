@@ -24,7 +24,10 @@ epic: ""
   4. **原版参数持久化与精准还原（Restore originals）**：
      - 在首次修改任何模型前，自动将该模型当前的真实上下文窗口（包含数值或未配置 `null`）持久化记录在 `<agent-dir>/pi-pkg-cfg/pi-context-guard/originals.json`（符合仓库 spec 私有配置收归规范，不污染 `models.json`）。后续多次修改不会覆盖首次原版。
      - 还原流程支持多选与全选：对于原先有数值的模型精确还原数字；对于原先未配置（`null`）的模型外科手术式精确删除该 `contextWindow` 行并安全处理末尾逗号，恢复出厂未设置状态。
-  5. 原子写入磁盘并通过 `ctx.ui.notify` 提示用户运行 `/reload` 生效。
+  5. 实时热刷新与生效（无需重启 Pi，也无需 /reload）：
+     - 查明 Pi 原生 `/reload` 仅重载 settingsManager 与 resourceLoader（扩展/技能/提示词/主题），根本不重载 `models.json`，导致此前纯靠 `/reload` 无法刷新 TUI。
+     - 改为在更新/还原 `models.json` 成功后，由扩展直接调用 `await ctx.modelRegistry.refresh()` 热刷新内存中的模型元数据；
+     - 若当前会话活跃模型属于被更新/还原的模型之一，自动调用 `await pi.setModel(refreshedModel)` 实时重新应用当前会话模型，TUI 底部的 footer 状态栏立即实时刷新，改完瞬间生效。
   6. 保留 `before_agent_start` 事件中的系统提示词注入（向 `sections.session_file` 注入 session JSONL 路径，方便 compaction 摘要后检索完整历史细节）。
 - 移除原先硬编码 400k 强行调用 `ctx.compact()` 的 `agent_settled` hook：因为直接修改了模型的 `contextWindow`，Pi 原生 compaction 机制会在安全裕量内自动接管，不再需要外部 hook 竞争。
 
