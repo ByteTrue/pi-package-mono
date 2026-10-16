@@ -8,6 +8,8 @@ Extensions here are intentionally not npm packages: no versioning ceremony for a
 
 One Node script (Node 18+) downloads the extension files from this repo (`main` branch, GitHub raw) and copies them into `~/.pi/agent/extensions/`, overwriting whatever was there. It opens with an arrow-key checklist — `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` installs — so a machine keeps only the extensions it wants. `--all` skips the menu and installs everything (for scripts, where there is no terminal).
 
+Most extensions are pre-ticked, so plain `<enter>` installs them. `pi-context-guard` and `pi-codemode-only` are `opt-in`: they start unticked (marked in the menu) because they change compaction or codemode behavior for the whole session. `space` ticks them; `--all` installs them too.
+
 ```bash
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/install-small-extension.mjs -o /tmp/install-small-extension.mjs
@@ -30,5 +32,5 @@ Restart or reload Pi afterwards; extensions in that directory load automatically
 | --- | --- |
 | [`pi-bash-timeout`](./pi-bash-timeout/) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
 | [`pi-ask-user`](./pi-ask-user/) | Minimal `ask_user` tool: 1–4 single- or multi-select decision questions per call with back-navigation, answered via Pi's built-in dialogs |
-| [`pi-context-guard`](./pi-context-guard/) | Large-window models (>400k) compact at 400k instead of Pi's window−reserve default; the system prompt names the session file so details a compaction summary dropped stay searchable (two event hooks; registers no tools) |
-| [`pi-codemode-only`](./pi-codemode-only/) | Makes `codemode.mode: "only"` mean what it says on Pi ≥1.1.0: blocks direct tool calls (nested script calls pass) and rewrites the prompt's two direct-tool pointers to codemode (two event hooks; registers no tools) |
+| [`pi-context-guard`](./pi-context-guard/) | Opt-in. Large-window models (>400k) compact at 400k instead of Pi's window−reserve default; the system prompt names the session file so details a compaction summary dropped stay searchable (two event hooks; registers no tools) |
+| [`pi-codemode-only`](./pi-codemode-only/) | Opt-in. Makes `codemode.mode: "only"` mean what it says on Pi ≥1.1.0: blocks direct tool calls (nested script calls pass) and rewrites the prompt's two direct-tool pointers to codemode (two event hooks; registers no tools) |

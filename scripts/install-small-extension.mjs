@@ -19,11 +19,15 @@ const EXTENSIONS_DIR = join(homedir(), '.pi', 'agent', 'extensions');
 // is the file name it keeps under EXTENSIONS_DIR) and the label shown in the picker.
 // Adding an extension is one line here; scripts/check-small-extension-installer.mjs fails
 // when a small-extensions/ directory never made it into this list.
+//
+// Entries are ticked by default (plain <enter> installs them). An extension that is
+// opinionated or niche opts out with optIn: true - it still shows in the menu and
+// --all still installs it, it is just not pre-selected.
 const EXTENSIONS = [
   { source: 'small-extensions/pi-bash-timeout/pi-bash-timeout.ts', summary: '300s default + cap for the built-in bash / powershell tools' },
   { source: 'small-extensions/pi-ask-user/pi-ask-user.ts', summary: 'minimal ask_user tool: 1-4 single/multi-select questions with back-navigation' },
-  { source: 'small-extensions/pi-context-guard/pi-context-guard.ts', summary: 'compact at 400k on large-window models, session file in the prompt' },
-  { source: 'small-extensions/pi-codemode-only/pi-codemode-only.ts', summary: 'enforce codemode.mode "only": block direct tool calls' },
+  { source: 'small-extensions/pi-context-guard/pi-context-guard.ts', optIn: true, summary: 'compact at 400k on large-window models, session file in the prompt' },
+  { source: 'small-extensions/pi-codemode-only/pi-codemode-only.ts', optIn: true, summary: 'enforce codemode.mode "only": block direct tool calls' },
 ];
 
 const ERASE_LINE = '\x1b[2K';
@@ -35,11 +39,11 @@ function usage(stream) {
 }
 
 // Arrow-key multi-select. Resolves with the chosen entries, or null when cancelled
-// (esc / ctrl-c). Everything is selected up front, so plain <enter> means "install all"
-// and space is how you drop the ones you do not want.
+// (esc / ctrl-c). Default-on entries start ticked and optIn entries start unticked,
+// so plain <enter> installs the safe baseline and space is how you add or drop one.
 function pick(items) {
   let index = 0;
-  const selected = items.map(() => true);
+  const selected = items.map((item) => !item.optIn);
   let drawn = 0;
 
   const frame = () => {
@@ -48,7 +52,7 @@ function pick(items) {
     const width = process.stdout.columns > 0 ? process.stdout.columns - 1 : Infinity;
     return [
       'Select the small extensions to install:',
-      ...items.map((item, i) => `${i === index ? '❯' : ' '} ${selected[i] ? '◉' : '○'} ${basename(item.source, '.ts')}  ${item.summary}`),
+      ...items.map((item, i) => `${i === index ? '❯' : ' '} ${selected[i] ? '◉' : '○'} ${basename(item.source, '.ts')}${item.optIn ? ' (opt-in)' : ''}  ${item.summary}`),
       '↑/↓ move · space toggle · a all · enter install · esc cancel',
     ].map((line) => (line.length > width ? `${line.slice(0, width - 1)}…` : line));
   };

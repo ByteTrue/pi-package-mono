@@ -23,6 +23,6 @@ those lines the rewrite silently degrades (the block still enforces only-mode).
 
 ## Install
 
-Run the repo's installer and tick `pi-codemode-only` in the menu — the command is in [small-extensions → Install](../#install).
+Run the repo's installer and tick `pi-codemode-only` in the menu — it is **opt-in** (unticked by default, marked in the menu). The command is in [small-extensions → Install](../#install).
 
 Restart or reload Pi afterwards. Requires `codemode.mode: "only"` in Pi settings.

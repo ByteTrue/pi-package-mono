@@ -68,14 +68,14 @@ irm https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main/scripts/inst
 node "$env:TEMP\install-small-extension.mjs"
 ```
 
-In the menu: `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` installs. Add `--all` to the `node` line to skip the menu and install every extension (scripts, CI, no terminal).
+In the menu: `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` installs. `pi-context-guard` and `pi-codemode-only` are **opt-in**: they start unticked (marked in the menu) because they override session-wide behavior. Add `--all` to the `node` line to skip the menu and install every extension, opt-in ones included (scripts, CI, no terminal).
 
 | Extension | What it adds |
 | --- | --- |
 | [`pi-bash-timeout`](small-extensions/pi-bash-timeout) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
 | [`pi-ask-user`](small-extensions/pi-ask-user) | Minimal `ask_user` tool: one decision question per call with typed options, answered via Pi's built-in dialogs |
-| [`pi-context-guard`](small-extensions/pi-context-guard) | Compact above 400k context on large-window models; name the session file in the system prompt so compaction-lost details stay searchable |
-| [`pi-codemode-only`](small-extensions/pi-codemode-only) | Enforce `codemode.mode: "only"` at runtime: block direct tool calls, rewrite the two direct-tool prompt pointers |
+| [`pi-context-guard`](small-extensions/pi-context-guard) | **Opt-in.** Compact above 400k context on large-window models; name the session file in the system prompt so compaction-lost details stay searchable |
+| [`pi-codemode-only`](small-extensions/pi-codemode-only) | **Opt-in.** Enforce `codemode.mode: "only"` at runtime: block direct tool calls, rewrite the two direct-tool prompt pointers |
 
 ## How the packages fit Pi
 

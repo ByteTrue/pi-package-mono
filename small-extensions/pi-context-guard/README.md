@@ -18,6 +18,6 @@ compacts, or whether a compaction happened at all.
 
 ## Install
 
-Run the repo's installer and tick `pi-context-guard` in the menu — the command is in [small-extensions → Install](../#install).
+Run the repo's installer and tick `pi-context-guard` in the menu — it is **opt-in** (unticked by default, marked in the menu). The command is in [small-extensions → Install](../#install).
 
 Restart or reload Pi afterwards.
