@@ -2,30 +2,39 @@
 
 A minimal `ask_user` tool for Pi: when a user decision has concrete choices,
 the model calls `ask_user` instead of writing a prose question, and you pick
-an option with arrow keys + Enter instead of typing `第一个…第二个…` by hand.
+options with arrow keys + Enter instead of typing `第一个…第二个…` by hand.
 
 It exists because without a tool the model's question format drifts every
-session — one structured tool with `promptGuidelines` pins the format, and the
-answer becomes three keystrokes.
+session — one structured tool with `promptGuidelines` pins the format, and each
+answer becomes a few keystrokes across both TUI and RPC (BySpace) modes.
 
 ## What it does
 
 Registers one tool:
 
-- **`ask_user(question, options?)`** — one decision or clarification question
-  per call.
-  - `options`: 2–4 `{label, description?}` choices. Rendered through Pi's
-    built-in `ctx.ui.select` dialog with an always-appended
+- **`ask_user(questions)`** — 1–4 decision or clarification questions per call.
+  - `questions`: array of `{question, options?, multiple?}` items (a single
+    question is simply a 1-item array; legacy top-level `{question, options?,
+    multiple?}` is also accepted at runtime).
+  - **Single-select (`options` without `multiple: true`)**: rendered through
+    Pi's built-in `ctx.ui.select` dialog with an always-appended
     **"Other (type your answer)"** row.
-  - No `options`: an open question, answered through the built-in multiline
+  - **Multi-select (`multiple: true`)**: rendered through a `ctx.ui.select`
+    checklist loop where picking an option toggles `[✓]` / `[ ]`, picking
+    **"Other (type your answer)"** merges custom text into the checklist as
+    `[✓] Other: …`, and **"✓ Done (N selected)"** confirms the question.
+  - **Back-navigation (`questions.length > 1`)**: questions 2..N include a
+    **"← Back to previous question"** row so you can return to an earlier
+    question and revise its answer (previous selections are preserved).
+  - **Open question (no `options`)**: answered through the built-in multiline
     editor (TUI) or input dialog (RPC).
-  - Dismiss (Esc): returns a fixed "dismissed" text so the model falls back to
-    plain prose instead of re-asking.
-  - No dialog-capable UI (print/JSON mode): explicit error — the tool never
+  - **Dismiss (Esc)**: returns a fixed "dismissed" text so the model falls back
+    to plain prose instead of re-asking.
+  - **No dialog-capable UI (print/JSON mode)**: explicit error — the tool never
     guesses an answer.
 
-Built-in dialogs only: no custom TUI, no overlay, no batch forms, no timeout,
-no config. Anything heavier belongs upstream of this file's ambition.
+Built-in dialogs only: no custom TUI components, no overlay, no runtime
+imports, no timeout, no config.
 
 ### Where the model sees this (why the wording is trigger-first)
 
@@ -38,15 +47,12 @@ depends on the session:
   hidden tools out of `<tools>` *and* `<rules>`, so codemode inlines the
   description plus guidelines into its own tool description — a ~3k-token
   catalog of every callable tool. Nothing is lost, but the rule then sits deep
-  in a tool listing instead of in the rules section. Measured on a real
-  codemode-only session (13 callable tools, `inlineBudget: 6000`): all 13
-  sections are present, `ask_user` among them, ~238 tokens. The budget only
-  starts dropping sections when the catalog outgrows it.
+  in a tool listing instead of in the rules section.
 
 So the description opens with the trigger condition ("when the next step
 depends on a decision only the user can make…") rather than a mechanics
-sentence, and the guidelines carry the behaviour the description cannot restate
-in the rules section. ~230 tokens once per session, cached with the declaration.
+sentence, and the guidelines carry the batching, multi-select, recommendation,
+and do-not-ask rules.
 
 If asking still drifts under codemode-only, the remaining lever is a
 `before_agent_start` handler appending one bullet to `sections.rules`
@@ -70,6 +76,7 @@ imports.
 
 ## Tests
 
-`npm --workspace pi-ask-user test` covers registration, option composition,
-the Other/freeform path, dismiss semantics, mode guards, and schema shape
-(plain JSON Schema, no TypeBox runtime symbols).
+`npm --workspace pi-ask-user test` covers registration, single-select option
+composition, multi-select toggling and custom `Other` merging, multi-question
+batching with back-navigation, the freeform path, dismiss semantics, mode
+guards, and schema shape (plain JSON Schema, no TypeBox runtime symbols).
