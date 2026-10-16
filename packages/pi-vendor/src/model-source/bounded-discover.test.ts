@@ -102,7 +102,7 @@ describe("discoverModelIds", () => {
 		expect(fetchImpl).toHaveBeenCalledWith("https://example.com/gateway/v1/models", expect.any(Object));
 	});
 
-	it("uses Google list URL/header and parses models[].name", async () => {
+	it("uses Google /v1beta list URL/header (replacing trailing /v1) and parses models[].name", async () => {
 		const fetchImpl = vi.fn(async (_input: string, init: any) => {
 			expect(init.headers["x-goog-api-key"]).toBe("secret");
 			return fakeResponse({ jsonBody: { models: [{ name: "models/gemini-b" }, { name: "models/gemini-a" }] } });
@@ -111,7 +111,7 @@ describe("discoverModelIds", () => {
 			{ baseUrl: "https://example.com/v1", api: "google-generative-ai", apiKey: "secret" },
 			{ fetchImpl },
 		)).resolves.toEqual(["gemini-a", "gemini-b"]);
-		expect(fetchImpl).toHaveBeenCalledWith("https://example.com/v1/models", expect.any(Object));
+		expect(fetchImpl).toHaveBeenCalledWith("https://example.com/v1beta/models", expect.any(Object));
 	});
 
 	it("adds native auth and an additional Bearer header when authHeader is true", async () => {

@@ -49,7 +49,8 @@ function buildModelsUrl(baseUrl: string, api = "openai-completions"): string {
 		if (api === "anthropic-messages") {
 			u.pathname = `${pathname.endsWith("/v1") ? pathname : `${pathname}/v1`}/models`;
 		} else if (api === "google-generative-ai") {
-			u.pathname = `${pathname.endsWith("/v1") || pathname.endsWith("/v1beta") ? pathname : `${pathname}/v1beta`}/models`;
+			const base = pathname.endsWith("/v1") ? pathname.slice(0, -"/v1".length) : pathname;
+			u.pathname = `${base.endsWith("/v1beta") ? base : `${base}/v1beta`}/models`;
 		} else {
 			u.pathname = `${pathname}/models`;
 		}

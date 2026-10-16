@@ -22,11 +22,13 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("There is no AI-facing CRUD or lint command.");
 	});
 
-	it("documents the mandatory Anthropic Messages trailing /v1 baseUrl rule and audit requirement", () => {
+	it("documents the mandatory Anthropic Messages and Google Generative AI baseUrl rules and audit requirement", () => {
 		expect(skill).toContain("Anthropic Messages `baseUrl` Rule");
 		expect(skill).toContain("stripped of the trailing `/v1`");
 		expect(skill).toContain("/v1/v1/messages");
-		expect(skill).toContain("Verify routing constraints, especially the Anthropic Messages rule");
+		expect(skill).toContain("Google Generative AI `baseUrl` Rule");
+		expect(skill).toContain("ending in `/v1beta`");
+		expect(skill).toContain("Verify routing constraints, especially the Anthropic Messages and Google Generative AI rules");
 	});
 
 	it("enforces strict-patch integrity, 100% official template key order preservation, and a machine-generated model ordering audit", () => {

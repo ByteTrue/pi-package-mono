@@ -96,7 +96,7 @@ Exact sync 的唯一写入授权是 Skill 固定 Node 模板生成并排序的 `
 
 - 同 id 跨 official provider 可重复；必须让用户选择模板来源。
 - 目标 provider 与模板来源 provider 是两个概念，复制模板时不复制官方 baseUrl/headers/credentials。
-- `anthropic-messages` 模型挂在 provider-level `/v1` base URL 时，model-level baseUrl 去掉尾部 `/v1`；其他 adapter 无明确需求不加 override。
+- `anthropic-messages` 模型挂在 provider-level `/v1` base URL 时，model-level `baseUrl` 去掉尾部 `/v1`；`google-generative-ai` 模型挂在非 `/v1beta` 结尾的 provider `baseUrl` 时，model-level `baseUrl` 归一为 `/v1beta`（尾部 `/v1` 替换为 `/v1beta`，无后缀时追加 `/v1beta`）；其他 adapter 无明确需求不加 override。
 - 无官方模板时允许 custom model，但只记录用户明确知道的事实，不把“safe defaults”包装成官方事实。
 
 ## 包边界

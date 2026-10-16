@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acquireOneModel, resolveModelConfig, stripTrailingV1 } from "./model-pick.js";
+import { acquireOneModel, resolveModelConfig, stripTrailingV1, toGoogleV1Beta } from "./model-pick.js";
 import { createScriptedQuickUI } from "./quick-adapter.js";
 
 // Fully hermetic defaults: no official catalog, no catalog search hits.
@@ -38,6 +38,22 @@ describe("stripTrailingV1", () => {
 		expect(stripTrailingV1("https://relay.test/v2")).toBeNull();
 		expect(stripTrailingV1("https://relay.test/v1beta")).toBeNull();
 		expect(stripTrailingV1("not a url")).toBeNull();
+	});
+});
+
+describe("toGoogleV1Beta", () => {
+	it("replaces a trailing /v1 segment with /v1beta or appends /v1beta when absent", () => {
+		expect(toGoogleV1Beta("https://relay.test/v1")).toBe("https://relay.test/v1beta");
+		expect(toGoogleV1Beta("https://relay.test/v1/")).toBe("https://relay.test/v1beta");
+		expect(toGoogleV1Beta("https://relay.test/api/v1")).toBe("https://relay.test/api/v1beta");
+		expect(toGoogleV1Beta("https://relay.test")).toBe("https://relay.test/v1beta");
+		expect(toGoogleV1Beta("https://relay.test/gateway")).toBe("https://relay.test/gateway/v1beta");
+	});
+
+	it("returns null when baseUrl already ends with /v1beta or is invalid", () => {
+		expect(toGoogleV1Beta("https://relay.test/v1beta")).toBeNull();
+		expect(toGoogleV1Beta("https://relay.test/v1beta/")).toBeNull();
+		expect(toGoogleV1Beta("not a url")).toBeNull();
 	});
 });
 
@@ -138,6 +154,37 @@ describe("resolveModelConfig", () => {
 			"gpt-5",
 			{ baseUrl: "https://relay.test/v1", api: "openai-completions" },
 			{ catalog: { openai: { "gpt-5": officialModel("gpt-5") } } },
+		);
+
+		expect(model?.baseUrl).toBeUndefined();
+	});
+
+	it("overrides baseUrl to /v1beta for google-generative-ai models on /v1 or bare providers", async () => {
+		const ui = createScriptedQuickUI({});
+		const fromV1 = await resolveModelConfig(
+			ui,
+			"gemini-x",
+			{ baseUrl: "https://relay.test/v1", api: "openai-completions" },
+			{ catalog: { google: { "gemini-x": officialModel("gemini-x", { api: "google-generative-ai" }) } } },
+		);
+		expect(fromV1).toMatchObject({ api: "google-generative-ai", baseUrl: "https://relay.test/v1beta" });
+
+		const fromBare = await resolveModelConfig(
+			ui,
+			"gemini-x",
+			{ baseUrl: "https://relay.test", api: "openai-completions" },
+			{ catalog: { google: { "gemini-x": officialModel("gemini-x", { api: "google-generative-ai" }) } } },
+		);
+		expect(fromBare).toMatchObject({ api: "google-generative-ai", baseUrl: "https://relay.test/v1beta" });
+	});
+
+	it("leaves baseUrl alone for google-generative-ai when the provider url already ends with /v1beta", async () => {
+		const ui = createScriptedQuickUI({});
+		const model = await resolveModelConfig(
+			ui,
+			"gemini-x",
+			{ baseUrl: "https://relay.test/v1beta", api: "google-generative-ai" },
+			{ catalog: { google: { "gemini-x": officialModel("gemini-x", { api: "google-generative-ai" }) } } },
 		);
 
 		expect(model?.baseUrl).toBeUndefined();

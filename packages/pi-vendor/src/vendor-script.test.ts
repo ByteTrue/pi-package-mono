@@ -371,6 +371,7 @@ describe("vendor skill script", () => {
 			models: [
 				{ id: "claude-route", api: "anthropic-messages" },
 				{ id: "claude-route-duplicate", api: "anthropic-messages" },
+				{ id: "gemini-route", api: "google-generative-ai", baseUrl: `${origin}/v1beta` },
 			],
 		} } }));
 		try {
@@ -385,6 +386,45 @@ describe("vendor skill script", () => {
 			expect(seen).toHaveLength(4);
 			expect(seen.find((entry) => entry.url === "/v1/models")).toMatchObject({ headers: { "x-api-key": "secret", authorization: "Bearer secret", "anthropic-version": "2023-06-01" } });
 			expect(seen.find((entry) => entry.url === "/v1beta/models")).toMatchObject({ headers: { "x-goog-api-key": "secret", authorization: "Bearer secret" } });
+		} finally {
+			server.close();
+		}
+	});
+
+	it("normalizes /v1 provider baseUrl to /v1beta/models for Google and deduplicates model-level /v1beta and stripped-/v1 overrides", async () => {
+		const seen: Array<{ url: string; headers: IncomingHttpHeaders }> = [];
+		const server = createServer((request, response) => {
+			seen.push({ url: request.url ?? "", headers: request.headers });
+			if (request.url === "/v1beta/models") {
+				response.end(JSON.stringify({ models: [{ name: "models/gemini-x" }] }));
+			} else if (request.url === "/v1/models" && request.headers["x-api-key"]) {
+				response.end(JSON.stringify({ data: [{ id: "claude-x" }] }));
+			} else {
+				response.end(JSON.stringify({ data: [{ id: "openai-x" }] }));
+			}
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("missing test address");
+		const origin = `http://127.0.0.1:${address.port}`;
+		writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { relay: {
+			baseUrl: `${origin}/v1`, api: "openai-completions", apiKey: "secret",
+			models: [
+				{ id: "claude-x", api: "anthropic-messages", baseUrl: origin },
+				{ id: "gemini-x", api: "google-generative-ai", baseUrl: `${origin}/v1beta` },
+			],
+		} } }));
+		try {
+			const result = await runAsync(["discover", "relay"]);
+			expect(result.code).toBe(0);
+			expect(JSON.parse(result.stdout).routes).toEqual([
+				{ routeId: 1, api: "openai-completions", status: "ok", count: 1, modelIds: ["openai-x"] },
+				{ routeId: 2, api: "openai-responses", status: "ok", count: 1, modelIds: ["openai-x"] },
+				{ routeId: 3, api: "anthropic-messages", status: "ok", count: 1, modelIds: ["claude-x"] },
+				{ routeId: 4, api: "google-generative-ai", status: "ok", count: 1, modelIds: ["gemini-x"] },
+			]);
+			expect(seen).toHaveLength(4);
+			expect(seen.filter((entry) => entry.url === "/v1beta/models")).toHaveLength(1);
 		} finally {
 			server.close();
 		}

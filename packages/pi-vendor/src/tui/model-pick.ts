@@ -123,9 +123,14 @@ export async function resolveModelConfig(
 }
 
 /**
- * Inherit the provider api when the template has none, then apply the
- * anthropic-messages rule: that adapter appends its own `/v1`, so a provider
- * baseUrl already ending in `/v1` needs a per-model override without it.
+ * Inherit the provider api when the template has none, then apply adapter-specific
+ * model-level baseUrl overrides:
+ * - anthropic-messages: the Anthropic SDK appends its own `/v1`, so a provider
+ *   baseUrl ending in `/v1` needs a per-model override without it.
+ * - google-generative-ai: Pi sets `httpOptions.apiVersion = ""` on `@google/genai`
+ *   whenever `baseUrl` is present, so the SDK never appends `/v1beta` itself; a
+ *   provider baseUrl not already ending in `/v1beta` needs a per-model override
+ *   ending in `/v1beta` (replacing a trailing `/v1` when present).
  */
 function applyProviderRouting(model: ProviderModelConfig, provider: ProviderTarget): ProviderModelConfig {
 	const next: ProviderModelConfig = { ...model };
@@ -133,6 +138,9 @@ function applyProviderRouting(model: ProviderModelConfig, provider: ProviderTarg
 	if (next.api === "anthropic-messages") {
 		const withoutV1 = stripTrailingV1(provider.baseUrl);
 		if (withoutV1 !== null) next.baseUrl = withoutV1;
+	} else if (next.api === "google-generative-ai") {
+		const withV1Beta = toGoogleV1Beta(provider.baseUrl);
+		if (withV1Beta !== null) next.baseUrl = withV1Beta;
 	}
 	return next;
 }
@@ -148,6 +156,24 @@ export function stripTrailingV1(baseUrl: string): string | null {
 	const path = url.pathname.replace(/\/+$/, "");
 	if (!path.endsWith("/v1")) return null;
 	url.pathname = path.slice(0, -"/v1".length);
+	return url.toString().replace(/\/+$/, "");
+}
+
+/**
+ * Return `baseUrl` normalized to a trailing `/v1beta` path segment (replacing
+ * a trailing `/v1` when present), or null when it already ends in `/v1beta`.
+ */
+export function toGoogleV1Beta(baseUrl: string): string | null {
+	let url: URL;
+	try {
+		url = new URL(baseUrl);
+	} catch {
+		return null;
+	}
+	const path = url.pathname.replace(/\/+$/, "");
+	if (path.endsWith("/v1beta")) return null;
+	const base = path.endsWith("/v1") ? path.slice(0, -"/v1".length) : path;
+	url.pathname = `${base}/v1beta`;
 	return url.toString().replace(/\/+$/, "");
 }
 

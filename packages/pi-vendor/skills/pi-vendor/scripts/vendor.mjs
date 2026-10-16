@@ -220,7 +220,10 @@ function discoveryUrl(baseUrl, api) {
 	if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
 	const path = url.pathname.replace(/\/$/, "");
 	if (api === "anthropic-messages") url.pathname = `${path.endsWith("/v1") ? path : `${path}/v1`}/models`;
-	else if (api === "google-generative-ai") url.pathname = `${path.endsWith("/v1") || path.endsWith("/v1beta") ? path : `${path}/v1beta`}/models`;
+	else if (api === "google-generative-ai") {
+		const base = path.endsWith("/v1") ? path.slice(0, -"/v1".length) : path;
+		url.pathname = `${base.endsWith("/v1beta") ? base : `${base}/v1beta`}/models`;
+	}
 	else url.pathname = `${path}/models`;
 	return url;
 }
@@ -581,10 +584,12 @@ async function order(snapshotArg, providersArg) {
 }
 
 function routeKey(route) {
+	let target = route.baseUrl;
+	try { target = discoveryUrl(route.baseUrl, route.api).toString(); } catch {}
 	const headers = Object.entries(route.headers)
 		.map(([name, value]) => [name.toLowerCase(), value])
 		.sort(([left], [right]) => left.localeCompare(right));
-	return JSON.stringify([route.api, route.baseUrl, headers, route.authHeader === true]);
+	return JSON.stringify([route.api, target, headers, route.authHeader === true]);
 }
 
 function collectRoutes(provider) {
