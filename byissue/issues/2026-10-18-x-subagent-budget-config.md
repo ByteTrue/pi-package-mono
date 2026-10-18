@@ -101,7 +101,7 @@ npm --workspace @bytetrue/pi-subagent test
 - `npm --workspace @bytetrue/pi-subagent run typecheck` → 退出码 0。
 - `npx vitest run`（本包）→ **5 files / 92 passed**（原 88，新增 4）：预算链四层（逐次传参、settings 角色、角色文档不被全局缩小、全空回落常量）；reviewer 出厂预算 150 / 3600000 与走链生效；三层输入拒绝（文档 `0` / `-5` / 非数字、normalizeTask `0` / `-3`、settings 字符串 `"120"`）；全局+项目预算合并与项目信任门（未受信时预算整段丢弃）；菜单式写入（只改 model）不清掉预算。
 - `npm test`（全仓）→ 各 workspace 全绿：41+1 skipped / 134 / 92 / 205 / 95 / 148+9 skipped / 16 / 14 / 10 / 9。
-- `npm run typecheck --workspaces --if-present` → `small-extensions/pi-context-guard` 失败（`Property 'sections' does not exist on type 'BuildSystemPromptOptions'`）。该包在本改动中无任何 diff（`git diff HEAD -- small-extensions` 为空），属 HEAD 上已存在的失效（上游 pi 类型变化），不在本 issue 范围内。
+- `npm run typecheck --workspaces --if-present` → `small-extensions/pi-context-guard` 失败（`Property 'sections' does not exist on type 'BuildSystemPromptOptions'`）。该包在本改动中无任何 diff（`git diff HEAD -- small-extensions` 为空）。**修正（2026-10-18 推送后核实）**：当时写的是“属 HEAD 既有失效（上游 pi 类型变化）”，实际是**本地 node_modules 与 package-lock 漂移**——lock 钉 `@earendil-works/pi-coding-agent@1.1.0`（有 `sections`），本地 `node_modules` 是 `0.84.3`（无该字段）；HEAD `a210391` 的 CI 是 success，所以 CI（走 `npm ci`）并未变红。坑点已沉淀到 `byissue/notes/021-npm-ci-before-full-typecheck.md`，不在本 issue 范围。
 - `npm --workspace @bytetrue/pi-subagent pack --dry-run` → 10 files，无 `files`/`exports`/`bin` 变化。
 
 未做：未 commit、未 bump 版本、未发布；本机安装版 `~/.pi/agent/npm/node_modules/@bytetrue/pi-subagent` 未同步（发版后重装，或按 `pi-dev-setup` 走项目级本地加载）。150 轮 / 60 分钟的前瞻有效性仍靠实跑确认（发版后 2–3 次真实审查，记录轮次与耗时）。
@@ -116,6 +116,6 @@ npm --workspace @bytetrue/pi-subagent test
 
 **有界简化仍成立**：`0 = 无上限` 被排除，上限不可关闭；预算每段独立窗口，resume 重开一整段。已知上限：150 轮 / 60 分钟是从本机 p90（reviewer 77 轮 / 34 分，最长 80 轮 / 39 分）推的，最长观测 158 轮 / 80 分钟的重活仍会撞上限（接受，续跑一次即语义承诺）。升级触发：若发版后 2–3 次真实审查实测显示 150 轮不足，新开 issue 回写数字，不在本 issue 内隐藏。
 
-**回写位置**：`byissue/spec/pi-subagent/index.md`（当前表面的预算链、核心机制第 2 节预算与每段独立窗口、第 5 节预算优先级链、`/subagent` 预算菜单、`reviewer` 出厂预算、使用路径表）；`packages/pi-subagent/README.md`（参数表、`/subagent` 预算面、Budget Resolution 节）；讨论记录 `byissue/talks/2026-10-18-subagent-budget-config.md`。引用修正：本 issue 改名后 2 处引用（spec 第 13 行、talk 出口）已同步。无需 notes/decisions（无可复用的仓库外部坑点）。
+**回写位置**：`byissue/spec/pi-subagent/index.md`（当前表面的预算链、核心机制第 2 节预算与每段独立窗口、第 5 节预算优先级链、`/subagent` 预算菜单、`reviewer` 出厂预算、使用路径表）；`packages/pi-subagent/README.md`（参数表、`/subagent` 预算面、Budget Resolution 节）；讨论记录 `byissue/talks/2026-10-18-subagent-budget-config.md`。引用修正：本 issue 改名后 2 处引用（spec 第 13 行、talk 出口）已同步。notes：`byissue/notes/021-npm-ci-before-full-typecheck.md`（本地 node_modules 与 package-lock 漂移会造成 phantom 类型红，全仓 typecheck 前先 `npm ci`；本次先写错归因后核实修正）。
 
-**遗留**：发版 0.18.0（与本次关闭同次 commit，tag `pi-subagent-v0.18.0`）；发版后 2–3 次真实审查实跑确认预算数字；`small-extensions/pi-context-guard` 的 `Property 'sections'` typecheck 失败属 HEAD 既有失效，不在本 issue 范围。
+**遗留**：发版 0.18.0（版本单独成笔 `53655aa`，与关闭代码同批推送，tag `pi-subagent-v0.18.0`）；发版后 2–3 次真实审查实跑确认预算数字；`small-extensions/pi-context-guard` 的 phantom 类型红属本地依赖漂移（见 note 021），不在本 issue 范围。
