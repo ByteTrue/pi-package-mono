@@ -45,3 +45,5 @@ lock 钉 `1.1.0`（`BuildSystemPromptOptions` 有 `sections`），本地 `node_m
 - 任何全仓 typecheck / test 前的准备动作，尤其是"我改了一个包，别的包报了类型红"。
 - 上游类型包（pi-coding-agent）升级后的整仓体检；small-extensions 的 tsc 只看声明，
   没有运行时行为能暴露漂移。
+- 修转依赖 advisory 后验三件事（`npm ci` 实际版本 / `npm audit` / 全仓 typecheck），见
+  `byissue/notes/022-npm-transitive-advisory-fix-shapes.md`。
