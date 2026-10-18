@@ -19,5 +19,8 @@
   },
   "overrides": {
     "undici": "8.11.2"
+  },
+  "devDependencies": {
+    "source-map-js": "1.2.2"
   }
 }
