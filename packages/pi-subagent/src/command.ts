@@ -4,11 +4,12 @@ import {
   updateSubagentSettings,
   describeSettingsPathForScope,
   listDiscoveredAgentNames,
+  parsePositiveInt,
   type SettingsScope,
   type SubagentSettings,
 } from "./settings.js";
 import { promptFuzzySelect, type PickerItem } from "./tui-picker.js";
-import { subagentManager, type SubagentTaskRecord } from "./index.js";
+import { subagentManager, DEFAULT_MAX_TURNS, DEFAULT_TIMEOUT_MS, type SubagentTaskRecord } from "./index.js";
 import { showProgressView } from "./progress-view.js";
 
 const THINKING_CHOICES = [
@@ -30,6 +31,76 @@ function fmtDur(ms: number): string {
 
 function trunc(s: string, w: number): string {
   return s.length <= w ? s : `${s.slice(0, w - 1)}…`;
+}
+
+// Preset tiers for the budget pickers. The package default is always reachable via
+// "Clear override", so the tiers do not need to list it.
+const TURN_PRESETS = [50, 100, 150, 200];
+const TIMEOUT_PRESETS_MS = [20, 40, 60, 120].map((m) => m * 60000);
+
+/**
+ * One picker for both budget numbers. Same shape as pickThinking: keep / clear /
+ * custom / presets. `customScale` lets a timeout be typed in minutes while the
+ * stored value stays milliseconds.
+ */
+async function pickBudgetNumber(
+  ctx: ExtensionCommandContext,
+  title: string,
+  current: number | undefined,
+  presets: number[],
+  format: (n: number) => string,
+  customUnit: string,
+  customScale: number,
+): Promise<number | null | undefined> {
+  const items: PickerItem[] = [];
+
+  if (current !== undefined) {
+    items.push({
+      value: "__KEEP__",
+      label: `Keep current (${format(current)})`,
+      description: "retain existing budget",
+    });
+    items.push({
+      value: "__CLEAR__",
+      label: "Clear override (use the package default)",
+      description: "unset this value",
+    });
+  }
+
+  items.push({
+    value: "__CUSTOM__",
+    label: `Custom ${customUnit}...`,
+    description: "enter a positive number manually",
+  });
+
+  for (const p of presets) {
+    items.push({
+      value: String(p),
+      label: current === p ? `${format(p)} (current)` : format(p),
+    });
+  }
+
+  const picked = await promptFuzzySelect(ctx, title, items, "Filter values...");
+  if (!picked) return undefined;
+
+  if (picked === "__KEEP__") return current;
+  if (picked === "__CLEAR__") return null;
+
+  if (picked === "__CUSTOM__") {
+    const input = await ctx.ui.input(`Custom ${customUnit}`, `Positive number of ${customUnit}`);
+    if (input === undefined) return undefined;
+    const n = parsePositiveInt(Number(input) * customScale);
+    if (!n) {
+      ctx.ui.notify(
+        `"${input}" is not a positive number of ${customUnit}; value left unchanged.`,
+        "error",
+      );
+      return current;
+    }
+    return n;
+  }
+
+  return parsePositiveInt(Number(picked));
 }
 
 async function chooseScope(ctx: ExtensionCommandContext): Promise<SettingsScope | undefined> {
@@ -149,6 +220,8 @@ function showConfig(ctx: ExtensionCommandContext): void {
     "=== Subagent Configuration ===",
     `Default Model:    ${settings.defaultModel ?? "inherit parent session"}`,
     `Default Thinking: ${settings.defaultThinking ?? "inherit parent session"}`,
+    `Default Turns:    ${settings.defaultMaxTurns ?? DEFAULT_MAX_TURNS}`,
+    `Default Timeout:  ${settings.defaultTimeoutMs !== undefined ? fmtDur(settings.defaultTimeoutMs) : fmtDur(DEFAULT_TIMEOUT_MS)}`,
     `Settings file:    ${describeSettingsPathForScope(ctx.cwd, "global")}`,
     "",
     "Configured Roles:",
@@ -160,7 +233,7 @@ function showConfig(ctx: ExtensionCommandContext): void {
   } else {
     for (const [name, cfg] of configuredRoles) {
       lines.push(
-        `  • ${name}: model=${cfg.model ?? "default"}, thinking=${cfg.thinking ?? "default"}${cfg.tools?.length ? `, tools=[${cfg.tools.join(",")}]` : ""}`,
+        `  • ${name}: model=${cfg.model ?? "default"}, thinking=${cfg.thinking ?? "default"}${cfg.tools?.length ? `, tools=[${cfg.tools.join(",")}]` : ""}${cfg.maxTurns !== undefined ? `, maxTurns=${cfg.maxTurns}` : ""}${cfg.timeoutMs !== undefined ? `, timeout=${fmtDur(cfg.timeoutMs)}` : ""}`,
       );
     }
   }
@@ -196,6 +269,46 @@ async function configureDefaultMenu(ctx: ExtensionCommandContext): Promise<void>
 
   ctx.ui.notify(
     `Subagent default saved to ${path}\nModel: ${model ?? "(inherited)"}, Thinking: ${thinking ?? "(inherited)"}`,
+    "info",
+  );
+}
+
+async function configureBudgetMenu(ctx: ExtensionCommandContext): Promise<void> {
+  const scope = await chooseScope(ctx);
+  if (!scope) return;
+
+  const currentSettings = loadSubagentSettings(ctx.cwd, ctx.isProjectTrusted());
+
+  const maxTurns = await pickBudgetNumber(
+    ctx,
+    `Max Turns — global default (package default: ${DEFAULT_MAX_TURNS})`,
+    currentSettings.defaultMaxTurns,
+    TURN_PRESETS,
+    (n) => `${n} turns`,
+    "turns",
+    1,
+  );
+  if (maxTurns === undefined) return;
+
+  const timeoutMs = await pickBudgetNumber(
+    ctx,
+    `Timeout — global default (package default: ${fmtDur(DEFAULT_TIMEOUT_MS)})`,
+    currentSettings.defaultTimeoutMs,
+    TIMEOUT_PRESETS_MS,
+    (n) => fmtDur(n),
+    "minutes",
+    60000,
+  );
+  if (timeoutMs === undefined) return;
+
+  const path = updateSubagentSettings(ctx.cwd, scope, (current) => ({
+    ...current,
+    defaultMaxTurns: maxTurns === null ? undefined : maxTurns,
+    defaultTimeoutMs: timeoutMs === null ? undefined : timeoutMs,
+  }));
+
+  ctx.ui.notify(
+    `Subagent budget saved to ${path}\nMax Turns: ${maxTurns ?? DEFAULT_MAX_TURNS}, Timeout: ${timeoutMs === null ? fmtDur(DEFAULT_TIMEOUT_MS) : fmtDur(timeoutMs)}`,
     "info",
   );
 }
@@ -239,6 +352,28 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
     const thinking = await pickThinking(ctx, existingRole.thinking);
     if (thinking === undefined) continue;
 
+    const maxTurns = await pickBudgetNumber(
+      ctx,
+      `Max Turns for "${roleName}" (the role document's own budget applies when unset)`,
+      existingRole.maxTurns,
+      TURN_PRESETS,
+      (n) => `${n} turns`,
+      "turns",
+      1,
+    );
+    if (maxTurns === undefined) continue;
+
+    const timeoutMs = await pickBudgetNumber(
+      ctx,
+      `Timeout for "${roleName}" (the role document's own budget applies when unset)`,
+      existingRole.timeoutMs,
+      TIMEOUT_PRESETS_MS,
+      (n) => fmtDur(n),
+      "minutes",
+      60000,
+    );
+    if (timeoutMs === undefined) continue;
+
     const path = updateSubagentSettings(ctx.cwd, scope, (current) => {
       const nextAgents = { ...(current.agents ?? {}) };
       const updatedRole = { ...(nextAgents[roleName] ?? {}) };
@@ -248,6 +383,12 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
 
       if (thinking === null) delete updatedRole.thinking;
       else updatedRole.thinking = thinking;
+
+      if (maxTurns === null) delete updatedRole.maxTurns;
+      else if (maxTurns !== undefined) updatedRole.maxTurns = maxTurns;
+
+      if (timeoutMs === null) delete updatedRole.timeoutMs;
+      else if (timeoutMs !== undefined) updatedRole.timeoutMs = timeoutMs;
 
       if (Object.keys(updatedRole).length > 0) {
         nextAgents[roleName] = updatedRole;
@@ -262,7 +403,7 @@ async function configureRoleMenu(ctx: ExtensionCommandContext): Promise<void> {
     });
 
     ctx.ui.notify(
-      `Role "${roleName}" configured in ${path}\nModel: ${model ?? "(default)"}, Thinking: ${thinking ?? "(default)"}`,
+      `Role "${roleName}" configured in ${path}\nModel: ${model ?? "(default)"}, Thinking: ${thinking ?? "(default)"}, Max Turns: ${maxTurns ?? "(document default)"}, Timeout: ${timeoutMs === null || timeoutMs === undefined ? "(document default)" : fmtDur(timeoutMs)}`,
       "info",
     );
     return;
@@ -389,12 +530,14 @@ export async function runSubagentCommand(
           ? `👀 View Active Subagents (${runningCount} running)`
           : "👀 View Subagent Tasks";
       const actionDefault = "⚙️ Configure Default Subagent Model & Thinking";
+      const actionBudget = "⏱ Configure Budget (Max Turns / Timeout)";
       const actionRole = "🎭 Configure an Agent Role (e.g. reviewer)";
       const actionShow = "📋 Show Current Configuration";
 
       const choices = [
         actionActive,
         actionDefault,
+        actionBudget,
         actionRole,
         actionShow,
         "🚪 Exit",
@@ -409,6 +552,8 @@ export async function runSubagentCommand(
         await viewSubagentsMenu(ctx);
       } else if (action === actionDefault) {
         await configureDefaultMenu(ctx);
+      } else if (action === actionBudget) {
+        await configureBudgetMenu(ctx);
       } else if (action === actionRole) {
         await configureRoleMenu(ctx);
       } else if (action === actionShow) {

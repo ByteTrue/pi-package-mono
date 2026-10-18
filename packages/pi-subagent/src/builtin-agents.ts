@@ -7,6 +7,11 @@ export interface AgentConfig {
   thinking?: string;
   tools?: string[];
   systemPrompt?: string;
+  /** Turn budget baked into the role document (issue: budget config). A settings
+   * role override wins over this; a call parameter wins over both. */
+  maxTurns?: number;
+  /** Timeout budget in milliseconds, same precedence as `maxTurns`. */
+  timeoutMs?: number;
   /** Trigger sentence for the dispatching model, rendered into the tool
    * description's roster (issue 102). Not injected into the child's prompt. */
   description?: string;

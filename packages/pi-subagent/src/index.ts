@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import {
   loadSubagentSettings,
   listDiscoveredAgentNames,
+  parsePositiveInt,
   type SubagentSettings,
 } from "./settings.js";
 import { runSubagentCommand } from "./command.js";
@@ -114,8 +115,26 @@ const MAX_TOOLS = 256;
 const ABORT_KILL_GRACE_MS = 1500;
 const THROTTLE_MS = 300;
 const MAX_FALLBACK_OUTPUT_CHARS = 8192;
-const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
-const DEFAULT_MAX_TURNS = 50; // 50 turns
+export const DEFAULT_TIMEOUT_MS = 40 * 60 * 1000; // 40 minutes
+export const DEFAULT_MAX_TURNS = 100; // 100 turns
+
+/**
+ * Package-level budget defaults, exported for the `/subagent` status lines.
+ * Raised from 50 turns / 20 minutes because real adversarial reviews on this
+ * machine measured 57–80 turns and up to 39 minutes, so the old default forced a
+ * resume on almost every review. They stay a ceiling: there is no "unlimited".
+ */
+export function resolveBudgetDefaults(subagentSettings?: SubagentSettings): {
+  maxTurns: number;
+  timeoutMs: number;
+} {
+  return {
+    maxTurns:
+      parsePositiveInt(subagentSettings?.defaultMaxTurns) ?? DEFAULT_MAX_TURNS,
+    timeoutMs:
+      parsePositiveInt(subagentSettings?.defaultTimeoutMs) ?? DEFAULT_TIMEOUT_MS,
+  };
+}
 
 // Timeout diagnostics: set PI_SUBAGENT_DEBUG=1 in the parent to trace timeout
 // timer registration/firing on stderr — used to hunt timer-delivery bugs on
@@ -764,6 +783,10 @@ export function parseAgentFile(filePath: string): AgentConfig {
         .map((s) => s.trim().toLowerCase())
         .filter(Boolean);
     }
+    // A role document is untrusted user input, so budget keys go through the same
+    // strict positive-integer gate as settings: "maxTurns: abc" is dropped, not 0.
+    else if (k === "maxTurns") cfg.maxTurns = parsePositiveInt(Number(v));
+    else if (k === "timeoutMs") cfg.timeoutMs = parsePositiveInt(Number(v));
   }
   return cfg;
 }
@@ -935,14 +958,21 @@ export function resolveRunCfg(
   const cwd = item.cwd ? resolve(item.cwd) : undefined;
   const resumeSession = str(item.resume);
   const sessionId = item.id ? str(item.id) : undefined;
-  const timeoutMs =
-    typeof item.timeoutMs === "number" && item.timeoutMs > 0
-      ? item.timeoutMs
-      : undefined;
+  // Budget chain, same shape as the model/thinking chain: call parameter > settings
+  // role > agent document > settings global > package constant (applied in runPi).
+  // A global default therefore cannot override a role document's own budget, only
+  // fill in when the role carries none. Values are re-validated because the agent
+  // document and the settings file are both untrusted input.
   const maxTurns =
-    typeof item.maxTurns === "number" && item.maxTurns > 0
-      ? item.maxTurns
-      : undefined;
+    parsePositiveInt(item.maxTurns) ??
+    parsePositiveInt(roleSettings?.maxTurns) ??
+    parsePositiveInt(agentCfg.maxTurns) ??
+    parsePositiveInt(subagentSettings?.defaultMaxTurns);
+  const timeoutMs =
+    parsePositiveInt(item.timeoutMs) ??
+    parsePositiveInt(roleSettings?.timeoutMs) ??
+    parsePositiveInt(agentCfg.timeoutMs) ??
+    parsePositiveInt(subagentSettings?.defaultTimeoutMs);
 
   // Bake the level into the model string whenever a model exists, "off" included:
   // buildPiArgs cannot append through a model id that itself contains a colon.
@@ -2018,7 +2048,7 @@ export default function subagentExtension(pi: {
   );
 
   pi.registerCommand?.("subagent", {
-    description: "Configure subagent default/role models and thinking levels",
+    description: "Configure subagent default/role models, thinking levels and budgets",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       await runSubagentCommand(ctx, args);
     },
@@ -2028,6 +2058,11 @@ export default function subagentExtension(pi: {
   // registered; agent documents added mid-session need a /reload to appear
   // here (role resolution itself always reads the files live).
   const roster = buildAgentRosterText(process.cwd());
+  // Budget defaults are advertised from the global settings layer only, and
+  // `loadSubagentSettings(cwd, false)` is exactly "global, project layer skipped"
+  // — the project layer is applied per run through ctx trust, so the number shown
+  // here is the one that is true for a session that has not trusted the project.
+  const budgetDefaults = resolveBudgetDefaults(loadSubagentSettings(process.cwd(), false));
 
   pi.registerTool?.({
     name: "subagent",
@@ -2071,11 +2106,12 @@ export default function subagentExtension(pi: {
         timeoutMs: {
           type: "number",
           description:
-            "Optional timeout in milliseconds. Default: 1200000 (20 minutes).",
+            `Optional timeout in milliseconds. Default: ${budgetDefaults.timeoutMs} (${fmtDur(budgetDefaults.timeoutMs)}) — the configured global default. A role document's own timeoutMs applies to that role, and this parameter applies to one task. 0 is rejected.`,
         },
         maxTurns: {
           type: "number",
-          description: "Optional maximum turns before pausing. Default: 50.",
+          description:
+            `Optional maximum turns before pausing. Default: ${budgetDefaults.maxTurns} — the configured global default. A role document's own maxTurns applies to that role, and this parameter applies to one task. 0 is rejected.`,
         },
       },
       required: ["task"],

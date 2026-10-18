@@ -8,6 +8,13 @@
 # tool description's roster (issue 102); the body below is the child's prompt.
 description: Independent adversarial reviewer. Use it to inspect code, diffs, plans, or current state and report evidence-backed findings with a merge verdict. Do not use it to implement or fix — it reports and does not edit.
 thinking: max
+# Budget: an adversarial review measured 57–80 turns and up to 39 minutes on the
+# author's machine, so the package default (100 turns / 40 minutes) is tight for
+# this role. A settings role override wins over these two lines; a call parameter
+# wins over both. Values must be positive integers, comments are ignored.
+maxTurns: 150
+# 60 minutes, in milliseconds.
+timeoutMs: 3600000
 tools: read, bash
 ---
 

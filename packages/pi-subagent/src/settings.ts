@@ -17,11 +17,19 @@ export interface SubagentRoleConfig {
   model?: string;
   thinking?: string;
   tools?: string[];
+  /** Turn budget for this role. Positive integers only; anything else is dropped. */
+  maxTurns?: number;
+  /** Timeout budget for this role, in milliseconds. Positive integers only. */
+  timeoutMs?: number;
 }
 
 export interface SubagentSettings {
   defaultModel?: string;
   defaultThinking?: string;
+  /** Global turn budget. A role document's own budget wins over this. */
+  defaultMaxTurns?: number;
+  /** Global timeout budget in milliseconds. A role document's own budget wins. */
+  defaultTimeoutMs?: number;
   agents?: Record<string, SubagentRoleConfig>;
   /**
    * Extra environment variables for every child pi process. Project values win
@@ -31,6 +39,18 @@ export interface SubagentSettings {
    * about that extension.
    */
   env?: Record<string, string>;
+}
+
+/**
+ * Budget numbers are strict: positive, finite integers only. `0` and negatives
+ * are rejected so the "blast door" (the turn/timeout ceiling) cannot be turned
+ * off through config, which is the same rule the tool call parameters follow.
+ * Non-integers are floored so `150.9` reads as 150 rather than silently failing.
+ */
+export function parsePositiveInt(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
+  const n = Math.floor(raw);
+  return n > 0 ? n : undefined;
 }
 
 function parseEnvMap(raw: unknown): Record<string, string> | undefined {
@@ -133,6 +153,8 @@ function toStoredSection(settings: SubagentSettings): Record<string, unknown> {
   const section: Record<string, unknown> = {};
   if (settings.defaultModel) section.defaultModel = settings.defaultModel;
   if (settings.defaultThinking) section.defaultThinking = settings.defaultThinking;
+  if (settings.defaultMaxTurns) section.defaultMaxTurns = settings.defaultMaxTurns;
+  if (settings.defaultTimeoutMs) section.defaultTimeoutMs = settings.defaultTimeoutMs;
   if (settings.agents && Object.keys(settings.agents).length > 0) section.agents = settings.agents;
   if (settings.env && Object.keys(settings.env).length > 0) section.env = settings.env;
   return section;
@@ -152,6 +174,8 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
   if (typeof s?.defaultThinking === "string" && s.defaultThinking.trim()) {
     settings.defaultThinking = s.defaultThinking.trim();
   }
+  settings.defaultMaxTurns = parsePositiveInt(s?.defaultMaxTurns);
+  settings.defaultTimeoutMs = parsePositiveInt(s?.defaultTimeoutMs);
   settings.env = parseEnvMap(s?.env);
 
   const agentsMap: Record<string, SubagentRoleConfig> = {};
@@ -167,6 +191,8 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
       if (Array.isArray(c.tools)) {
         role.tools = c.tools.map((t) => String(t).trim().toLowerCase()).filter(Boolean);
       }
+      role.maxTurns = parsePositiveInt(c.maxTurns);
+      role.timeoutMs = parsePositiveInt(c.timeoutMs);
       agentsMap[name] = role;
     }
   }
@@ -187,6 +213,8 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
           if (Array.isArray(c.tools)) {
             role.tools = c.tools.map((t) => String(t).trim().toLowerCase()).filter(Boolean);
           }
+          role.maxTurns = parsePositiveInt(c.maxTurns);
+          role.timeoutMs = parsePositiveInt(c.timeoutMs);
           agentsMap[name] = role;
         }
       }
@@ -200,6 +228,8 @@ function parseSubagentSection(rawSection: unknown, rootObj?: Record<string, unkn
   if (Object.keys(agentsMap).length > 0) {
     settings.agents = agentsMap;
   }
+  if (!settings.defaultMaxTurns) delete settings.defaultMaxTurns;
+  if (!settings.defaultTimeoutMs) delete settings.defaultTimeoutMs;
   if (!settings.env) delete settings.env;
 
   return settings;
@@ -259,6 +289,8 @@ export function loadSubagentSettings(cwd: string, projectTrusted = true): Subage
   return {
     defaultModel: projectSettings.defaultModel ?? globalSettings.defaultModel,
     defaultThinking: projectSettings.defaultThinking ?? globalSettings.defaultThinking,
+    defaultMaxTurns: projectSettings.defaultMaxTurns ?? globalSettings.defaultMaxTurns,
+    defaultTimeoutMs: projectSettings.defaultTimeoutMs ?? globalSettings.defaultTimeoutMs,
     agents: {
       ...(globalSettings.agents ?? {}),
       ...(projectSettings.agents ?? {}),

@@ -10,7 +10,7 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
 - **🎭 One Built-in Role, `reviewer`**: an independent adversarial reviewer (`read, bash`, maximum thinking) that reports evidence-backed findings and a merge verdict without touching the tree. It ships as an ordinary agent document in `agents/` — copy it into `.pi/agents/` to customise it.
 - **🪞 No Hidden Default Role**: omitting `agent` runs a plain child — your model, your thinking level, pi's own prompt, pi's default tools. Nothing is prepended to your task, so the call does exactly what you wrote.
 - **📋 Role Roster in the Tool Description**: each role document's `description:` frontmatter — a trigger sentence ("Use it to…") — is embedded in the `subagent` tool description, so the dispatching model sees when to use every role, including your custom `.pi/agents/*.md` (issue 102).
-- **🛡️ Runaway Guardrails**: Default 20-minute timeout and 50-turn limit prevent infinite loops or burning quota.
+- **🛡️ Runaway Guardrails**: Package default 40-minute timeout and 100-turn limit prevent infinite loops or burning quota. Both are configurable per role and globally (`/subagent` → Configure Budget), and the ceiling cannot be switched off.
 - **🔄 Pi-native Session Resumption**: Subagents assign clean project session IDs; paused or completed sessions can be resumed with `resume: "<sessionId>"`.
 - **🚀 Always Non-blocking**: The tool call returns a task id immediately; the parent turn is never held. The complete output is delivered as a follow-up message that starts the next turn.
 - **🎛️ Full Control Loop**: `subagent_status` checks a task (status, activity, recent tools, session log path); `subagent_stop` stops one — idempotent, session-scoped, mirroring the background-terminal run/status/kill trio.
@@ -19,7 +19,7 @@ Spawns focused child agents in isolated sessions for delegating tasks, code revi
   - **Task Monitor**: View currently running, paused, and recent subagent tasks, inspect progress or output, or stop running tasks.
   - **Fuzzy Model Search**: Model picker with real-time text filter and wrap-around keyboard navigation (Up at top loops to bottom).
   - **Back Navigation**: Pressing `Esc` in any sub-menu smoothly returns to the parent menu level.
-  - **Role & Default Config**: Configure global/project default models, thinking levels, and per-role overrides (built-in `reviewer` or custom).
+  - **Role & Default Config**: Configure global/project default models, thinking levels, budgets, and per-role overrides (built-in `reviewer` or custom).
 
 ## Installation
 
@@ -38,7 +38,8 @@ pi -e packages/pi-subagent/src/index.ts
 Run `/subagent` in the Pi TUI to interactively:
 - **View Active Subagents**: Browse all active/recent subagent tasks in the current session, view output, stop running tasks, or see resume instructions.
 - **Set default subagent model and thinking level**: Use real-time fuzzy search to pick models across all configured providers with wrap-around cursor movement (`Esc` to go back).
-- **Configure specific roles**: Customize `reviewer` or any custom role with dedicated model and thinking overrides.
+- **Configure Budget**: Set the global default `maxTurns` / `timeoutMs` from preset tiers (50/100/150/200 turns; 20/40/60/120 minutes) or a custom number, in the global or project scope. "Clear override" falls back to the package default (100 turns / 40 minutes).
+- **Configure specific roles**: Customize `reviewer` or any custom role with dedicated model, thinking, and budget overrides (a role budget from settings outranks the role document's own budget).
 - **Run `/subagent list` or `/subagent show`**: View effective configurations and discovered agent templates.
 
 ## Settings Files
@@ -53,8 +54,10 @@ The file holds the section directly:
 ```json
 {
   "defaultModel": "bytetrueapi/gemini-3.7-flash",
+  "defaultMaxTurns": 100,
+  "defaultTimeoutMs": 2400000,
   "agents": {
-    "reviewer": { "model": "bytetrueapi/qwen3.8-max", "thinking": "high" }
+    "reviewer": { "model": "bytetrueapi/qwen3.8-max", "thinking": "high", "maxTurns": 150, "timeoutMs": 3600000 }
   }
 }
 ```
@@ -80,8 +83,8 @@ Note: the `subagent-exit` completion notice is queued while the parent agent is 
 | `tools` | `string[]` | No | Optional tool allowlist (e.g. `["read", "grep", "find"]`). |
 | `cwd` | `string` | No | Optional working directory for the task. |
 | `resume` | `string` | No | Resume a previous subagent session (session id or partial UUID). |
-| `timeoutMs` | `number` | No | Timeout in ms. Default: 1200000 (20 minutes). Enforced redundantly: a one-shot timer, a per-event deadline check, and a 1s watchdog — a late timer cannot stall the abort (ff 108). |
-| `maxTurns` | `number` | No | Turn limit before pausing. Default: 50. |
+| `timeoutMs` | `number` | No | Timeout in ms. Default: the configured global default (package default 2400000 = 40 minutes); a role document's own `timeoutMs` applies to that role. `0` is rejected, so the ceiling cannot be switched off. Enforced redundantly: a one-shot timer, a per-event deadline check, and a 1s watchdog — a late timer cannot stall the abort (ff 108). |
+| `maxTurns` | `number` | No | Turn limit before pausing. Default: the configured global default (package default 100); a role document's own `maxTurns` applies to that role. `0` is rejected. |
 
 #### Usage Example
 
@@ -126,7 +129,7 @@ Stop a running subagent task by id. Idempotent: stopping an already-finished tas
 
 #### Built-in roles
 
-Omitting `agent` runs a plain child: your model, your thinking level, pi's default toolset, pi's own prompt — nothing of this package is prepended. The package ships exactly **one** built-in role, `reviewer`: a read-only adversarial reviewer (`read, bash`, maximum thinking) whose reports end with a merge verdict. There is no catch-all role to pick, because omission already is the catch-all. The document is an ordinary agent file in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. Copy it out to customise it:
+Omitting `agent` runs a plain child: your model, your thinking level, pi's default toolset, pi's own prompt — nothing of this package is prepended. The package ships exactly **one** built-in role, `reviewer`: a read-only adversarial reviewer (`read, bash`, maximum thinking) whose reports end with a merge verdict. There is no catch-all role to pick, because omission already is the catch-all. The document is an ordinary agent file in the package's `agents/` directory, parsed by the same code as your own `.pi/agents/*.md`, and a file with the same name wins over the packaged one. It carries its own budget (150 turns / 60 minutes) for the same reason it carries `thinking: max` — a role's inherent needs live in the role document. Copy it out to customise it:
 
 ```bash
 mkdir -p .pi/agents && cp node_modules/@bytetrue/pi-subagent/agents/reviewer.md .pi/agents/reviewer.md
@@ -197,6 +200,20 @@ Thinking follows the same user-controlled chain: role settings, agent document, 
 **Recommendation for `reviewer`**: the document fixes thinking at the top level, but no provider is hardcoded — a strong model makes an independent review worth more than the tokens it costs (`/subagent` → Configure an Agent Role → `reviewer`, or `agents.reviewer.model` in settings). The model picker shows this hint when you configure `reviewer`.
 
 Root-level pi settings `defaultProvider`/`defaultModel`/`defaultThinkingLevel` are deliberately **not** consulted — unset subagent configuration means "inherit".
+
+#### Budget Resolution
+
+The budget is the pair `maxTurns` / `timeoutMs`. Its chain has the same shape as the model chain, with the package constants as the last stop:
+
+1. The call parameter (`maxTurns` / `timeoutMs`) — one task
+2. `agents[role].maxTurns` / `agents[role].timeoutMs` — per-role binding (settings file)
+3. The role document's `maxTurns:` / `timeoutMs:` frontmatter — the role's own budget
+4. `defaultMaxTurns` / `defaultTimeoutMs` (settings file) — global default
+5. Package constants: **100 turns / 40 minutes**
+
+Layer 3 outranks layer 4, so a global default cannot shrink a role's own budget; `reviewer` ships **150 turns / 60 minutes** because adversarial reviews measured 57–80 turns and up to 39 minutes. The tool description advertises the configured **global** default, evaluated when the tool registers, and says that role documents and this parameter can raise it — after changing settings, `/reload` makes the advertised number follow.
+
+**The ceiling cannot be turned off**: `0`, negatives, and non-numeric values are dropped at every layer, and reaching the ceiling pauses the child with a session id and resume hint. **A resumed run gets a fresh full window** — budgets are per segment, not cumulative, so resuming once means two budgets' worth of work. That is the intended reading: one review gets 150 turns, and a resume is a second chance, not an leftover allowance.
 
 ## License
 

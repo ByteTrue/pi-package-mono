@@ -10,7 +10,7 @@
 
 - `subagent(params)`:
   - `task`(必填)：要执行的提示词。
-  - `agent?` / `tools?` / `cwd?` / `resume?` / `timeoutMs?`(默认 20 分钟)/ `maxTurns?`(默认 50 轮)：单任务参数;`id?` 仍被归一化接受(手动指定 session id),但不出现在 schema。
+  - `agent?` / `tools?` / `cwd?` / `resume?` / `timeoutMs?` / `maxTurns?`：单任务参数;`id?` 仍被归一化接受(手动指定 session id),但不出现在 schema。**预算（`maxTurns` / `timeoutMs`）是用户可配置的**：链为 `逐次传参 > settings 角色级 > agent 文档 frontmatter > settings 全局级 > 包常量（100 轮 / 40 分钟）`，与 model/thinking 链同形（2026-10-18，`issues/2026-10-18-x-subagent-budget-config.md`）。`0` / 负数 / 非数字在每一层都被丢弃，上限不可关闭。
   - **单任务语义(095)**:没有 `tasks[]`、`chain`、`prompts`、`mode`——批量与链式已删除。要同时跑多个子任务，在同一条 assistant 消息里发多个 `subagent` tool call，各自独立 id、独立 manager 记录、独立进度卡、各自回各自的完成通知；退出通知在 agent 忙时经 `pendingExits` 合并为一条。
   - Agent 工具不暴露 `model` 或 `thinking`：模型与思考强度只由用户通过 `/subagent`、settings 文件或 agent 模板控制；旧调用即使伪造这两个字段也会在规范化与执行时被忽略。
   - **纯后台**：调用立即返回一行 started 文本与 task id，永不阻塞父回合；完整结果经 `followUp + triggerTurn` 作为新消息开启下一回合。没有 `async` 参数——没有前台模式可以退回（issue 088，对齐 background-terminal 079 的同一逻辑：结果由通知送达，"要不要阻塞"这根轴不存在）。
@@ -19,12 +19,12 @@
 - `subagent_status(id)`：按 id 查一个任务——状态、耗时、当前活动(运行中工具/轮次/token/费用/模型)、最近 5 条工具调用、子会话 log 路径。**不含任务 output**(全文由完成通知送达)；description 写明完成自动通知、无需轮询。
 - `subagent_stop(id)`：停止一个运行中任务。幂等(已结束返回 “is already …; nothing to stop”)；停止后照常发 “was cancelled” 通知。两工具都按 parent session 过滤,跨会话的 id 视为不存在。
 - 内置角色**只有一个 `reviewer`**（包内 `agents/reviewer.md`，与用户 `.pi/agents/*.md` 同一套解析，同名用户文件优先；issue 112 收敛，撤回 100 的三角色）：
-  - `reviewer`（独立的对抗性审查员：`thinking: max`；工具只有 `read, bash`——不声明 `grep`/`find`/`ls`，它们在 pi 中默认关闭，声明等于替子代理打开，而 `bash` 已覆盖检索；不给 `edit`/`write`，让「只审不改」由能力边界兜底而非只靠提示词。正文为本包自写：证据优先、只报可证明的问题、只读、以 `Correct / Finding P0-P2 / Merge verdict` 收束。`description:` 触发句为祈使句 + 反例边界，写明它只报告、不改文件）
+  - `reviewer`（独立的对抗性审查员：`thinking: max`；工具只有 `read, bash`——不声明 `grep`/`find`/`ls`，它们在 pi 中默认关闭，声明等于替子代理打开，而 `bash` 已覆盖检索；不给 `edit`/`write`，让「只审不改」由能力边界兜底而非只靠提示词；自带预算 `maxTurns: 150` / `timeoutMs: 3600000`（60 分钟），因为本机实测审查跑过 57–80 轮 / 39 分钟，包默认对它偏紧——角色固有需求归角色文档）。正文为本包自写：证据优先、只报可证明的问题、只读、以 `Correct / Finding P0-P2 / Merge verdict` 收束。`description:` 触发句为祈使句 + 反例边界，写明它只报告、不改文件）
   - **省略 `agent` = 裸子会话**（`resolveAgentRole` 返回 `{}`）：无系统提示词、无 `--tools`、继承父会话 model/thinking，任务原文即子进程 prompt。已删除的 `DEFAULT_AGENT_NAME` / `general-purpose` 文档不再存在，也没有隐藏默认角色需要同步。可用角色列表（roster 与错误文本）不再过滤任何条目。
   - **观察期约定的兑现（issue 112）**：102 遗留条件「若 `explore`/`plan` 仍长期无主动选用则收敛」已触发——本机 52 次严格符合本包 schema 的调用中 `explore` 1 次、`plan` 0 次，而 `reviewer` 7 次、省略 `agent` 35 次。收敛方向由「只剩 general-purpose」改为「只剩 reviewer + 裸默认路径」（用户裁决）。
   - 角色文档的 `description:` frontmatter 是给调度模型的触发句（渲染进 roster），**不注入子代理提示词**；无该字段的自定义角色在 roster 中显示裸名。roster 机制（tintinweb 式 typeList）保留，但**包内不再有改编自 tintinweb 的提示词文本**，README 的 `### Attribution` 随之删除。
   - 已删除的三个名字（`explore` / `plan` / `general-purpose`）现在都是 unknown role：解析报错并列出可用角色；settings 里显式配过这些键的用户仍会看到它们（settings-only 角色继续进 roster）。
-- `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度、为角色绑定模型，以及查看当前运行中与最近完成的 subagent 任务（运行中可看详细进度卡与终止；结束后可看输出）。为 `reviewer` 绑模型时选择器标题提示「强模型更合适」（不硬编码供应商，issue 102 决策 D2 的措辞随角色收敛而更新）。在任何子菜单按 `Esc` 均返回上一级。
+- `/subagent`：用户交互式命令，支持配置全局/项目默认模型与思考强度、**全局与角色级预算（预设档位 50/100/150/200 轮、20/40/60/120 分钟，加 Custom 与 Clear，包默认经 Clear 可达）**、为角色绑定模型，以及查看当前运行中与最近完成的 subagent 任务（运行中可看详细进度卡与终止；结束后可看输出）。预算写入受同样的 scope 与项目信任门约束。为 `reviewer` 绑模型时选择器标题提示「强模型更合适」（不硬编码供应商，issue 102 决策 D2 的措辞随角色收敛而更新）。在任何子菜单按 `Esc` 均返回上一级。
 - **配置文件**：全局 `<pkg-config 根>/pi-subagent/settings.json`（根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`），project 层 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`（仅在显式选 project scope 且项目受信时写入）。文件顶层即节本体（无外层 `subagent` 键）。老的 Pi `settings.json` `subagent` 节（含 `subagents.agentOverrides`/`subagents.agents` 兼容形状）与新位置缺失时的老项目 `<project>/.pi/settings.json` 只读回退，新文件一存在即不再参与读取，老文件不被删改；生效值来自回退路径时状态输出标 `legacy (read-only fallback): <path>`。
 - 状态栏：有任务运行时显示 `sub:N · <agent> <elapsed> · …`,**每个运行中任务一格**(最老优先)，上限 3 个后缀 `+N more`;全部结束自动清除。
 
@@ -35,7 +35,9 @@
    - 注入 `PI_SUBAGENT_CHILD=1` 环境变量防止嵌套递归。
    - 一次调用恰好跑一个子进程(095);并行由模型发多个 tool call 天然获得，`ProgressDetails.runs` 保留数组形状但恒为单元素。
 2. **防爆门与 Pi 原生 Session 断点续跑**：
-   - 默认 20 分钟超时与 50 轮上限；达到上限时安全暂停子进程并输出 Session ID 与恢复提示。
+   - 预算链的末端是包常量 **100 轮 / 40 分钟**（2026-10-18 自 50 轮 / 20 分钟上调，理由：实测对抗性审查 57–80 轮 / 39 分钟，旧默认迫使几乎每次审查都要续跑）。上限不可关闭：`0`、负数、非数字在 normalizeTask 的 `> 0` 门、settings 解析与 agent 文档解析三处一律丢弃。
+   - **预算是每段独立窗口，不是累计额度**：resume 启动新子进程，按当时的预算重新开窗，续跑一次等于两段预算之和。语义是「一次审查给 150 轮」，续跑是「再给一次机会」，不是剩余额度。
+   - 达到上限时安全暂停子进程并输出 Session ID 与恢复提示。
    - 超时执行三重冗余（ff 108，Windows pi-rpc 主机上 unref'd one-shot timer 曾迟到 51s–54m50s 才触发）：one-shot timer + 每条子进程事件的 deadline 检查 + 1s unref'd 看门狗 interval，任一路径独立可执行 deadline；兜底迟到 >1s 在 stderrTail 留痕，`PI_SUBAGENT_DEBUG=1` 打诊断日志；paused 文案报实际 elapsed（`timed out after X (limit: Y, turns: N)`）而非配置值。
    - 传递 `--session-id <id>`（初次）与 `--session <id>`（恢复），无缝复用 Pi 原生标准会话存储与断点续接机制。
 3. **后台执行、通知与状态栏**：
@@ -49,7 +51,7 @@
    - 状态栏读同一记录做简略显示；`/subagent → 任务 → View Progress` 是 `ctx.ui.custom` 实时视图（500ms 重绘、↑↓ 可滚、Esc 返回），用 `renderProgressCard` 渲染与旧内嵌卡同形的卡片（耗时、思考意图、最近 8 条工具调用、token/费用、错误，按宽度截断），末尾附 `⎘ session log:` + 文件路径（`$HOME` 缩写为 `~`，单独一行；放不下时按最后一个 `/` 拆成目录行 + 文件名行，不按字符硬折）。视图固定高度（16 行视口补空行）以避免残影。聊天流中不再有实时卡片，也没有 Alt+O。
    - **完整行为历史 = 子会话文件**：子 agent 是真实 pi 会话，落盘于 `<agentDir>/sessions/<cwd 编码>/<ts>_<sessionId>.jsonl`。`sessionLogPath()` 复刻 pi 未导出的目录编码规则定位它；进度卡每个 run 附文件路径；完成通知末尾附 `Session log(s)` 列表给完整路径（用户直接打开，模型需要时可 `read`）。用户明确要文件而非 `pi --session` 命令。
    - **transcript 自描述（byissue/issues/115-x-subagent-transcript-session-pointer.md）**：launch tool result details 带 `{ id, status, sessionId, cwd }`，`toMessageDetails()`（exit/status/stop details）额外提升 `sessionId`/`cwd`/`sessionFile` 三个纯数据字段——父 transcript 因此记录了每个子任务对应的子会话 jsonl 指针，BySpace daemon 重启后不依赖内存 report 就能从磁盘重建子代理时间线。launch 的 `sessionId` 由 execute 预生成并经 `input.id` 注入（resume 时保持原值不注入），与子进程实际 `--session-id` 单链路一致。纯后台工具不发送 `subagent-started` 类兜底 custom 消息：tool result 即时落盘已覆盖，且 custom 消息内容会进 LLM 上下文。
-5. **用户控制的执行策略**：模型优先级为 `agents[x].model`（`<pkg-config 根>/pi-subagent/settings.json`） > agent 文档 model（`.pi/agents/x.md`、`<agentDir>/agents/x.md`、包内 `agents/x.md`，后者与内置角色是同一机制） > `defaultModel`（settings 文件） > 继承父会话当前完整 provider/model（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`；思考强度同链对称（角色设置 > agent 文档 > subagent 默认 > 父会话）。内置角色是包内 `agents/reviewer.md`，与用户文档同解析、同名用户文件优先；`reviewer` 最高档（`max`，由 pi 按子模型能力向下夹取），裸默认路径不设档、随父会话。`off` 也是真实档位，会随继承传给子进程（`buildPiArgs` 不再丢弃它）。Agent 的单次 tool call 无权覆盖二者。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`。
+5. **用户控制的执行策略**：模型优先级为 `agents[x].model`（`<pkg-config 根>/pi-subagent/settings.json`） > agent 文档 model（`.pi/agents/x.md`、`<agentDir>/agents/x.md`、包内 `agents/x.md`，后者与内置角色是同一机制） > `defaultModel`（settings 文件） > 继承父会话当前完整 provider/model（ctx → 事件追踪 → PI_PROVIDER/PI_MODEL env） > 子进程自身默认`；思考强度同链对称（角色设置 > agent 文档 > subagent 默认 > 父会话）。**预算链同形**：逐次传参 > `agents[x].maxTurns`/`timeoutMs` > agent 文档 frontmatter > `defaultMaxTurns`/`defaultTimeoutMs` > 包常量（100 轮 / 40 分钟），所以 settings 的全局默认**不能**缩小角色文档自带的预算。内置角色是包内 `agents/reviewer.md`，与用户文档同解析、同名用户文件优先；`reviewer` 最高档（`max`，由 pi 按子模型能力向下夹取），裸默认路径不设档、随父会话。`off` 也是真实档位，会随继承传给子进程（`buildPiArgs` 不再丢弃它）。Agent 的单次 tool call 无权覆盖 model/thinking（预算是单任务参数，逐次传参即它的合法用途）。未显式配置时不读取 pi settings 根层 `defaultProvider`/`defaultModel`/`defaultThinkingLevel`。
 6. **Codemode 环境下的工具白名单与权限收敛（ff 109）**：当父会话处于 `codemode: "only"`（或激活了 `codemode`）时，若子任务指定了 `tools` 白名单（入参 `tools` 或角色如 `reviewer` 声明的 `tools`），系统在拼装子进程 `--tools` 时会自动补齐 `codemode`（如 `--tools codemode,read,bash`）。子代理在子进程中继续跑在 `codemode: "only"` 模式下，同时沙箱内部仅能调用白名单中指定的工具，未授权工具（如 `edit`/`write`/`bash`）在物理层面被剔除，既避免了与 `hide-direct-tools.js` 的调用拦截冲突，又实现了真正的物理级工具权限收敛。
 7. **子进程环境变量透传（issue 101）**：`env`（`Record<string, string>`）为所有子进程附加环境变量。全局 `<pkg-config 根>/pi-subagent/settings.json` 与项目 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json` 都读（老位置 Pi `settings.json` 的 `subagent` 节只读回退），**逐键合并、项目覆盖全局、未冲突的全局键保留**；项目 env 受信任门约束（`loadSubagentSettings(cwd, projectTrusted=false)` 直接返回全局设置，项目 env 整段丢弃）。合并顺序固定为 `process.env → subagent.env → PI_SUBAGENT_CHILD="1"`，守卫最后应用因而**不可被设置覆盖**——用户把它设成 `"0"` 会让子进程重新加载本扩展并递归。只接受字符串值：数字/布尔/`null`/对象/数组一律丢弃（不静默强转，避免 `null→"null"`、`{}→"[object Object]"` 这类语义被改写），键名 trim 后为空也丢弃，整张空 map 归 `undefined`（**空 map 不代表“清空”，不会抹掉全局键**）。合并逻辑集中在导出的 `buildChildEnv(cfg)`，全项目 `spawn(` 仅一处（`src/index.ts:1050`）调用它。本包**不特判任何具体扩展的开关名**；`/subagent` 菜单不提供 env 编辑界面（键值表交互不划算，属高级 JSON 配置）。工具入口的项目信任决策统一经 `ctx.isProjectTrusted` 传入 `resolveAgentRole` / `runSubagent`（旧 pi 无 ctx 时保持 trusted 历史默认）。
 
@@ -65,12 +67,12 @@
 | 目的 | 入口 |
 |---|---|
 | 执行独立子任务 / 探索 | `subagent({ task: "..." })`（省略 `agent` = 裸子 agent，任务原文即 prompt）→ 立即返回，结果以新消息到达 |
-| 任务需要独立对抗性审查 | `subagent({ agent: "reviewer", task: "..." })`，角色收窄为只读两件套并拉满思考档 |
+| 任务需要独立对抗性审查 | `subagent({ agent: "reviewer", task: "..." })`，角色收窄为只读两件套、拉满思考档、自带 150 轮 / 60 分钟预算 |
 | 并行对比或批量处理 | 同一消息里发多个 `subagent` 调用(各自独立 id/进度/通知) |
 | 查看某任务状态/活动/子会话 log | `subagent_status({ id })` |
 | 中途停止某任务 | `subagent_stop({ id })`(幂等) |
 | 链式多步骤流转 | 让父会话自己做编排:逐步调用、读结果、决定下一步 |
-| 配置默认模型与角色映射 | `/subagent` 用户菜单 |
+| 配置默认模型、预算与角色映射 | `/subagent` 用户菜单 |
 | 看简略进度 | 底部状态栏 `sub:N · <agent> <elapsed> · …` |
 | 看详细进度 / 输出 / 停止任务 | `/subagent` → `View Active Subagents` → 任务 |
 | 查看当前配置与识别的角色 | `/subagent list` 或 `/subagent show` |

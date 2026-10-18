@@ -24,6 +24,9 @@ import {
   formatSubagentStatus,
   formatSubagentTaskStatus,
   sessionLogPath,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_TIMEOUT_MS,
+  resolveBudgetDefaults,
   type ProgressDetails,
   type RunState,
   type JsonObject,
@@ -647,6 +650,162 @@ describe("pi-subagent unit tests", () => {
     expect(resolveRunCfg({}, { model: "p/m" }, undefined, undefined, settings).env).toEqual({ SWITCH: "0" });
     // No configured env stays absent rather than becoming {}.
     expect(resolveRunCfg({}, {}, undefined, undefined, undefined).env).toBeUndefined();
+  });
+
+  it("orders the budget chain like the model chain: call > settings role > document > global", () => {
+    const doc = { maxTurns: 150, timeoutMs: 3600000 };
+    const settings = {
+      defaultMaxTurns: 100,
+      defaultTimeoutMs: 2400000,
+      agents: { reviewer: { maxTurns: 120, timeoutMs: 3000000 } },
+    };
+
+    // 1. The call parameter wins over every configured layer.
+    const call = resolveRunCfg(
+      { agent: "reviewer", maxTurns: 200, timeoutMs: 900000 },
+      doc,
+      undefined,
+      undefined,
+      settings,
+    );
+    expect(call.maxTurns).toBe(200);
+    expect(call.timeoutMs).toBe(900000);
+
+    // 2. A settings role override wins over the role document.
+    const role = resolveRunCfg({ agent: "reviewer" }, doc, undefined, undefined, settings);
+    expect(role.maxTurns).toBe(120);
+    expect(role.timeoutMs).toBe(3000000);
+
+    // 3. The role document wins over the global default: a global setting cannot
+    //    shrink a review role's budget, which is the invariant the design settled on.
+    const docOnly = resolveRunCfg(
+      { agent: "reviewer" },
+      doc,
+      undefined,
+      undefined,
+      { defaultMaxTurns: 100, defaultTimeoutMs: 2400000 },
+    );
+    expect(docOnly.maxTurns).toBe(150);
+    expect(docOnly.timeoutMs).toBe(3600000);
+
+    // 4. Nothing configured leaves the fields absent; runPi applies the package constants.
+    const plain = resolveRunCfg({}, {}, undefined, undefined, {});
+    expect(plain.maxTurns).toBeUndefined();
+    expect(plain.timeoutMs).toBeUndefined();
+    expect(DEFAULT_MAX_TURNS).toBe(100);
+    expect(DEFAULT_TIMEOUT_MS).toBe(40 * 60 * 1000);
+  });
+
+  it("ships the reviewer budget above the package default", () => {
+    // The shipped role document is the role's own budget; the package default is
+    // the ceiling for roles that carry none. Both are behaviour the README states.
+    const reviewer = resolveAgentRole(process.cwd(), "reviewer", {});
+    expect(reviewer.maxTurns).toBe(150);
+    expect(reviewer.timeoutMs).toBe(3600000);
+    expect(resolveRunCfg({ agent: "reviewer" }, reviewer, undefined, undefined, {})).toMatchObject({
+      maxTurns: 150,
+      timeoutMs: 3600000,
+    });
+  });
+
+  it("rejects non-positive and non-numeric budgets in documents, settings, and calls", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-subagent-budget-doc-"));
+    const p = join(dir, "big.md");
+    try {
+      // 0 and negatives would switch the ceiling off; "abc" would become NaN.
+      writeFileSync(p, "---\nmaxTurns: 0\ntimeoutMs: -5\nmodel: p/m\n---\nbody\n");
+      const bad = parseAgentFile(p);
+      expect(bad.maxTurns).toBeUndefined();
+      expect(bad.timeoutMs).toBeUndefined();
+      expect(bad.model).toBe("p/m");
+
+      writeFileSync(p, "---\nmaxTurns: 220\ntimeoutMs: 3600000\n---\nbody\n");
+      const good = parseAgentFile(p);
+      expect(good.maxTurns).toBe(220);
+      expect(good.timeoutMs).toBe(3600000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    // A tool call cannot disable the ceiling either (normalizeTask's > 0 gate).
+    const zeroed = normalizeTask({ task: "x", timeoutMs: 0, maxTurns: -3 });
+    expect(zeroed.timeoutMs).toBeUndefined();
+    expect(zeroed.maxTurns).toBeUndefined();
+
+    // The advertised default follows configuration, and 0 cannot erase it.
+    expect(resolveBudgetDefaults({})).toEqual({ maxTurns: 100, timeoutMs: 2400000 });
+    expect(resolveBudgetDefaults({ defaultMaxTurns: 120, defaultTimeoutMs: 3600000 })).toEqual({
+      maxTurns: 120,
+      timeoutMs: 3600000,
+    });
+    expect(resolveBudgetDefaults({ defaultMaxTurns: 0, defaultTimeoutMs: -1 })).toEqual({
+      maxTurns: 100,
+      timeoutMs: 2400000,
+    });
+  });
+
+  it("merges budget keys across global and project settings, gated by project trust", () => {
+    const testDir = join(tmpdir(), `pi-subagent-budget-${Date.now()}`);
+    mkdirSync(join(testDir, ".pi"), { recursive: true });
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    const globalDir = join(tmpdir(), `pi-subagent-budget-global-${Date.now()}`);
+    mkdirSync(globalDir, { recursive: true });
+
+    try {
+      process.env.PI_CODING_AGENT_DIR = globalDir;
+      writeFileSync(
+        join(globalDir, "settings.json"),
+        JSON.stringify({
+          subagent: {
+            defaultMaxTurns: 100,
+            defaultTimeoutMs: 2400000,
+            agents: { reviewer: { maxTurns: 111 }, text: { maxTurns: "120" } },
+          },
+        }),
+      );
+      writeFileSync(
+        join(testDir, ".pi", "settings.json"),
+        JSON.stringify({
+          subagent: {
+            defaultMaxTurns: 150,
+            agents: { reviewer: { timeoutMs: 3000000 }, scout: { maxTurns: 7 } },
+          },
+        }),
+      );
+
+      const trusted = loadSubagentSettings(testDir, true);
+      // Project wins on the shared key, the global timeout survives. Roles merge at
+      // role granularity (the existing spread), so a project role object replaces
+      // that role's global object rather than merging key by key.
+      expect(trusted.defaultMaxTurns).toBe(150);
+      expect(trusted.defaultTimeoutMs).toBe(2400000);
+      expect(trusted.agents?.reviewer).toEqual({ timeoutMs: 3000000 });
+      expect(trusted.agents?.scout?.maxTurns).toBe(7);
+      // A string budget is dropped, not coerced to 120.
+      expect(trusted.agents?.text?.maxTurns).toBeUndefined();
+
+      // Untrusted project: the project budget layer is dropped entirely, as env is.
+      const untrusted = loadSubagentSettings(testDir, false);
+      expect(untrusted.defaultMaxTurns).toBe(100);
+      expect(untrusted.defaultTimeoutMs).toBe(2400000);
+      expect(untrusted.agents?.reviewer).toEqual({ maxTurns: 111 });
+      expect(untrusted.agents?.scout).toBeUndefined();
+
+      // A menu write that touches only the model must not erase the budgets.
+      updateSubagentSettings(testDir, "project", (cur) => ({
+        ...cur,
+        defaultModel: "m1",
+      }));
+      const after = loadSubagentSettings(testDir, true);
+      expect(after.defaultMaxTurns).toBe(150);
+      expect(after.defaultTimeoutMs).toBe(2400000);
+      expect(after.agents?.reviewer).toEqual({ timeoutMs: 3000000 });
+    } finally {
+      if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = agentDir;
+      if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+      if (existsSync(globalDir)) rmSync(globalDir, { recursive: true, force: true });
+    }
   });
 
   it("ignores root-level pi defaults but keeps legacy subagents.agentOverrides fallback", () => {
