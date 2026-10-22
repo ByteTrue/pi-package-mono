@@ -89,4 +89,4 @@ npm --workspace @bytetrue/pi-vendor pack --dry-run
 
 Use an isolated `PI_CODING_AGENT_DIR` for tests and smoke runs. They must never read or write the user's Pi configuration.
 
-Requires `@earendil-works/pi-coding-agent >=0.79.10`.
+Requires `@earendil-works/pi-coding-agent >=1.1.0`.
