@@ -60,4 +60,12 @@ describe("pi-vendor Skill exact synchronization contract", () => {
 		expect(skill).toContain("make at most one documented recovery attempt");
 		expect(skill).toContain("report to the user in one short message what failed and what you tried");
 	});
+
+	it("treats Pi's published schema as the field authority and pins the whole-file cost rule", () => {
+		expect(skill).toContain("https://pi.dev/schemas/models.schema.json");
+		expect(skill).toContain("https://pi.dev/docs/latest/models-configuration");
+		expect(skill).toContain("A `models` entry that has `cost` at all must carry all four of `input`,\n  `output`, `cacheRead`, `cacheWrite`.");
+		expect(skill).toContain("Unknown fields pass validation and must be preserved unchanged.");
+		expect(skill).toContain("`$schema` is an ordinary top-level key");
+	});
 });

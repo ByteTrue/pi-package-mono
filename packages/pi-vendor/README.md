@@ -67,6 +67,8 @@ Discovery accepts only HTTP(S), rejects redirects and credential-bearing URLs, a
 
 `/vendor` and `set-key` use strict JSON handling and atomic `0600` writes. Their core operations reject stale revisions and identity conflicts instead of silently upserting or overwriting them.
 
+The local shape check also mirrors the schema rules Pi enforces at load time, so `/vendor` cannot write a file Pi would reject: a `models` entry whose `cost` omits `input`, `output`, `cacheRead`, or `cacheWrite` is refused before any write, because Pi validates the whole file and refuses all of it. When `/vendor` creates `models.json` from nothing it seeds `"$schema": "https://pi.dev/schemas/models.schema.json"`; an existing file's `$schema` is never added, changed, or dropped.
+
 The Skill uses Pi's normal read/edit tools rather than that transaction core. After every mutation it must run the active Pi executable's `--list-models --offline` path, inspect both streams for `errors loading models.json` (Pi can warn and still exit zero), and verify the intended model-list change. Exact synchronization uses the fixed templates in `SKILL.md`: an immutable plan file, a stale-before assertion, an after-set assertion, and a successful-discovery-union assertion. Routing or authentication changes require successful discovery for every intended route.
 
 Across both paths:

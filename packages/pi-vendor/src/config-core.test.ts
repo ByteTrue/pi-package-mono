@@ -8,8 +8,10 @@ import {
 	commitModelsSnapshot,
 	ConfigCoreError,
 	createConfigCoreForTesting,
+	MODELS_JSON_SCHEMA_URL,
 	readModelsSnapshot,
 	validateModelsJson,
+	withSchemaHint,
 } from "./config-core.js";
 import type { ModelsJson } from "./models-json.js";
 
@@ -26,9 +28,12 @@ afterEach(() => {
 });
 
 describe("models snapshots and local validation", () => {
-	it("represents a missing path without creating it", () => {
+	it("represents a missing path without creating it, seeded with the schema hint", () => {
 		const path = tempPath();
-		expect(readModelsSnapshot(path)).toEqual({ models: { providers: {} }, revision: "missing" });
+		expect(readModelsSnapshot(path)).toEqual({
+			models: { $schema: MODELS_JSON_SCHEMA_URL, providers: {} },
+			revision: "missing",
+		});
 		expect(() => statSync(path)).toThrow();
 	});
 
@@ -140,5 +145,93 @@ describe("conditional commit", () => {
 		};
 		const result = commitModelsSnapshot({ models, expectedRevision: "missing" }, path);
 		expect(result.models).toEqual(models);
+	});
+});
+
+describe("schema alignment", () => {
+	it("keeps a top-level $schema from an existing file instead of rewriting it", () => {
+		const path = tempPath();
+		const models = { $schema: "https://example.test/other.schema.json", providers: {} };
+		writeFileSync(path, `${JSON.stringify(models)}\n`, { mode: 0o600 });
+		const snapshot = readModelsSnapshot(path);
+		expect(snapshot.models).toEqual(models);
+		commitModelsSnapshot({ models: snapshot.models, expectedRevision: snapshot.revision }, path);
+		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(models);
+	});
+
+	it("seeds a brand-new document with the published schema URL", () => {
+		const path = tempPath();
+		const snapshot = readModelsSnapshot(path);
+		expect(snapshot.models.$schema).toBe(MODELS_JSON_SCHEMA_URL);
+		commitModelsSnapshot({ models: snapshot.models, expectedRevision: snapshot.revision }, path);
+		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ $schema: MODELS_JSON_SCHEMA_URL, providers: {} });
+	});
+
+	it("lets a seeded document accept unknown fields", () => {
+		expect(withSchemaHint({ rootUnknown: { keep: true }, providers: {} })).toEqual({
+			$schema: MODELS_JSON_SCHEMA_URL,
+			rootUnknown: { keep: true },
+			providers: {},
+		});
+	});
+
+	// Pi validates models.json against its published schema, so a `cost` object
+	// missing one of the four base prices makes the whole file fail to load.
+	it("rejects a partial models cost before writing", () => {
+		expect(validateModelsJson({ providers: { p: { models: [{ id: "x", cost: { input: 1 } }] } } })).toMatchObject([
+			{ code: "invalid_cost", path: "/providers/p/models/0/cost/output" },
+			{ code: "invalid_cost", path: "/providers/p/models/0/cost/cacheRead" },
+			{ code: "invalid_cost", path: "/providers/p/models/0/cost/cacheWrite" },
+		]);
+		const path = tempPath();
+		writeFileSync(path, `${JSON.stringify({ providers: {} })}\n`, { mode: 0o600 });
+		const snapshot = readModelsSnapshot(path);
+		expect(() =>
+			commitModelsSnapshot(
+				{ models: { providers: { p: { models: [{ id: "x", cost: { input: 1 } as never }] } } }, expectedRevision: snapshot.revision },
+				path,
+			),
+		).toThrowError(ConfigCoreError);
+		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ providers: {} });
+	});
+
+	it("accepts a complete cost with tiers and rejects non-numeric prices", () => {
+		const complete = {
+			input: 1,
+			output: 2,
+			cacheRead: 0.1,
+			cacheWrite: 0.2,
+			tiers: [{ inputTokensAbove: 200000, input: 2, output: 4, cacheRead: 0.2, cacheWrite: 0.4 }],
+		};
+		expect(validateModelsJson({ providers: { p: { models: [{ id: "x", cost: complete }] } } })).toEqual([]);
+		expect(validateModelsJson({ providers: { p: { models: [{ id: "x", cost: { ...complete, output: "2" } }] } } })).toMatchObject([
+			{ code: "invalid_cost", path: "/providers/p/models/0/cost/output" },
+		]);
+	});
+
+	it("allows a partial modelOverrides cost but still checks its types", () => {
+		expect(validateModelsJson({ providers: { p: { modelOverrides: { m: { cost: { input: 1 } } } } } })).toEqual([]);
+		expect(validateModelsJson({ providers: { p: { modelOverrides: { m: { cost: { input: null } } } } } })).toMatchObject([
+			{ code: "invalid_cost", path: "/providers/p/modelOverrides/m/cost/input" },
+		]);
+	});
+
+	it("accepts the newer metadata fields without cost", () => {
+		expect(
+			validateModelsJson({
+				providers: {
+					p: {
+						models: [
+							{
+								id: "x",
+								inputLimits: { images: { resize: { maxWidth: 100 } } },
+								promptCache: { short: 300, long: 3600 },
+								samplingParamsByThinkingLevel: { high: { top_k: 20 } },
+							},
+						],
+					},
+				},
+			}),
+		).toEqual([]);
 	});
 });

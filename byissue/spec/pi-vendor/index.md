@@ -17,6 +17,7 @@ Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责�
 - SKILL 措辞遵循 `byissue/decisions/001-positive-first-prompting.md`：正向优先，否定仅保留强默认与安全边界；`skill-contract.test.ts` 钉契约不变；
 - 模板有歧义时要求用户明确选择，不静默猜测；
 - 不编造 cost、context、capabilities、compat 等元数据；
+- 字段权威是 Pi 官方 schema 参考（`https://pi.dev/docs/latest/models-configuration` / `models.schema.json`）：新字段名/类型/取值只能来自该参考、官方模板或用户，不猜；未知字段通过校验且必须原样保留；`models[*].cost` 一旦出现必须四字段齐全，否则 Pi 拒绝整份文件；Pi 的 schema 违规是 warning + exit 0，所以离线验证必须看两条输出流；
 - exact sync 展示契约：plan 模板 stdout 输出单行 plan JSON（唯一 mutation 权威）+ 机器生成的摘要表格（add/remove 行 + kept 列表），Agent 原样转述；按 ID 的展示来自刚收到的机器输出，模型以 exact ID 命名；
 - 保留模型漂移检查：exact sync 确认阶段对 kept 模型（before ∩ after）运行 `drift`（比对当前 active Pi 内置官方 catalog，与 `catalog` 同源，不出网、无快照文件），漂移表格原样转述并逐项询问用户是否更新；漂移报告不是授权，更新走 strict in-place patch；无任何官方模板匹配的模型列 noOfficialMatch；
 - 官方模板复制时 100% 原样保留所有字段与原始键声明顺序，严禁删减（如 `allowedFallbackModels`）或人工重排；修改已有模型必须为 strict in-place patch，仅修改目标 value，其余字段与键顺序 100% 原样不动；
@@ -65,6 +66,8 @@ TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/c
 - strict JSON；拒绝 BOM、comments 与非 object root；root 必须含 object `providers`；
 - revision 为原始 bytes 的 `sha256:…`；
 - commit 顺序：revision 格式 → 本地 shape/duplicate 校验 → current bytes/revision → stale check → atomic write；
+- 本地 shape 校验同时镜像 Pi 加载期强制的 schema 规则：`models[*].cost` 一旦出现必须四字段齐全（`input`/`output`/`cacheRead`/`cacheWrite`）且为有限数值，`tiers` 必须是数组；`modelOverrides[*].cost` 字段各自可选但出现即必须是数值。Pi 校验整份文件，缺一个字段会让所有 provider 都不可用，所以这类错误必须在写前拦截（issue code `invalid_cost`）；
+- 新建（文件不存在）文档以 `"$schema": "https://pi.dev/schemas/models.schema.json"` 起头，供编辑器校验/补全；已存在文件的 `$schema` 无论有无都原样保留，不添加、不改写；
 - 写入 canonical `JSON.stringify(value, null, 2) + "\n"`；随机 128-bit temp 名；create/write/rename 期间保持 `0600`；失败清理 temp；
 - mutation pure functions 继续使用 `MutationResult<T>` + explicit `ConflictPolicy`，不隐式 upsert。
 

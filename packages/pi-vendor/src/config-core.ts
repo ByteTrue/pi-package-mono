@@ -13,7 +13,10 @@ export type ModelsSnapshot = {
 	revision: ConfigRevision;
 };
 
-export type ConfigIssueCode = "invalid_structure" | "duplicate_model_id";
+/** Pi's published models.json schema; also the value written as `$schema`. */
+export const MODELS_JSON_SCHEMA_URL = "https://pi.dev/schemas/models.schema.json";
+
+export type ConfigIssueCode = "invalid_structure" | "duplicate_model_id" | "invalid_cost";
 
 export type ConfigIssue = {
 	path: string;
@@ -77,7 +80,68 @@ export function validateModelsJson(models: unknown): ConfigIssue[] {
 			}
 		}
 	}
+	issues.push(...collectCostIssues(models));
 	return issues;
+}
+
+const MODEL_COST_FIELDS = ["input", "output", "cacheRead", "cacheWrite"] as const;
+
+/**
+ * Pi validates the schema types it knows about, so a `models` entry whose
+ * `cost` omits one of the four base prices makes the whole file fail to load
+ * ("must have required properties output, cacheRead, cacheWrite"). Catch that
+ * locally instead of writing a file Pi rejects. `modelOverrides` cost fields
+ * are individually optional, but a present one still has to be a number.
+ */
+function collectCostIssues(models: ModelsJson): ConfigIssue[] {
+	const issues: ConfigIssue[] = [];
+	const check = (costPath: string, cost: unknown, requireAll: boolean): void => {
+		if (cost === undefined) return;
+		if (!isObject(cost)) {
+			issues.push(issue(costPath, "invalid_cost", "Model cost must be an object"));
+			return;
+		}
+		for (const field of MODEL_COST_FIELDS) {
+			const value = cost[field];
+			if (value === undefined) {
+				if (requireAll) {
+					issues.push(issue(`${costPath}/${field}`, "invalid_cost", `Model cost is missing ${field}`));
+				}
+				continue;
+			}
+			if (typeof value !== "number" || !Number.isFinite(value)) {
+				issues.push(issue(`${costPath}/${field}`, "invalid_cost", `Model cost ${field} must be a number`));
+			}
+		}
+		if (cost.tiers !== undefined && !Array.isArray(cost.tiers)) {
+			issues.push(issue(`${costPath}/tiers`, "invalid_cost", "Model cost tiers must be an array"));
+		}
+	};
+
+	for (const [providerKey, provider] of Object.entries(models.providers ?? {})) {
+		if (!isObject(provider)) continue;
+		const base = `/providers/${escapePointer(providerKey)}`;
+		if (Array.isArray(provider.models)) {
+			for (const [index, model] of provider.models.entries()) {
+				if (isObject(model)) check(`${base}/models/${index}/cost`, model.cost, true);
+			}
+		}
+		if (isObject(provider.modelOverrides)) {
+			for (const [modelId, override] of Object.entries(provider.modelOverrides)) {
+				if (isObject(override)) check(`${base}/modelOverrides/${escapePointer(modelId)}/cost`, override.cost, false);
+			}
+		}
+	}
+	return issues;
+}
+
+/**
+ * Add `$schema` to a brand-new document so editors validate and complete the
+ * file. Existing files are left byte-identical: the user may have pointed
+ * `$schema` somewhere else, or omitted it on purpose.
+ */
+export function withSchemaHint(models: ModelsJson): ModelsJson {
+	return { $schema: MODELS_JSON_SCHEMA_URL, ...models };
 }
 
 function escapePointer(value: string): string {
@@ -105,7 +169,7 @@ function parseSnapshot(path: string, deps: ConfigCoreDependencies): ModelsSnapsh
 		bytes = deps.readFile(path);
 	} catch (error) {
 		if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") {
-			return { models: { providers: {} }, revision: "missing" };
+			return { models: withSchemaHint({ providers: {} }), revision: "missing" };
 		}
 		throw new ConfigCoreError("read_failed", "Unable to read models configuration");
 	}

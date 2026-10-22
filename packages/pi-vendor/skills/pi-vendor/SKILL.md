@@ -45,6 +45,28 @@ When a bundled query fails (for example `catalog` printing `Official catalog is 
 - For an exact synchronization, the machine-generated plan JSON is the only mutation authority: show it verbatim and refer to its arrays by name (`add`, `remove`, `after`) rather than retyping IDs. Machine-generated tables are relayed as-is, and user-facing references name each model by its exact ID.
 - `drift` output is evidence for the user to confirm; its updates land only after the user approves them field by field.
 
+## The models.json schema is an authority, not a suggestion
+
+Pi validates `models.json` against its published schema
+(`https://pi.dev/schemas/models.schema.json`, field reference at
+`https://pi.dev/docs/latest/models-configuration`) and refuses the **whole file**
+when a field it knows fails validation. Read that reference before introducing a
+field you have not used before; it is the only acceptable source for a field name,
+type, or allowed value.
+
+- Unknown fields pass validation and must be preserved unchanged. The schema is
+  strict only about the fields it declares.
+- A `models` entry that has `cost` at all must carry all four of `input`,
+  `output`, `cacheRead`, `cacheWrite`. A partial `cost` fails the entire file even
+  when every other model is valid; there is no partial-cost form for `models`.
+  `modelOverrides` cost fields are individually optional and merge onto the
+  model's cost field by field.
+- Pi reports schema violations as a warning and still exits 0, so a successful
+exit never proves the file loaded. That is why the mandatory `pi --list-models
+  --offline` check reads both streams for `errors loading models.json`.
+- `$schema` is an ordinary top-level key: keep whatever the file already has, and
+  do not add or rewrite it on an existing file.
+
 ## Exact synchronization templates
 
 These are the only templates for exact synchronization. Keep `sync_dir`, `discovery_file`, and `plan_file` for the entire confirmation and mutation sequence; clean them after a successful finish or an abandoned plan. They contain only model IDs and route status, never credentials. Substitute only the shell-quoted provider key and absolute skill directory; the Node programs run byte-for-byte as written.
