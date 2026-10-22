@@ -52,7 +52,7 @@ No built-in tool is overridden, shadowed, or registered under a built-in name.
 - The `background_run` path applies your `shellPath` / `shellCommandPrefix` settings (read through Pi's own `SettingsManager`, honoring project trust) and the same session environment the built-in tools set (`PI_*` variables plus the agent bin dir on `PATH`).
 - Uninstalling removes exactly the three tools above; the built-ins were never touched.
 
-Requires `@earendil-works/pi-coding-agent >= 0.80.5`.
+Requires `@earendil-works/pi-coding-agent >=1.1.0`.
 
 ## Lifecycle
 

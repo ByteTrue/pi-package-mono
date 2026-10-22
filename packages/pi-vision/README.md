@@ -99,4 +99,4 @@ npm --workspace @bytetrue/pi-vision run typecheck
 npm --workspace @bytetrue/pi-vision pack --dry-run
 ```
 
-Requires `@earendil-works/pi-coding-agent >=0.79.10`.
+Requires `@earendil-works/pi-coding-agent >=1.1.0`.
