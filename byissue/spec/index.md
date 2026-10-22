@@ -31,6 +31,7 @@
 - **生成图像** → 读 [`pi-image-gen/`](pi-image-gen/index.md) 与 `packages/pi-image-gen/README.md`
 - **跑命令 / 后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；纯后台 background_run + 两个管理工具
 - **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 精确问图 + opt-in 附件预分析 + `/vision` 配置
+- **让长任务自驱动到完成** → 读 [`pi-goal/`](pi-goal/index.md)；small-extension `/goal <objective>` + `goal_done`（证据驱动停止），非 npm 包
 - **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
 - **历史审计与旧流程证据** → [`byissue/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
 

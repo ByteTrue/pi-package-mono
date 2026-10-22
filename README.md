@@ -24,6 +24,7 @@ Each package is independent. Install one capability without inheriting a framewo
 | --- | --- | --- | --- |
 | Keep a server, watcher, or long task running | [`@bytetrue/pi-background-terminal`](packages/pi-background-terminal) | `background_run`, `background_status`, `background_kill`, `/background` | Install and ask Pi to run a command without hanging on it |
 | Cap runaway foreground `bash`/`powershell` commands at 300s (optional) | [`pi-bash-timeout`](small-extensions/pi-bash-timeout) (small extension, not on npm) | 300s default + cap + timeout-error steering for the built-in shell tools | Run the [small-extension install script](#small-extensions) |
+| Let a long task drive itself to completion (optional) | [`pi-goal`](small-extensions/pi-goal) (small extension, not on npm) | `/goal` objective + `goal_start`/`goal_done`, auto-continued at Pi's settle boundary | Run the [small-extension install script](#small-extensions) |
 | Generate or edit images | [`@bytetrue/pi-image-gen`](packages/pi-image-gen) | On-demand Skill + CLI, `/image-gen` setup | Run `/image-gen` |
 | Delegate subtasks to child agents | [`@bytetrue/pi-subagent`](packages/pi-subagent) | `subagent`, `subagent_status`, `subagent_stop`, `/subagent` | Ask Pi to run a focused task in an isolated session |
 | Manage custom providers and models | [`@bytetrue/pi-vendor`](packages/pi-vendor) | AI-first Skill + cold-start `/vendor` wizard | Ask Pi to update `models.json`, or run `/vendor` |
@@ -74,6 +75,7 @@ In the menu: `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` install
 | --- | --- |
 | [`pi-bash-timeout`](small-extensions/pi-bash-timeout) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
 | [`pi-ask-user`](small-extensions/pi-ask-user) | Minimal `ask_user` tool: one decision question per call with typed options, answered via Pi's built-in dialogs |
+| [`pi-goal`](small-extensions/pi-goal) | Minimal `/goal`: one durable objective per session, auto-continued at the settle boundary until the model calls `goal_done` with evidence. The model can also draft the objective itself via `goal_start` |
 | [`pi-context-guard`](small-extensions/pi-context-guard) | **Opt-in.** Compact above 400k context on large-window models; name the session file in the system prompt so compaction-lost details stay searchable |
 | [`pi-codemode-only`](small-extensions/pi-codemode-only) | **Opt-in.** Enforce `codemode.mode: "only"` at runtime: block direct tool calls, rewrite the two direct-tool prompt pointers |
 
