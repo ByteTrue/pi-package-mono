@@ -101,6 +101,34 @@ describe("registration", () => {
     expect(parameters.properties?.questions?.items?.required).toEqual(["question"]);
   });
 
+  it("declares strict JSON-schema sampling like Pi's built-in tools", () => {
+    const tool = harness();
+    // Without this declaration the model's argument text is unconstrained, and a
+    // single stray character after the object surfaces as a broken tool call
+    // ("Invalid arguments: ... after JSON at position N"). `prefer` keeps the
+    // tool available on providers without strict mode.
+    expect(tool.constrainedSampling).toEqual({ type: "json_schema", strict: "prefer" });
+  });
+
+  it("keeps the schema convertible to the strict subset (so `prefer` can engage)", () => {
+    // Strict mode requires every property in `required` and rejects unknown
+    // keys. The hand-written schema must stay inside that subset or the
+    // declaration silently degrades to non-strict on every provider.
+    const parameters = harness().parameters as {
+      additionalProperties?: unknown;
+      properties?: Record<string, unknown>;
+    };
+    expect(parameters.additionalProperties).toBeUndefined();
+    expect(Object.keys(parameters.properties ?? {})).toEqual(["questions"]);
+    const items = (
+      parameters.properties as {
+        questions: { items: { required?: string[]; additionalProperties?: unknown } };
+      }
+    ).questions.items;
+    expect(items.required).toEqual(["question"]);
+    expect(items.additionalProperties).toBeUndefined();
+  });
+
   it("leads with the trigger condition and includes batching + multi-select + do-not-ask rules", () => {
     const tool = harness();
     expect(

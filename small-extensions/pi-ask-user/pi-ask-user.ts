@@ -453,6 +453,14 @@ export default function askUserExtension(pi: ExtensionAPI): void {
       "Never ask what the context, the repo, or this session already answered — ask in prose only when you have no options to offer",
     ],
     parameters: askUserParameters as unknown as TSchema,
+    // Same declaration as Pi's built-in read/bash/edit/write tools. With strict
+    // JSON-schema sampling the provider itself constrains the argument text to a
+    // valid object, so the whole class of "Invalid arguments: ... after JSON"
+    // failures (trailing text, doubled closing braces, duplicated deltas from a
+    // proxy) becomes unrepresentable instead of arriving as a broken tool call.
+    // `prefer` falls back to plain non-strict declarations when the provider
+    // cannot do strict mode, so no provider loses the tool.
+    constrainedSampling: { type: "json_schema", strict: "prefer" },
     async execute(
       _toolCallId: string,
       params: unknown,

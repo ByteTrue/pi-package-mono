@@ -36,6 +36,14 @@ Registers one tool:
 Built-in dialogs only: no custom TUI components, no overlay, no runtime
 imports, no timeout, no config.
 
+The tool declares `constrainedSampling: {type: "json_schema", strict: "prefer"}`,
+the same request Pi's built-in `read`/`bash`/`edit`/`write` tools make. Strict
+mode lets the provider constrain the argument text to a valid JSON object, which
+removes the whole class of "Invalid arguments: … after JSON at position N"
+failures — trailing text, a doubled closing brace, or duplicated stream deltas
+from a proxy. `prefer` means a provider without strict support still gets the
+tool, just unconstrained.
+
 ### Where the model sees this (why the wording is trigger-first)
 
 The registration text is the only lever this extension has, and where it lands
@@ -79,4 +87,5 @@ imports.
 `npm --workspace pi-ask-user test` covers registration, single-select option
 composition, multi-select toggling and custom `Other` merging, multi-question
 batching with back-navigation, the freeform path, dismiss semantics, mode
-guards, and schema shape (plain JSON Schema, no TypeBox runtime symbols).
+guards, and schema shape (plain JSON Schema, no TypeBox runtime symbols, still
+convertible to the strict subset so `strict: "prefer"` can engage).
