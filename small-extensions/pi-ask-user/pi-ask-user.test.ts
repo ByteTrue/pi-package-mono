@@ -27,8 +27,9 @@ function ctxWithRecorder(
     editor?: ReplyOrQueue<string | undefined>;
   },
   overrides: Partial<ExtensionContext> = {},
-): { ctx: ExtensionContext; calls: UICall[] } {
+): { ctx: ExtensionContext; calls: UICall[]; working: boolean[] } {
   const calls: UICall[] = [];
+  const working: boolean[] = [];
   const selectQueue = Array.isArray(replies.select) ? [...replies.select] : replies.select;
   const inputQueue = Array.isArray(replies.input) ? [...replies.input] : replies.input;
   const editorQueue = Array.isArray(replies.editor) ? [...replies.editor] : replies.editor;
@@ -52,10 +53,13 @@ function ctxWithRecorder(
         });
         return shiftReply(editorQueue);
       },
+      setWorkingVisible(visible: boolean) {
+        working.push(visible);
+      },
     },
     ...overrides,
   } as unknown as ExtensionContext;
-  return { ctx, calls };
+  return { ctx, calls, working };
 }
 
 function harness() {
@@ -436,5 +440,85 @@ describe("askUserExecute — guard rails", () => {
     )) as { content: { text: string }[] };
     expect(calls.map((c) => c.method)).toEqual(["editor"]);
     expect(result.content[0]!.text).toBe("User answered: freeform");
+  });
+});
+
+describe("askUserExecute — working spinner suppression", () => {
+  // Regression guard for a real hang: a dialog left open for 86 minutes while
+  // Pi's working spinner re-rendered the whole alt-screen frame every 80ms was
+  // enough to wedge Windows Terminal (Application Hang in the event log). Every
+  // dialog must therefore run with the spinner hidden, and always restore it.
+
+  const optionParams: AskUserParams = {
+    questions: [
+      {
+        question: "Which test runner?",
+        options: [{ label: "vitest" }, { label: "jest" }],
+      },
+    ],
+  };
+
+  it("hides the spinner for a normal pick and restores it afterwards", async () => {
+    const { ctx, working } = ctxWithRecorder({ select: "vitest" });
+    const result = (await askUserExecute(optionParams, ctx)) as { content: { text: string }[] };
+    expect(result.content[0]!.text).toBe("User selected: vitest");
+    expect(working).toEqual([false, true]);
+  });
+
+  it("hides the spinner around a freeform answer too", async () => {
+    const { ctx, working } = ctxWithRecorder({ editor: "both" });
+    const result = (await askUserExecute({ questions: [{ question: "Notes?" }] }, ctx)) as {
+      content: { text: string }[];
+    };
+    expect(result.content[0]!.text).toBe("User answered: both");
+    expect(working).toEqual([false, true]);
+  });
+
+  it("still restores the spinner when the user dismisses the dialog", async () => {
+    const { ctx, working } = ctxWithRecorder({ select: undefined });
+    const result = (await askUserExecute(optionParams, ctx)) as { content: { text: string }[] };
+    expect(result.content[0]!.text).toContain("dismissed");
+    // A dismiss that leaked `setWorkingVisible(false)` would kill the spinner
+    // for the rest of the session — worse than not fixing the hang at all.
+    expect(working).toEqual([false, true]);
+  });
+
+  it("hides and restores once per dialog in the Other path (two dialogs, fully symmetric)", async () => {
+    const { ctx, working, calls } = ctxWithRecorder({
+      select: "Other (type your answer)",
+      editor: "mocha",
+    });
+    const result = (await askUserExecute(optionParams, ctx)) as { content: { text: string }[] };
+    expect(calls.map((c) => c.method)).toEqual(["select", "editor"]);
+    expect(result.content[0]!.text).toBe("User answered: mocha");
+    expect(working).toEqual([false, true, false, true]);
+    expect(working.filter((v) => v === false)).toHaveLength(2);
+    expect(working.filter((v) => v === true)).toHaveLength(2);
+    expect(working[0]).toBe(false);
+    expect(working.at(-1)).toBe(true);
+  });
+
+  it("never touches the spinner outside TUI mode", async () => {
+    const select = ctxWithRecorder({ select: "vitest" }, { mode: "rpc" });
+    await askUserExecute(optionParams, select.ctx);
+    expect(select.working).toEqual([]);
+
+    const freeform = ctxWithRecorder({ input: "rpc answer" }, { mode: "rpc" });
+    await askUserExecute({ questions: [{ question: "Q?" }] }, freeform.ctx);
+    expect(freeform.working).toEqual([]);
+  });
+
+  it("restores the spinner when the dialog throws, and still propagates the error", async () => {
+    const { ctx, calls, working } = ctxWithRecorder({});
+    const ui = ctx.ui as unknown as {
+      select: (title: string, options: string[]) => Promise<string | undefined>;
+    };
+    ui.select = async (title: string, options: string[]) => {
+      calls.push({ method: "select", args: [title, options] });
+      throw new Error("dialog exploded");
+    };
+
+    await expect(askUserExecute(optionParams, ctx)).rejects.toThrow("dialog exploded");
+    expect(working).toEqual([false, true]);
   });
 });

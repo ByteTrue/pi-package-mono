@@ -36,6 +36,34 @@ Registers one tool:
 Built-in dialogs only: no custom TUI components, no overlay, no runtime
 imports, no timeout, no config.
 
+### Every dialog runs with the working spinner hidden
+
+While any of these dialogs is open, the extension calls
+`ui.setWorkingVisible(false)` and restores it in a `finally` block. Pi's
+working spinner (a `pi-tui` Loader) re-renders the whole alt-screen frame every
+80ms — 12.5 frames/s, transcript included — for as long as the dialog waits.
+Nothing on screen changes during that wait, and users routinely leave an
+`ask_user` dialog open for over an hour (676 minutes in the longest recorded
+call); that much sustained redraw was enough to wedge Windows Terminal
+(`Application Hang` / `RADAR_PRE_LEAK_64` in the event log). Hiding the spinner
+actually disposes the loader's `setInterval`, so the frames stop instead of
+merely being drawn invisible.
+
+Known limits, deliberately not fixed here:
+
+- **Only `ask_user`.** Other extension dialogs (`/model` picker, confirmations,
+  login prompts, `showExtensionConfirm` / `showExtensionEditor`) still spin
+  while they wait.
+- **Restore re-enables Pi's default, not the caller's value.**
+  `setWorkingVisible` has no getter, so if some extension globally hid the
+  spinner, `ask_user` turning it back on would override that. No extension in
+  this repo does that today.
+- **The terminal-side root cause is outside this boundary.** If hangs persist,
+  the next step is a newer Windows Terminal (1.25+) or WezTerm, not another
+  patch here. The real general fix belongs upstream: pause the working
+  indicator while a dialog is pushed onto the extension-dialog stack.
+- Non-TUI modes (print / JSON / RPC) are untouched — they have no spinner.
+
 The tool declares `constrainedSampling: {type: "json_schema", strict: "prefer"}`,
 the same request Pi's built-in `read`/`bash`/`edit`/`write` tools make. Strict
 mode lets the provider constrain the argument text to a valid JSON object, which
@@ -87,5 +115,7 @@ imports.
 `npm --workspace pi-ask-user test` covers registration, single-select option
 composition, multi-select toggling and custom `Other` merging, multi-question
 batching with back-navigation, the freeform path, dismiss semantics, mode
-guards, and schema shape (plain JSON Schema, no TypeBox runtime symbols, still
-convertible to the strict subset so `strict: "prefer"` can engage).
+guards, schema shape (plain JSON Schema, no TypeBox runtime symbols, still
+convertible to the strict subset so `strict: "prefer"` can engage), and spinner
+suppression (hide/restore on every path, one symmetric pair per dialog, fully
+skipped outside TUI mode, restored even when the dialog throws).

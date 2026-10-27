@@ -30,6 +30,11 @@
  *   `ctx.ui.input` elsewhere.
  * - Dismiss (Esc): returns a fixed non-error text so the model falls back to
  *   plain prose; no UI (print/JSON mode) is an explicit error.
+ *
+ * Every dialog runs with the animated working spinner hidden (see
+ * `withoutWorkingSpinner`): a dialog can sit unanswered for an hour, and Pi's
+ * spinner re-renders the entire alt-screen frame 12.5 times a second while it
+ * does. Known limits of that fix are documented on the helper.
  */
 
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -193,18 +198,61 @@ function normalizeQuestions(
   return { error: "ask_user requires a non-empty 'questions' array." };
 }
 
+/**
+ * Run one dialog with the animated working spinner hidden.
+ *
+ * The spinner (pi-tui Loader) re-renders the whole alt-screen frame every 80ms for as long as
+ * the dialog is open. A user can leave an ask_user dialog unanswered for an hour, and 12.5
+ * full-transcript frames per second for that long is what wedges Windows Terminal. Nothing on
+ * screen changes while we wait for the answer, so the frames are pure cost.
+ *
+ * Known limits, not fixed here:
+ * - Only ask_user dialogs are wrapped. Other extension dialogs (Pi's /model picker,
+ *   confirmations, login prompts) still spin while they wait.
+ * - The restore re-enables Pi's default. `setWorkingVisible` has no getter, so an extension
+ *   that globally hides the spinner would be overridden when this dialog closes (none does
+ *   today in this repo); the real fix is upstream: pause the indicator while a dialog is
+ *   pushed onto the extension-dialog stack.
+ * - The terminal-side root cause is out of our boundary. If Windows Terminal still hangs,
+ *   the next step is a newer Windows Terminal / WezTerm, not more patches here.
+ */
+async function withoutWorkingSpinner<T>(
+  ctx: ExtensionContext,
+  run: () => Promise<T>,
+): Promise<T> {
+  // print/JSON/RPC modes have no working indicator to stop.
+  if (ctx.mode !== "tui") return run();
+  ctx.ui.setWorkingVisible(false);
+  try {
+    return await run();
+  } finally {
+    // Cancelled, Esc, thrown dialog: the spinner still comes back.
+    ctx.ui.setWorkingVisible(true);
+  }
+}
+
+/** Show one option list, spinner hidden while it waits for a pick. */
+function selectDialog(
+  ctx: ExtensionContext,
+  title: string,
+  rows: string[],
+): Promise<string | undefined> {
+  return withoutWorkingSpinner(ctx, () => ctx.ui.select(title, rows));
+}
+
 /** Collect a freeform answer: multiline editor in TUI, input dialog elsewhere. */
 async function collectFreeform(
   question: string,
   ctx: ExtensionContext,
   prefill?: string,
 ): Promise<string | undefined> {
-  const text =
+  const text = await withoutWorkingSpinner(ctx, () =>
     ctx.mode === "tui"
       ? prefill !== undefined
-        ? await ctx.ui.editor(question, prefill)
-        : await ctx.ui.editor(question)
-      : await ctx.ui.input(question, "Type your answer");
+        ? ctx.ui.editor(question, prefill)
+        : ctx.ui.editor(question)
+      : ctx.ui.input(question, "Type your answer"),
+  );
   const trimmed = text?.trim();
   return trimmed ? trimmed : undefined;
 }
@@ -275,7 +323,7 @@ export async function askUserExecute(
         OTHER_LABEL,
         BACK_LABEL,
       ];
-      const selected = await ctx.ui.select(title, openRows);
+      const selected = await selectDialog(ctx, title, openRows);
       if (selected === undefined) return dismissedResult();
       if (selected === BACK_LABEL) {
         index -= 1;
@@ -322,7 +370,7 @@ export async function askUserExecute(
           ...(index > 0 ? [BACK_LABEL] : []),
         ];
 
-        const selected = await ctx.ui.select(title, rows);
+        const selected = await selectDialog(ctx, title, rows);
         if (selected === undefined) {
           return dismissedResult();
         }
@@ -390,7 +438,7 @@ export async function askUserExecute(
       ...(index > 0 ? [BACK_LABEL] : []),
     ];
 
-    const selected = await ctx.ui.select(title, rows);
+    const selected = await selectDialog(ctx, title, rows);
     if (selected === undefined) {
       return dismissedResult();
     }
