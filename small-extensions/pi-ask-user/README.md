@@ -90,10 +90,11 @@ depends on a decision only the user can make…") rather than a mechanics
 sentence, and the guidelines carry the batching, multi-select, recommendation,
 and do-not-ask rules.
 
-If asking still drifts under codemode-only, the remaining lever is a
+If asking still drifts under `codemode.mode: "only"`, the remaining lever is a
 `before_agent_start` handler appending one bullet to `sections.rules`
-(precedent: `pi-codemode-only`). Considered and deliberately not taken —
-revisit only with evidence that the wording alone is not enough.
+(precedent: the since-removed `pi-codemode-only` small extension). Considered
+and deliberately not taken — revisit only with evidence that the wording alone
+is not enough.
 
 ## Install
 

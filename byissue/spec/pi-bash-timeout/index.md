@@ -4,7 +4,7 @@
 
 `small-extensions/pi-bash-timeout` 是一个可选的事件钩子小扩展：给 Pi 内建 `bash`/`powershell` 前台工具补 300s 默认超时、钳制显式超大值，并在超时被杀瞬间追加引导块。不注册任何工具、不接管执行——`tool_call` + `tool_result` 两个事件钩子是它的全部表面。
 
-**发行形态：small extension，非 npm 包**（BYTE-10，2026-10-10 成员拍板）。单个 `.ts` 文件即全部运行时（`pi-bash-timeout.ts`，零运行时导入——运行时守卫直接比较 `event.toolName`，type-only import 加载即消失；jiti 直跑 TypeScript）。安装走仓库脚本（`scripts/install-small-extension.mjs`，Node 18+ 单文件；2026-10-13 由 `.sh`/`.ps1` 双平台脚本合并而来）：从 GitHub raw（main 分支）下载文件，复制进 `~/.pi/agent/extensions/`；默认方向键多选、幂等覆盖、失败非零退出（2026-10-16 起菜单默认勾选为「基线三项」，`pi-context-guard` / `pi-codemode-only` 标 `optIn` 默认不勾、菜单里附 `(opt-in)` 标记；`--all` 仍全装；非 TTY 无 `--all` 报 64）。更新 = 重跑脚本；无版本锚点、无缓存、无 `--ref`（成员定稿，作废清单：持久缓存目录、`pi install <本地路径>`、Windows 手动 clone 指引）。
+**发行形态：small extension，非 npm 包**（BYTE-10，2026-10-10 成员拍板）。单个 `.ts` 文件即全部运行时（`pi-bash-timeout.ts`，零运行时导入——运行时守卫直接比较 `event.toolName`，type-only import 加载即消失；jiti 直跑 TypeScript）。安装走仓库脚本（`scripts/install-small-extension.mjs`，Node 18+ 单文件；2026-10-13 由 `.sh`/`.ps1` 双平台脚本合并而来）：从 GitHub raw（main 分支）下载文件，复制进 `~/.pi/agent/extensions/`；默认方向键多选、幂等覆盖、失败非零退出（2026-10-16 起菜单默认勾选为「基线三项」，`pi-context-guard` / `pi-codemode-only` 标 `optIn` 默认不勾、菜单里附 `(opt-in)` 标记；`--all` 仍全装；非 TTY 无 `--all` 报 64；2026-10-28 移除 `pi-codemode-only`，现为 4 项、只剩 `pi-context-guard` 一个 opt-in）。更新 = 重跑脚本；无版本锚点、无缓存、无 `--ref`（成员定稿，作废清单：持久缓存目录、`pi install <本地路径>`、Windows 手动 clone 指引）。
 
 目录内 `package.json` 为 `private: true`、永不发布——存在仅为根 workspaces（`small-extensions/*`）把 typecheck/test 纳入 CI；`files` 字段只列单文件 + README。测试不进用户机器。
 

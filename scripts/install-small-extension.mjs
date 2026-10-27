@@ -28,7 +28,6 @@ const EXTENSIONS = [
   { source: 'small-extensions/pi-ask-user/pi-ask-user.ts', summary: 'minimal ask_user tool: 1-4 single/multi-select questions with back-navigation' },
   { source: 'small-extensions/pi-goal/pi-goal.ts', summary: 'minimal /goal: one objective per session, auto-continued until goal_done' },
   { source: 'small-extensions/pi-context-guard/pi-context-guard.ts', optIn: true, summary: 'compact at 400k on large-window models, session file in the prompt' },
-  { source: 'small-extensions/pi-codemode-only/pi-codemode-only.ts', optIn: true, summary: 'enforce codemode.mode "only": block direct tool calls' },
 ];
 
 const ERASE_LINE = '\x1b[2K';

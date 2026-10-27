@@ -8,7 +8,7 @@ Extensions here are intentionally not npm packages: no versioning ceremony for a
 
 One Node script (Node 18+) downloads the extension files from this repo (`main` branch, GitHub raw) and copies them into `~/.pi/agent/extensions/`, overwriting whatever was there. It opens with an arrow-key checklist — `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` installs — so a machine keeps only the extensions it wants. `--all` skips the menu and installs everything (for scripts, where there is no terminal).
 
-Most extensions are pre-ticked, so plain `<enter>` installs them. `pi-context-guard` and `pi-codemode-only` are `opt-in`: they start unticked (marked in the menu) because they change compaction or codemode behavior for the whole session. `space` ticks them; `--all` installs them too.
+Most extensions are pre-ticked, so plain `<enter>` installs them. `pi-context-guard` is `opt-in`: it starts unticked (marked in the menu) because it changes compaction behavior for the whole session. `space` ticks it; `--all` installs it too.
 
 ```bash
 # macOS / Linux
@@ -34,4 +34,3 @@ Restart or reload Pi afterwards; extensions in that directory load automatically
 | [`pi-ask-user`](./pi-ask-user/) | Minimal `ask_user` tool: 1–4 single- or multi-select decision questions per call with back-navigation, answered via Pi's built-in dialogs |
 | [`pi-goal`](./pi-goal/) | Minimal `/goal`: one durable objective per session, continued automatically at Pi's settle boundary until the model calls `goal_done` with evidence. The model can draft the objective itself via `goal_start` (one command, two mutually exclusive tools, event hooks only) |
 | [`pi-context-guard`](./pi-context-guard/) | Opt-in. Large-window models (>400k) compact at 400k instead of Pi's window−reserve default; the system prompt names the session file so details a compaction summary dropped stay searchable (two event hooks; registers no tools) |
-| [`pi-codemode-only`](./pi-codemode-only/) | Opt-in. Makes `codemode.mode: "only"` mean what it says on Pi ≥1.1.0: blocks direct tool calls (nested script calls pass) and rewrites the prompt's two direct-tool pointers to codemode (two event hooks; registers no tools) |
