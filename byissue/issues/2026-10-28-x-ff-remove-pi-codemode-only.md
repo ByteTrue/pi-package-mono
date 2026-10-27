@@ -20,7 +20,7 @@ epic: ""
   `package.json` / `tsconfig.json`）。
 - `scripts/install-small-extension.mjs`：`EXTENSIONS` 去掉该条目，剩 4 项
   （`pi-bash-timeout`、`pi-ask-user`、`pi-goal`、`pi-context-guard`），
-  opt-in 只剩 `pi-context-guard`。
+  默认勾选 3 项，**只有 `pi-context-guard` 是 opt-in**（菜单里标 `(opt-in)`、默认不勾）。
 - 根 `README.md`、`small-extensions/README.md`：去掉表格行与 opt-in 名单里的引用。
 - `package-lock.json`：`npm install` 重算，删掉 `node_modules/pi-codemode-only` 链接
   与 workspace 条目（`--package-lock-only` 会把它标成 `extraneous` 留着，需手动清）。
@@ -38,6 +38,9 @@ epic: ""
 
 ## 验证
 
+- 沙箱 `HOME=/tmp/px-home` + 真实 pty（`script -q /dev/null`）直接按 `<enter>`：只装
+  `pi-bash-timeout` / `pi-ask-user` / `pi-goal` 三个，`pi-context-guard` 显示
+  `○ ... (opt-in)` 并跳过。
 - `node scripts/check-small-extension-installer.mjs` → `OK (4 extensions)`
 - `npm run typecheck --workspaces --if-present` → 0 error
 - `npm test` → 全部通过（少一个 10 测试的用例集）
