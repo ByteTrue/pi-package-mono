@@ -25,7 +25,7 @@ for (const name of names) {
     errors.push(`installer does not list small extension ${name}`);
   }
 }
-for (const [, source] of installer.matchAll(/'(small-extensions\/[^']+\.ts)'/g)) {
+for (const [, source] of installer.matchAll(/'(small-extensions\/[^']+\.(?:ts|md|mjs|js))'/g)) {
   if (!existsSync(join(repoRoot, source))) errors.push(`installer lists ${source}, which does not exist`);
 }
 

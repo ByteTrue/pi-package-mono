@@ -8,20 +8,21 @@ goal: you can build, test, and submit changes correctly without asking anyone.
 An **npm workspaces** monorepo (not pnpm, not yarn) of independent extension
 packages for the [Pi coding agent](https://pi.dev). Packages are intentionally
 independent: no package depends on another, and each installs, versions, and
-releases on its own. Most packages ship as TypeScript source loaded via jiti at
-runtime; only `pi-image-gen` has a build step (its bundled Skill CLI and
-extension share compiled code).
+releases on its own. Packages ship as TypeScript source loaded via jiti at
+runtime; there is no package build step.
+
+Image generation, vision, and web access have moved to
+[Satchel](https://github.com/ByteTrue/satchel). `pi-vendor` instead lives here as
+a small extension because it owns Pi's `models.json` and `/vendor` TUI. Their old
+npm releases remain available, but the retired package sources must not return
+without a new explicit decision.
 
 ## Repository map
 
 | Path | What it is |
 | --- | --- |
-| `packages/pi-background-terminal` | `background_run` / `background_status` / `background_kill` tools + `/background` menu. Pure-background execution: built-in `bash`/`powershell` stay untouched (no foreground-timeout hook — that lives in `small-extensions/pi-bash-timeout`) |
-| `packages/pi-image-gen` | `/image-gen` TUI setup, on-demand Skill + bundled CLI. The only package with `build`/`prepack` |
+| `packages/pi-background-terminal` | `background_run` / `background_status` / `background_kill` tools + `/background` menu. Pure-background execution: built-in `bash`/`powershell` stay untouched |
 | `packages/pi-subagent` | `subagent` / `subagent_status` / `subagent_stop` tools + `/subagent` menu. Tool schemas stay tiny (~200 tokens total) |
-| `packages/pi-vendor` | AI-first `models.json` management: Skill for everyday CRUD, on-demand `vendor.mjs` script, `/vendor` cold-start wizard |
-| `packages/pi-vision` | `image_ask` tool + opt-in attachment pre-analysis + `/vision`. Auto mode stays opt-in by design |
-| `packages/pi-web-search` | `web_search` / `web_fetch` tools + `/web` setup. `npm test` auto-skips its live e2e file |
 | `small-extensions/` | Tiny single-file extensions, **not published to npm**: one subdirectory each (single `.ts` + tests + private `package.json`), installed by `scripts/install-small-extension.mjs` (Node arrow-key picker, or `--all`) from GitHub raw. In root `workspaces` only so CI typecheck/tests cover them |
 | `byissue/` | Project memory: current spec (`byissue/spec/index.md`), decisions, past epics/issues, pitfall notes. Mostly Chinese |
 | `.agents/skills/` | Project-level skills (tracked). `pi-dev-setup` regenerates this worktree's project-level Pi debug config (`.pi/settings.json` + `.pi/extensions/`); the `.pi/` outputs themselves are gitignored |
@@ -30,6 +31,7 @@ extension share compiled code).
 
 Every package has its own `README.md` (user-facing setup and behavior) and a
 sub-spec under `byissue/spec/<pkg>/` (architecture and constraints).
+`packages/` is authoritative: **two** packages exist today.
 
 ## Commands
 
@@ -38,18 +40,16 @@ All commands run from the repository root. CI uses Node 22.
 ```bash
 npm ci                                        # install; required before anything else
 npm run typecheck --workspaces --if-present   # typecheck every package (tsc --noEmit)
-npm test                                      # test every package (vitest); full run < 30s
-npm --workspace @bytetrue/<pkg> test          # one package's tests
-npm --workspace @bytetrue/<pkg> run typecheck # one package's typecheck
-npm --workspace @bytetrue/pi-image-gen run build  # the only build step in the repo
+npm test                                      # test every workspace (vitest)
+npm --workspace @bytetrue/pi-background-terminal test
+npm --workspace @bytetrue/pi-subagent run typecheck
 ```
 
 - **No lint setup** — there is no ESLint/Prettier config and CI does not lint.
   Do not add lint dependencies or config as a drive-by.
-- `pi-web-search` live e2e: `npm --workspace @bytetrue/pi-web-search run test:e2e`
-  needs real provider credentials (`live.e2e.local.json` or `BYTE_PI_WEB_E2E_CONFIG`,
-  plus `BYTE_PI_WEB_LIVE_E2E=1`). It is skipped in normal `npm test` and never runs
-  in CI. Do not run it unless asked.
+- `node scripts/check-readme-packages.mjs` and
+  `node scripts/check-small-extension-installer.mjs` keep the two install lists
+  synchronized with the directories.
 
 ## When you change something, run
 
@@ -57,42 +57,45 @@ npm --workspace @bytetrue/pi-image-gen run build  # the only build step in the r
 | --- | --- |
 | one package's code | that package's `typecheck` + `test` |
 | several packages, root config, or `tsconfig.base.json` | full `npm run typecheck --workspaces --if-present` + `npm test` |
-| `pi-image-gen` core, bundled CLI, or Skill | `npm --workspace @bytetrue/pi-image-gen run build` + `node packages/pi-image-gen/scripts/pack-smoke.mjs` |
 | any `package.json` `files`/`exports`/`bin` | `npm --workspace @bytetrue/<pkg> pack --dry-run` |
 | `byissue/` docs only | nothing; a `docs(byissue)` commit is fine |
 
-CI (`.github/workflows/ci.yml`, runs on every PR) is exactly: `npm ci` →
-workspaces typecheck → `npm test` → `pi-vendor` pack dry-run → `pi-image-gen`
-pack smoke. Match it locally and CI will be green.
+CI (`.github/workflows/ci.yml`, runs on every PR) is exactly: README/installer
+consistency gates → `npm ci` → workspaces typecheck → `npm test`. Match it
+locally and CI will be green.
 
 Tests live next to the code they cover as `src/*.test.ts` (vitest). Fix a bug
 by adding a failing test first, then the fix.
 
 ## Conventions
 
-- **Commits**: Conventional Commits, package-scoped — `feat(pi-web-search): ...`,
-  `fix(pi-subagent): ...`, `docs(byissue): ...`. Releases use
+- **Commits**: Conventional Commits, package-scoped — `feat(pi-subagent): ...`,
+  `fix(pi-background-terminal): ...`, `docs(byissue): ...`. Releases use
   `release(<pkg>): <version> - <summary>`.
 - **PRs**: no title format is enforced. A title that names the package and the
   change is enough (`feat(pi-subagent): ...` style is fine).
 - **TypeScript**: strict, `noUncheckedIndexedAccess` (index access returns
   `T | undefined`), `verbatimModuleSyntax` (use `import type`). Do not relax the
   config to make code compile; fix the code.
-- **Style**: no formatter is configured and files deliberately differ (tabs in
-  `pi-vendor`/`pi-web-search`, spaces in the other packages). Match the file you edit.
+- **Style**: no formatter is configured and files deliberately differ. Match the
+  file you edit.
 - **Architecture**: packages stay independent — never add a cross-package
   dependency. Pi tool names must be unique; do not register names taken by Pi
-  built-ins or other extensions (e.g. `web_search`).
-- **Small extensions** (`small-extensions/`): the shipped artifact is the single
-  `.ts` file itself, so it must have **zero runtime imports** (type-only imports
-  are fine) and must not import sibling repo files. Its `package.json` is
-  `private: true` and exists only for workspace CI; never add
-  `publishConfig`/`pi` fields there.
+  built-ins or other extensions.
+- **Small extensions** (`small-extensions/`): not published to npm; copied
+  directly into `~/.pi/agent/extensions/` (plus any companion files listed in
+  `scripts/install-small-extension.mjs`) and loaded by Pi without `npm install`.
+  Because `~/.pi/agent/extensions/` has no `node_modules`, they must not import
+  third-party npm packages or uncopied repo files (`node:*` built-ins and
+  type-only imports are fine; Pi host modules must be resolved from the running
+  Pi installation). Its `package.json` is `private: true` and exists only for
+  workspace CI; never add `publishConfig`/`pi` fields there.
 - **Docs are part of the change**: a user-visible behavior change also updates the
   package README and its `byissue/spec/<pkg>/index.md` sub-spec.
 - **Releases (only when explicitly asked)**: bump the package version, push tag
-  `pi-<pkg>-v<version>` (e.g. `pi-web-search-v0.5.2`); `release.yml` publishes via
-  npm OIDC Trusted Publishing. Never push release tags on your own.
+  `pi-background-terminal-v<version>` or `pi-subagent-v<version>`;
+  `release.yml` publishes via npm OIDC Trusted Publishing. Never push release
+  tags on your own.
 
 ## Reading `byissue/` before non-obvious work
 
@@ -104,7 +107,3 @@ by adding a failing test first, then the fix.
 4. `byissue/notes/` — practical pitfalls (npm workspaces trade-offs, local
    package loading, shared worktrees).
 5. `byissue/epics/`, `byissue/issues/` — historical record, not current truth.
-
-Known doc drift (2026-10-09): `byissue/spec/index.md` still says "seven packages"
-and describes `pi-browser`, which was removed from the repo on 2026-09-24.
-`packages/` is authoritative — **six** packages exist today.

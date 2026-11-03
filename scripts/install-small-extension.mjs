@@ -9,7 +9,7 @@
 // and no ref pinning: the files always come from the repo's main branch on GitHub raw.
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { emitKeypressEvents } from 'node:readline';
 
 const REPO_RAW = 'https://raw.githubusercontent.com/ByteTrue/pi-package-mono/main';
@@ -28,6 +28,14 @@ const EXTENSIONS = [
   { source: 'small-extensions/pi-ask-user/pi-ask-user.ts', summary: 'minimal ask_user tool: 1-4 single/multi-select questions with back-navigation' },
   { source: 'small-extensions/pi-goal/pi-goal.ts', summary: 'minimal /goal: one objective per session, auto-continued until goal_done' },
   { source: 'small-extensions/pi-context-guard/pi-context-guard.ts', optIn: true, summary: 'compact at 400k on large-window models, session file in the prompt' },
+  {
+    source: 'small-extensions/pi-vendor/pi-vendor.ts',
+    summary: '/vendor TUI + /vendor-ai prompt: manage providers and models in Pi models.json',
+    resources: [
+      { source: 'small-extensions/pi-vendor/scripts/vendor.mjs', destination: 'pi-vendor/scripts/vendor.mjs' },
+      { source: 'small-extensions/pi-vendor/scripts/vendor-shared.js', destination: 'pi-vendor/scripts/vendor-shared.js' },
+    ],
+  },
 ];
 
 const ERASE_LINE = '\x1b[2K';
@@ -110,20 +118,27 @@ function pick(items) {
   });
 }
 
-async function install(entry) {
-  const dest = join(EXTENSIONS_DIR, basename(entry.source));
+async function installFile(source, dest) {
   const tmp = `${dest}.tmp`;
   try {
-    const res = await fetch(`${REPO_RAW}/${entry.source}`);
-    if (!res.ok) throw new Error(`GET ${REPO_RAW}/${entry.source} failed with HTTP ${res.status}`);
+    const res = await fetch(`${REPO_RAW}/${source}`);
+    if (!res.ok) throw new Error(`GET ${REPO_RAW}/${source} failed with HTTP ${res.status}`);
     // Write beside the destination and rename: a half-written download never becomes
-    // a loadable extension (mv is the atomic last step, same as the old scripts).
+    // a loadable resource (rename is the atomic last step).
+    await fs.mkdir(dirname(dest), { recursive: true });
     await fs.writeFile(tmp, await res.text());
     await fs.rename(tmp, dest);
   } finally {
     await fs.rm(tmp, { force: true });
   }
-  console.log(`Installed ${basename(entry.source)} → ${dest}`);
+  console.log(`Installed ${basename(source)} → ${dest}`);
+}
+
+async function install(entry) {
+  await installFile(entry.source, join(EXTENSIONS_DIR, basename(entry.source)));
+  for (const resource of entry.resources ?? []) {
+    await installFile(resource.source, join(EXTENSIONS_DIR, resource.destination));
+  }
 }
 
 const args = process.argv.slice(2);

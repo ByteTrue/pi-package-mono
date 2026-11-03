@@ -1,137 +1,38 @@
 # pi-vendor
 
-## 定位
+## 当前形态
 
-`@bytetrue/pi-vendor` 是 **AI-first** 的 Pi provider/model 配置包，维护 `$PI_CODING_AGENT_DIR/models.json`（默认 `~/.pi/agent/models.json`）。该文件有意留在 agent dir 根、不迁入各包私有的 `<agent dir>/pi-pkg-cfg/`：Pi 本体启动时按固定路径读它。
+`pi-vendor` 是 **Pi 专用 small-extension**，位于 `small-extensions/pi-vendor/`。安装器提供单文件 `pi-vendor.ts`（`/vendor` TUI、内嵌 `/vendor-ai` 提示词命令与配置事务），并把 `vendor.mjs`、`vendor-shared.js` 安装到 `~/.pi/agent/extensions/pi-vendor/scripts/`。它不是 Satchel Skill，也不依赖原生 Skill 发现，不是 npm 发布包。
 
-日常 CRUD、审计与修复由随包分发的 `skills/pi-vendor/SKILL.md` 驱动，AI 使用普通 read/edit 工具做窄修改，并按需执行 bundled `scripts/vendor.mjs`。包不注册 AI tool，只提供 Skill 脚本与一个零模型也能进入的冷启动 TUI。Web 管理器、SecretRef/mask 协议、浏览器资产与 Web lifecycle 已删除。
+原 `@bytetrue/pi-vendor` npm 包的提示词内嵌在扩展中，`vendor.mjs` CLI 作为相对资源保留；package release 路径退役。旧 npm 版本仍可使用，但新开发只在 small-extension 上进行。
 
-## 用户表面
+## 为什么不是普通小工具或 Satchel 能力
 
-### AI Skill
+- 它直接拥有 Pi 的 `$PI_CODING_AGENT_DIR/models.json`（默认 `~/.pi/agent/models.json`）读写、revision 校验和保存后的 `modelRegistry.refresh()`。
+- `/vendor` 必须在 Pi interactive TUI 中运行，非交互模式只给出直接编辑文件的提示。
+- 完整 TUI 使用 `@earendil-works/pi-tui` 的分页选择组件；配置与 catalog 定位需要 Node builtins。
 
-Pi 从 package manifest 自动发现 `skills/pi-vendor/SKILL.md`。Skill 负责：
+由于 `~/.pi/agent/extensions/` 下没有独立的 `node_modules`，`pi-vendor.ts` 仅直接导入 `node:*` 内置模块，并通过定位当前运行的 Pi 安装目录按需加载宿主内置的 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-tui`，无需 `npm install` 即可直接放入 `extensions/` 使用。
 
-- 查看、增加、更新、删除、发现和审计 provider/model/modelOverrides；
-- 区分目标 provider 与官方模板来源 provider；
-- SKILL 措辞遵循 `byissue/decisions/001-positive-first-prompting.md`：正向优先，否定仅保留强默认与安全边界；`skill-contract.test.ts` 钉契约不变；
-- 模板有歧义时要求用户明确选择，不静默猜测；
-- 不编造 cost、context、capabilities、compat 等元数据；
-- 字段权威是 Pi 官方 schema 参考（`https://pi.dev/docs/latest/models-configuration` / `models.schema.json`）：新字段名/类型/取值只能来自该参考、官方模板或用户，不猜；未知字段通过校验且必须原样保留；`models[*].cost` 一旦出现必须四字段齐全，否则 Pi 拒绝整份文件；Pi 的 schema 违规是 warning + exit 0，所以离线验证必须看两条输出流；
-- exact sync 展示契约：plan 模板 stdout 输出单行 plan JSON（唯一 mutation 权威）+ 机器生成的摘要表格（add/remove 行 + kept 列表），Agent 原样转述；按 ID 的展示来自刚收到的机器输出，模型以 exact ID 命名；
-- 保留模型漂移检查：exact sync 确认阶段对 kept 模型（before ∩ after）运行 `drift`（比对当前 active Pi 内置官方 catalog，与 `catalog` 同源，不出网、无快照文件），漂移表格原样转述并逐项询问用户是否更新；漂移报告不是授权，更新走 strict in-place patch；无任何官方模板匹配的模型列 noOfficialMatch；
-- 官方模板复制时 100% 原样保留所有字段与原始键声明顺序，严禁删减（如 `allowedFallbackModels`）或人工重排；修改已有模型必须为 strict in-place patch，仅修改目标 value，其余字段与键顺序 100% 原样不动；
-- 模型变更后必须执行模型排序门禁：拉取 models.dev 快照后运行 bundled `order` 查询，得到机器生成的审计表格与 deviations/unresolved 行并原样转述；禁止凭记忆或“未移动位置”断言顺序正确。约定顺序为大系列 A-Z，系列内部按 models.dev `release_date` 升序；有任一 deviation 或 unresolved 时查询非零退出，禁止静默结束，必须主动询问用户是否整理整个文件，局部整理无意义；整理是仅重排对象、不改内部字段与键序的窄编辑，完成后重新过离线验证并复跑审计；查不到日期/系列时问用户，不猜。
-- 任何回复、diff 或工具参数都不复现 `apiKey`；
-- 每次修改后必须运行 active Pi 的 `pi --list-models --offline`，检查两条输出流没有 `errors loading models.json` warning，并验证目标模型列表变化；exact sync 还必须执行 Skill 固定 Node 模板生成且用户确认的 plan 文件、写前 stale assertion、写后 exact-set assertion 与 discovery union assertion。
+## 文件与事务边界
 
-通用 mutation tool 明确不存在：配置修改属于 AI 自己的 edit 能力。
+- 入口只注册 `/vendor` 与 `/vendor-ai`，不注册 Agent tools 或生命周期 hooks。`/vendor-ai` 通过 `registerCommand + sendUserMessage` 把内嵌提示词和用户参数发给 Agent，并在提示词中写入 bundled script 的实际绝对路径。
+- 配置写走 `readModelsSnapshot` / `commitModelsSnapshot` 的 SHA-256 optimistic lock；并发变化必须报 `config_changed`，不能覆盖。
+- 原子写、合理权限、坏配置 fail closed；保存后刷新 model registry 并报告 Pi 的兼容性错误。
+- Provider/model 编辑保持窄修改，不整份改写无关字段。
+- catalog/discovery、API/baseURL、模型默认参数和凭据配置沿用原 TUI 流程。
+- 凭据不进入 Agent 对话或状态输出；非交互 secret 输入不由 Agent 代跑。
 
-### Bundled script
+## 单文件与类型
 
-AI-facing script 固定只有四个只读查询：
-
-| 子命令 | 调用方 | 输出/边界 |
-|---|---|---|
-| `catalog <keyword> [limit]` | AI | 从 active Pi catalog 模糊搜索并移除 routing/credential 字段；空格、连字符和下划线差异可归一匹配；输出 `source: official-catalog` 与 `officialProvider`；默认 50，范围 1–100 |
-| `discover <provider-key>` | AI | 从 provider route 固定派生四种 API adapter，再追加并去重 model-level effective overrides；每条 route 只输出 API、状态和排序去重后的 upstream ID，标记 `source: upstream-discovery` |
-| `drift <provider-key> [official-provider,...]` | AI | 把 provider 已配置模型与当前 active Pi 内置官方 catalog 的模板逐字段比对（同 schema，含 compat/thinkingLevelMap 等全部非路由字段；`api`/`baseUrl`/headers/凭据等路由字段不算漂移，null 视同缺省）；模板匹配含同 ID exact 与 `vendor/id` 前缀两种，可选第二参限定官方源；配置与任一当前官方模板完全一致即为 up-to-date，对其他源的差异不再展示；输出 JSON + 机器生成 drift 表格；无任何模板匹配的模型列 noOfficialMatch；脚本自身不出网、不落盘、不触碰凭据 |
-| `order <models.dev-snapshot-file> [provider-key,...]` | AI | 读取调用方提供的 models.dev 快照文件，对每个 provider 的 `models` 数组做排序审计：系列取 id 去 `vendor/` 前缀后的首个字母串，跨系列按系列名字母序、系列内按 `release_date` 升序；同 ID 多源日期取众数并输出全部候选（conflicts），无日期/无系列列 unresolved；输出 JSON（含 `order`/`proposedOrder`/`deviations`/`unresolved`）+ 机器表格（逐模型行、deviations 表、unresolved 表），有任一 deviation 或 unresolved 时非零退出；只读、不出网、不落盘、不触碰凭据 |
-
-`lint` 与 AI-facing CRUD 子命令不存在（历史上被移除的 configured/upstream compare 语义不复活；`drift` 只做官方元数据新鲜度比对，不是它）。`set-key <provider-key>` 是独立的用户终端密钥入口：无回显输入，只更新一个 key，原子 `0600` 写入；它不属于 AI 查询协议。
-
-AI 不得用 `catalog all`、手工 route 循环或完整输出 `models.json` 替代这些查询，也不得手工抓取 models.dev 逐条比对替代 `order`。Exact sync 的本地结构化 set 运算属于 Skill 固定 Node 模板，不是第五个 bundled 命令；模板内部只读取目标 provider 的 `models`，只输出 model ID plan 与摘要表格，且固定执行计划生成、写前 stale、写后 exact-set、最终 discovery-union 四次断言。
-
-catalog 安装定位依次尝试 `PI_VENDOR_PI_ROOT`（安装前缀或 pi-coding-agent 包目录均可）、PATH 中 `pi` 的 realpath 上溯、mise/aube bin shim 文本中的包路径（`target=` 与 `$basedir` 引用）、`node_modules/.mise/@earendil-works+pi-coding-agent@*` 布局。从每个 root 出发，候选路径按 **Node 式祖先遍历**生成（逐级 `<ancestor>/node_modules/@earendil-works/pi-ai/dist/models.generated.js`，nearest-first），再补 pi-ai 嵌套在 pi-coding-agent 包内的形状；这覆盖 hoisted、pnpm/aube 虚拟 store（pi-ai 与 pi-coding-agent 在 store entry 内同级）、安装前缀与包目录四种入参。失败信息提示 `PI_VENDOR_PI_ROOT`。SKILL 要求环境失败时至多做一次文档化恢复、向用户报告后停下。`modelOverrides` 不进入 exact sync。`set-key` 只能把命令交给用户，不能由 AI 执行或把 secret 放进 stdin/argv。
-
-### `/vendor` 冷启动 TUI
-
-根菜单固定两项：
-
-1. **Add provider**：provider key → base URL → API format（4 个常用值 + Custom）→ plaintext API key → `/models` discovery / 手输 id → 官方模板候选 → 保存。
-2. **Add model**：选择已有 provider → 从 discovery / 手输 id 接入同一条选模与保存路径。
-
-每次只添加一个 provider/model，成功即结束；批量工作交给 AI。模型候选每页最多 10 行，`←/→` 翻页、`↑/↓` 移动。Esc 为零写入取消。没有 mode selector、What next 循环、删除 TUI 或 Web 入口。
-
-## API key
-
-`apiKey` 作为 literal 存入 `models.json`。普通 key 是明文；若包含 Pi 配置元字符，落盘前必须编码 `$` → `$$`、开头 `!` → `$!`，防止后续被环境展开或命令执行。Skill 不让用户把 key 发进聊天，而给出 bundled `skills/pi-vendor/scripts/vendor.mjs set-key` 命令；脚本在用户终端无回显输入，只更新一个 provider，写前检查原始 bytes 未并发变化，随机临时文件 + rename 原子写，目标与临时文件均为 `0600`；stdin 非 TTY 时直接拒绝（usage 退出码 2），永不阻塞等待管道输入。
-
-TUI 也直接收集 key，并按同一 literal encoding 落盘。不存在 env/command-only 产品承诺，也不存在浏览器 SecretRef。
-
-## 配置与保存
-
-### Document/core
-
-- strict JSON；拒绝 BOM、comments 与非 object root；root 必须含 object `providers`；
-- revision 为原始 bytes 的 `sha256:…`；
-- commit 顺序：revision 格式 → 本地 shape/duplicate 校验 → current bytes/revision → stale check → atomic write；
-- 本地 shape 校验同时镜像 Pi 加载期强制的 schema 规则：`models[*].cost` 一旦出现必须四字段齐全（`input`/`output`/`cacheRead`/`cacheWrite`）且为有限数值，`tiers` 必须是数组；`modelOverrides[*].cost` 字段各自可选但出现即必须是数值。Pi 校验整份文件，缺一个字段会让所有 provider 都不可用，所以这类错误必须在写前拦截（issue code `invalid_cost`）；
-- 新建（文件不存在）文档以 `"$schema": "https://pi.dev/schemas/models.schema.json"` 起头，供编辑器校验/补全；已存在文件的 `$schema` 无论有无都原样保留，不添加、不改写；
-- 写入 canonical `JSON.stringify(value, null, 2) + "\n"`；随机 128-bit temp 名；create/write/rename 期间保持 `0600`；失败清理 temp；
-- mutation pure functions 继续使用 `MutationResult<T>` + explicit `ConflictPolicy`，不隐式 upsert。
-
-Pi 0.79 与 0.82 没有共同的独立 `ModelRegistry` 构造 API，所以不构造 package-local oracle。TUI 保存后使用其现成 command context：`await ctx.modelRegistry.refresh()` 再 `getError()`。Skill 修改后调用 active Pi CLI 的 `pi --list-models --offline`，由当前安装版本完成 strict JSON 与 registry 验证；Pi 对 malformed models.json 可能 warning 后仍 exit 0，所以 Skill 必须检查两条输出流而非只看状态码。不静态 import 已移除的 `AuthStorage` 等窄 Pi API。
-
-### 保存后语义
-
-TUI 一次成功操作执行一次 conditional atomic commit，再一次 awaited registry refresh。refresh 后若 Pi 报错，配置已落盘且错误明确展示；不伪装成写前 rollback。Skill 每次 mutation 后必须运行 `pi --list-models --offline`，要求无 models.json loading warning，并确认目标 model ID 按请求出现或消失；失败时继续修复或恢复自己的改动，不得以不可加载配置结束。Exact sync 还要求 configured sorted ID set 与 confirmed `after` 完全相等，并要求再次 discovery 的 successful ID union 同样等于 `after`；Pi status 0 不能替代集合断言。provider-only mutation 至少要求无 warning；路由或认证变化要求所有 intended route 为 `ok`。真实 generation 因可能消耗额度，仅在用户明确要求时执行。
-
-## 模型来源
-
-### Active catalog
-
-Skill script 的 catalog 从 `PI_VENDOR_PI_ROOT` 或 PATH `pi` 定位 active Pi installation。Search query UTF-8 ≤512 bytes；limit 默认 50，范围 1–100；token 与去除空格/连字符/下划线后的文本参与匹配，按 exact/prefix/substring 稳定排序，并移除 routing/credential 字段。Skill 把“千问 3.7”一类自然称呼当成搜索意图，必要时改用 `qwen 3.7` 等 catalog 关键词重试；匹配只产生候选，不静默决定 canonical ID。TUI 与脚本共用同一 catalog 搜索实现（`src/shared/vendor-shared.js`，语义即脚本原语义：token 化 + 归一化 + exact/prefix/substring 稳定排序，排序按 id 字母序），autocomplete 只保留去重后的 model id；保存候选时复制官方 model config 并移除 provider/baseUrl/headers/apiKey/authHeader。两侧的 catalog 动态加载统一过数据形状守卫（函数/getter/setter/类实例/循环引用等非纯数据树直接拒绝）。**catalog 路径形状同样只在 `vendor-shared.js` 的 `candidateCatalogPaths` 里定义**，TUI 与脚本共用：两份各写一遍曾导致脚本补了 sibling 回退而 TUI 没补，`/vendor` 把每个模型都报成无官方模板（`byissue/issues/113-x-vendor-catalog-lookup.md`）。**catalog 不可用与「查到但无匹配」必须是两种结果**：前者是环境问题，TUI 不得声称该 id 不在官方库，只报 catalog 不可用并仍允许 minimal entry。
-
-### Discovery 安全边界
-
-- `discover <provider-key>` 先从 provider-level baseUrl/headers/authHeader 固定派生 OpenAI Completions、OpenAI Responses、Anthropic Messages 与 Google Generative AI 四种 adapter route，再追加每个 configured model 引入的不同 effective override；按 api/baseUrl/headers/authHeader 去重后并发探查。
-- 单 route 失败只在该 route 返回 `status: error`，其他成功 route 仍可用；不得把失败或未列出解释成上游不支持。credential echo 使整个 discovery fail closed。
-- discovery 中出现的 ID 是该 route 的 positive evidence；脚本不计算 configured/unconfigured/not-listed/unsupported 集合。普通列表场景 Skill 也不得推断这些集合；只有用户明确要求 exact sync 且所有 intended route 为 `ok` 时，才可通过本地结构化 set 运算生成 mutation plan。
-- http/https only；拒绝 username/password；redirect error；fetch 15 秒；credential command 10 秒/64 KiB；response 2 MiB chunked；AI-facing 输出只包含来源标签、route API、状态与模型 ID，不包含 apiKey、resolved credential、headers 或完整配置。
-- TUI：继续使用 package 内 bounded-discover core，同样按 provider API 分支，并保留 overall deadline、exact-path command preflight 与 typed errors。
-
-### Exact synchronization
-
-Exact sync 的唯一写入授权是 Skill 固定 Node 模板生成并排序的 `{"before":[],"add":[],"remove":[],"after":[]}` plan 文件；模板 stdout 在单行 plan JSON 后附带机器生成的摘要表格（add/remove 行 + kept 列表），Agent 原样展示两者。`after` 是成功 intended routes 的 model ID 去重并集，`add = after - before`，`remove = before - after`；写入依据始终来自 plan 文件与机器输出，模型以 exact ID 命名。新增项仍逐个经过 catalog source 选择，删除与 final set 必须由用户确认，整批选择解决前保持只读。确认阶段对 kept 模型运行 drift 检查（比对内置官方 catalog）并逐项询问是否更新，不阻塞 ID 集合同步本身。固定模板分别拒绝写前 `plan_stale`、写后 `plan_after_mismatch` 与最终 `discovery_union_mismatch`；Pi 可加载不能替代这些断言。`modelOverrides` 不参与 exact sync，必须走定向 update/delete。
-
-## 模板与路由
-
-- 同 id 跨 official provider 可重复；必须让用户选择模板来源。
-- 目标 provider 与模板来源 provider 是两个概念，复制模板时不复制官方 baseUrl/headers/credentials。
-- `anthropic-messages` 模型挂在 provider-level `/v1` base URL 时，model-level `baseUrl` 去掉尾部 `/v1`；`google-generative-ai` 模型挂在非 `/v1beta` 结尾的 provider `baseUrl` 时，model-level `baseUrl` 归一为 `/v1beta`（尾部 `/v1` 替换为 `/v1beta`，无后缀时追加 `/v1beta`）；其他 adapter 无明确需求不加 override。
-- 无官方模板时允许 custom model，但只记录用户明确知道的事实，不把“safe defaults”包装成官方事实。
-
-## 包边界
-
-- runtime public entry 只有 default extension registration；内部 config/model-source/TUI 类型不承诺 npm library API。
-- package manifest 分发 `src/**`、`skills/**` 与 README；无 build step、Web asset、server 或 lifecycle hook。
-- peer：`@earendil-works/pi-coding-agent >=0.79.10`；`@earendil-works/pi-tui` 跟随 Pi package 的 `*` peer 约定。
-
-## 明确不做
-
-- Web UI、loopback manager、browser modal、remote management；
-- List verb（Pi `/model` / `--list-models` 已覆盖）；
-- general mutation tools；
-- TUI 批量、编辑、删除或 key management workspace；
-- auth.json / OAuth 管理；
-- 自研实时过滤 select（Pi 原生 selector + 必要时分页足够）。
+`pi-vendor.ts` 是原生产模块的单文件 bundle，包含提示词文本，运行时不依赖原 package 目录。脚本只引用同目录 `vendor-shared.js`。`types/` 下的声明只用于 strict typecheck 和测试，不由安装器分发。测试从 package self-reference 导入单文件实现，同时用声明保留类型安全；prompt command 与 bundled CLI 也有独立测试。
 
 ## 验证
 
 ```bash
-npm --workspace @bytetrue/pi-vendor run typecheck
-npm --workspace @bytetrue/pi-vendor test
-npm --workspace @bytetrue/pi-vendor pack --dry-run
+npm --workspace pi-vendor run typecheck
+npm --workspace pi-vendor test
+node scripts/check-small-extension-installer.mjs
 ```
 
-真机 smoke 还应确认：package skill 被发现、bundled script 可从 packed package 执行、extension 不注册 AI tools、`/vendor` 的 Add provider/Add model、candidate 左右分页、Esc 零写入、保存后 awaited refresh/getError。所有 smoke 使用 isolated `PI_CODING_AGENT_DIR`，不得读写用户配置。
-
-## 证据
-
-- README：`packages/pi-vendor/README.md`
-- 当前转向 epic：`byissue/epics/003-x-vendor-ai-first/spec.md`
-- 讨论：`byissue/talks/003-vendor-ai-first.md`
-- 确定性计算进脚本、散文只留判断：`byissue/decisions/002-deterministic-work-belongs-in-script.md`
-- 被取代的双界面历史：`byissue/epics/001-x-vendor-dual-ui-manager/spec.md`
-- 被取代的 Web 产品化历史：`byissue/epics/002-x-vendor-web-productization/spec.md`
+核心测试覆盖配置事务、模型来源、catalog/discovery、TUI flows、prompt command 与 bundled CLI。真实 `/vendor` 交互测试、`/vendor-ai` 实际调用与非 TUI 降级分开记录；不把非交互 smoke 说成完整 TUI 验收。

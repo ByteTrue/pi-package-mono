@@ -2,126 +2,92 @@
 
 ## 这个项目是什么
 
-`pi-package-mono` 是个人用的 [pi coding agent](https://pi.dev) 扩展 monorepo。多数包以 TypeScript 源码通过 jiti 加载；`pi-image-gen` 因 bundled Skill CLI 与 extension 共用同一 core，发布时构建 `dist`。当前有六个能力包：
+`pi-package-mono` 是个人用的 [Pi coding agent](https://pi.dev) 扩展 monorepo。当前源码树保留 **两个独立 npm 包** 与一组 small-extensions；包以 TypeScript 源码通过 jiti 加载，没有 package build step。
 
-1. **网络检索与抓取**（`@bytetrue/pi-web-search`）：给 agent 提供 `web_search` / `web_fetch`。
-2. **自定义模型供应商管理**（`@bytetrue/pi-vendor`）：AI Skill 负责日常 `models.json` CRUD；随 Skill 按需执行的脚本提供 catalog/discovery/lint/key entry；`/vendor` 只承担零模型冷启动。
-3. **图像生成**（`@bytetrue/pi-image-gen`）：`/image-gen` 在 TUI 内完整配置，Agent 仅在需要时加载 Skill 并调用 bundled CLI；不注册常驻生成 tool。
-4. **背景终端**（`@bytetrue/pi-background-terminal`）：纯后台执行——`background_run` 立即返回 task id，退出时 followUp 唤醒（含退出码+末行）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值逃逸。内建 `bash` 是前台执行器（零触碰，仅 300s 安全网 hook）。选择轴是"要不要结果"：需要输出 → bash；脱手跑 → background_run。
-5. **让非视觉模型看图**（`@bytetrue/pi-vision`）：`image_ask` 把本地图片交给用户已配置的视觉模型；`/vision auto on` 可让 text-only 主模型在首轮调用前获得附件批量分析；`read` 撞上非视觉降级时给出引导。
-6. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：三个工具 `subagent` / `subagent_status` / `subagent_stop`，在隔离子进程会话里跑一个子任务；纯后台——调用即返回，结果以新消息送达，并行靠模型在同一条消息里发多个调用（无链式入参）。
+1. **背景终端**（`@bytetrue/pi-background-terminal`）：纯后台执行——`background_run` 立即返回 task id，退出时 followUp 唤醒（含退出码与末行）；`timeout` 默认 600s 总寿命硬杀，dev server 可传更大值。内建 `bash`/`powershell` 不被覆盖，前台 timeout 安全网属于 small-extension `pi-bash-timeout`。
+2. **轻量子智能体调度**（`@bytetrue/pi-subagent`）：`subagent` / `subagent_status` / `subagent_stop` 在隔离子进程会话里运行任务；纯后台，结果以新消息送达，并行靠同一条消息里的多个调用。
 
-> 2026-10-09：`@bytetrue/pi-browser`（原第 7 包）已从 main 整体删除，本 spec 不再描述它；历史与决策见 `byissue/epics/005-o-browser-direct-profile-target/`，其 spec 目录已并入归档。
+`small-extensions/` 是不发布 npm 的单文件扩展集合，当前包括 `pi-bash-timeout`、`pi-goal`、`pi-ask-user`、`pi-context-guard`、`pi-vendor`；它们只在 root workspaces 中以便 CI 做 typecheck/test。
 
-仓库用 **npm workspaces**（`packages/*`），不是 pnpm workspace。
+图像生成、识图与 Web 访问已迁移到 [Satchel](https://github.com/ByteTrue/satchel)。`pi-vendor` 因拥有 Pi 的 `models.json` 与 `/vendor` TUI，改为本仓 `small-extensions/pi-vendor`。四个旧 npm 版本继续可用，但原 package 源码、CI 和 release tag 已退役；历史 Epic/Issue 保留。
+
+仓库使用 **npm workspaces**（`packages/*`、`small-extensions/*`），不是 pnpm workspace。
 
 ## 当前方向
 
-- `pi-vendor` 已转为 **AI-first**：随包 Skill 做日常 provider/model CRUD，bundled script 按需提供 catalog/discovery/lint/key entry，TUI 缩为一次一个 provider/model 的冷启动路径；旧 Web 产品面已被明确 supersede 并删除。
-- `pi-web-search` 保留高频 `web_search` / `web_fetch` 与完整 `/web` 配置面；一次搜索只联系一个 provider，失败后显式重试，fetch 固定走 SSRF-safe generic transport。
-- `pi-image-gen` 是低频 Skill + bundled CLI；`/image-gen` 继续在 TUI 内闭合 built-in/custom 首次配置，所有配置写自己独立的 `<pkg-config 根>/pi-image-gen/settings.json`，从不碰 Pi 的 `settings.json`。
-- `pi-background-terminal` 提供纯后台执行 `background_run(command, timeout?)`：立即返回 task id + 输出文件路径，退出（自然/失败/timed_out）经 followUp+triggerTurn 自动唤醒 Agent（忙碌期缓冲合并）；`timeout` 默认 600s 总寿命硬杀，dev server 传大值（如 86400）逃逸。内建 `bash`/`powershell` 零触碰（仅 tool_call hook 注入 300s 默认超时的安全网）。`background_status(id)`/`background_kill(id)` 管理后台任务，`/background` 提供用户菜单。任务经 Pi 的 tracked spawn 集合随进程同生共死（正常退出/信号/崩溃全路径）；session 结束清理进程树、输出流与文件，`/reload` 保留任务；输出文件 50MiB 上限；加载时扫除 >24h 孤儿日志。
-- **`pi-vision`**：解决“主力模型没有视觉能力却需要按图工作”的诉求。`image_ask` 保留模型主动提出精确问题的路径；0.2.0 新增 opt-in 附件预分析，把 `before_agent_start.images` 在首轮主模型调用前批量交给所选视觉模型。自动模式默认关闭，不处理 TUI 粘贴后形成的路径文本，并受 project trust、数量/总字节与 60 秒 deadline 约束。
-- 近期优先：五个扩展的维护、回归与按需发版。
+- 维护 background terminal、subagent 与 small-extensions 的独立性、回归和按需发版。
+- 高频 Agent 工具保持小而显式；用户菜单负责 `/background`、`/subagent` 的配置与状态闭环。
+- 小扩展維持不发 npm、直接复制进 `~/.pi/agent/extensions/` 即可运行（无需 `npm install`），因此不依赖第三方 npm 包或未随同安装的仓库文件（`node:*` 内置模块始终可用）。
+- 已迁移能力只在 Satchel 继续演化，避免两个仓库的协议与配置实现漂移。
 
 ## 能力地图
 
-- **搜网页 / 抓页面** → 读 [`pi-web-search/`](pi-web-search/index.md)
-- **管理自定义 provider / model** → 读 [`pi-vendor/`](pi-vendor/index.md)
-- **生成图像** → 读 [`pi-image-gen/`](pi-image-gen/index.md) 与 `packages/pi-image-gen/README.md`
-- **跑命令 / 后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md)；纯后台 background_run + 两个管理工具
-- **让非视觉模型看图** → 读 [`pi-vision/`](pi-vision/index.md)；`image_ask` 精确问图 + opt-in 附件预分析 + `/vision` 配置
-- **让长任务自驱动到完成** → 读 [`pi-goal/`](pi-goal/index.md)；small-extension `/goal <objective>` + `goal_done`（证据驱动停止），非 npm 包
-- **本地开发与测试** → 根 `README.md`；包级脚本用 `npm --workspace <name> ...`
-- **历史审计与旧流程证据** → [`byissue/archive/codestable-legacy/`](../archive/codestable-legacy/)（只读档案，不是当前真相）
-
-## 使用路径
-
-- **给 pi 装本地扩展**：`pi install /abs/path/to/packages/<pkg>` 或 `pi -e ...` 试跑。
-- **改搜索行为或安全边界**：先读 web-search 子 spec，再改 `packages/pi-web-search`；验证 `npm --workspace @bytetrue/pi-web-search test`。
-- **改 image-gen 配置/Skill/CLI**：先读 image-gen 子 spec；保持 TUI 配置闭环、专用 `settings.json` 存储与无常驻 Agent tool。
-- **改 models.json 管理语义**：先读 vendor 子 spec；日常行为由 package Skill + bundled script 定义，冷启动行为在 TUI，配置事务与模型来源语义仍在共享 core。
-- **改 background terminal**：先读 background-terminal 子 spec，再改 `packages/pi-background-terminal`；至少验证 typecheck、test、pack dry-run 与真实 Pi 回归。
-- **发 background terminal npm 版**：bump `packages/pi-background-terminal/package.json` 版本后，push tag `pi-background-terminal-v<version>`；GitHub Actions `release.yml` 走 npm Trusted Publishing 自动发布。
-- **发 pi-vision npm 版**：bump `packages/pi-vision/package.json` 版本后，push tag `pi-vision-v<version>`；同一 OIDC workflow 自动发布。
-- **查“以前为什么这么定”**：closed epic/issue 在 `byissue/epics/`、`byissue/issues/`；完整旧 design/review 在 archive。
+- **后台任务** → 读 [`pi-background-terminal/`](pi-background-terminal/index.md) 与 `packages/pi-background-terminal/README.md`
+- **子智能体** → 读 [`pi-subagent/`](pi-subagent/index.md) 与 `packages/pi-subagent/README.md`
+- **前台 shell 300s 安全网** → 读 [`pi-bash-timeout/`](pi-bash-timeout/index.md)
+- **长任务自驱动** → 读 [`pi-goal/`](pi-goal/index.md)
+- **vendor TUI、提示词命令与 models.json 事务** → 读 [`pi-vendor/`](pi-vendor/index.md) 与 `small-extensions/pi-vendor/README.md`
+- **小扩展安装与开发** → 根 `README.md`、`small-extensions/`、`scripts/install-small-extension.mjs`
+- **历史决策与已迁移能力** → `byissue/epics/`、`byissue/issues/`、`byissue/decisions/`
 
 ## 架构落点
 
 | 包 | 支撑路径 | 配置位置 |
 |---|---|---|
-| `@bytetrue/pi-web-search` | agent 工具 `web_search`/`web_fetch`、`/web` | `<pkg-config 根>/pi-web-search/config.json`（根 = `$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`）；老位置 `~/.pi/byte-pi-web/config.json` 只读回退 |
-| `@bytetrue/pi-vendor` | Skill `pi-vendor`、按需脚本 `vendor.mjs`、冷启动命令 `/vendor` | `$PI_CODING_AGENT_DIR/models.json` 或 `~/.pi/agent/models.json`（有意留在 agent dir 根：Pi 本体启动要读） |
-| `@bytetrue/pi-image-gen` | `/image-gen`、按需 Skill `pi-image-gen`、bundled CLI；零常驻 Agent tool | `<pkg-config 根>/pi-image-gen/settings.json`；老位置 `<agent dir>/pi-image-gen/settings.json` 只读回退 |
-| `@bytetrue/pi-background-terminal` | bash 覆盖（`waitSeconds`）+ `background_status`/`background_kill` + 用户菜单 `/background` | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
-| `@bytetrue/pi-vision` | 工具 `image_ask`、命令 `/vision`、`before_agent_start` / `tool_result` hooks | `<pkg-config 根>/pi-vision/settings.json` 的 `model` 与 `autoAnalyzeAttachments`（`/vision` 写全局层；可信 `<project>/.pi/pi-pkg-cfg/pi-vision/settings.json` 可覆盖且只读）；老位置 Pi `settings.json` 的 `pi-vision` 节只读回退 |
-| `@bytetrue/pi-subagent` | 工具 `subagent` / `subagent_status` / `subagent_stop`（单任务、纯后台、并行 = 同一条消息多条调用） | `<pkg-config 根>/pi-subagent/settings.json` 的 `defaultModel` / `defaultThinking` / `agents[角色]` / `env`（子进程环境变量透传）；project 层 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`；老位置 Pi `settings.json` 的 `subagent` 节只读回退；模型/思考强度只由用户配置与父会话继承决定，角色文档按需读 `.pi/agents/*.md` 与 `<agent dir>/agents/*.md` |
+| `@bytetrue/pi-background-terminal` | 独立工具 `background_run` / `background_status` / `background_kill`，用户菜单 `/background` | 无独立持久配置；任务元数据在当前 Pi session 内存，输出落盘在 `$TMPDIR/pi-background-terminal/` |
+| `@bytetrue/pi-subagent` | 工具 `subagent` / `subagent_status` / `subagent_stop` | `<pkg-config 根>/pi-subagent/settings.json` 的 `defaultModel` / `defaultThinking` / `agents[角色]` / `env`；可信项目层 `<project>/.pi/pi-pkg-cfg/pi-subagent/settings.json`；角色文档按需读取 `.pi/agents/*.md` 与 `<agent dir>/agents/*.md` |
 
-六包互不依赖；共同约定是：原子写 + 合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
+包之间不依赖；共同约定是原子写、合理文件权限、不污染进程全局 fetch、失败不静默毁掉用户配置，以及局部能力不偷渡成 Pi core 依赖。
+
+## 使用与发布路径
+
+- **本地扩展开发**：`pi install /abs/path/to/packages/<pkg>` 或 `pi -e ...` 试跑。
+- **改 background terminal**：先读其子 Spec；至少验证 typecheck、test、pack dry-run 与真实 Pi 回归。
+- **改 subagent**：先读其子 Spec；验证 typecheck/test 与工具 schema、后台通知路径。
+- **发 npm 版**：仅保留 `pi-background-terminal-v<version>` 与 `pi-subagent-v<version>` 两类 tag，由 `.github/workflows/release.yml` 通过 npm Trusted Publishing 发布。
+- **安装 small-extension**：`scripts/install-small-extension.mjs` 从 GitHub raw 安装单文件；installer 列表与目录由 CI gate 保持一致。
 
 ## 统一语言
 
 - **workspace 包**：`packages/*` 下的 npm package；脚本用 `npm --workspace`。
-- **project spec**：当前仍然成立的项目真相（本树）。
+- **small-extension**：`small-extensions/*` 下的私有单文件扩展，不发布 npm。
+- **project spec**：当前仍成立的项目真相（本树）。
 - **epic**：有边界的大变化活规格；关闭后结论毕业到 project spec。
 - **issue**：一次可关闭的行动（feature / bug / chore / explore）。
-- **archive / legacy**：旧 `.codestable` 全量迁入的只读证据，不当作活状态机。
-- **pkg-config 根**：`$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`；本仓包私有配置的唯一写入位置（`pi-vendor` 的 `models.json` 是有意豁免）。定案见 `byissue/decisions/004-pkg-config-dir.md`。
-- **legacy 回退**：迁移前的位置只读、只回退、永不搬迁；新文件一存在老位置即永久不再参与读取。生效值来自老路径时，状态输出与报错写明 `legacy (read-only fallback): <path>`。
-- **整节迁移**：该层新文件缺失且老位置有数据时，先把老内容**完整**原子写进新文件再套本次改动；只搬要改的键会静默丢数据。首读迁移与交互写前迁移共用同一入口。
-
-## 阅读路径
-
-- 新人理解仓库：本页 → 五个包的 README / 子 spec → 根 README
-- 改 web-search：[`pi-web-search/index.md`](pi-web-search/index.md)
-- 改 pi-vendor：[`pi-vendor/index.md`](pi-vendor/index.md)
-- 改 pi-image-gen：[`pi-image-gen/index.md`](pi-image-gen/index.md)
-- 改 background terminal：[`pi-background-terminal/index.md`](pi-background-terminal/index.md)
-- 改 pi-vision：[`pi-vision/index.md`](pi-vision/index.md)
-- 追溯已被取代的 dual-UI / Web 决策：closed epic [`byissue/epics/001-x-vendor-dual-ui-manager/spec.md`](../epics/001-x-vendor-dual-ui-manager/spec.md) 与 [`byissue/epics/002-x-vendor-web-productization/spec.md`](../epics/002-x-vendor-web-productization/spec.md)
-- 追溯当前 AI-first 转向：epic [`byissue/epics/003-x-vendor-ai-first/spec.md`](../epics/003-x-vendor-ai-first/spec.md)
+- **pkg-config 根**：`$PI_PKG_CFG_DIR` 或 `<agent dir>/pi-pkg-cfg`；本仓包私有配置的唯一写入位置。
+- **legacy 回退**：迁移前的位置只读、只回退、永不搬迁；新文件一存在老位置即不再参与读取。生效值来自老路径时，状态输出与报错写明 `legacy (read-only fallback): <path>`。
 
 ## 当前边界
 
 **做**
 
-- 维护六个扩展，并按需回归与发版
-- 安全/正确性回归（SSRF、密钥权限、配置损坏保护、revision 冲突）
-- 以 package-only 方式提供后台执行：三个独立且只含必填参数的 Agent 工具、输出落盘、session-scoped cleanup、自然完成自动通知、`/background` 用户菜单，全程不覆盖任何 Pi 原生工具
-- 用新 CodeStable（`byissue/`）承载真相、epic、issue、notes
+- 维护两个包与 small-extensions，并按需回归和发版。
+- 安全/正确性回归（密钥权限、配置损坏保护、revision 冲突、后台生命周期）。
+- 以 package-only 方式提供后台执行与子智能体，不覆盖 Pi 原生工具。
+- 用 ByIssue（`byissue/`）承载真相、epic、issue、notes。
 
 **不做**
 
-- 不把 monorepo 变成通用 agent 平台或插件市场
-- 不把旧 `.codestable` 流程工具当现行协议
-- 不为 TUI 自研终端鼠标协议；不为 vendor 做常驻 daemon / 远程管理面板
-- 不为 background terminal 依赖 tmux、PTY、core 改造或跨 Pi 退出持久化
-- 不在未授权时 push、发布、改用户本机配置
+- 不恢复 image-gen/vision/web-search 的普通 package，也不把 vendor 迁往 Satchel，除非有新的明确决策。
+- 不把 monorepo 变成通用 Agent 平台或插件市场。
+- 不为 background terminal 依赖 tmux、PTY、core 改造或跨 Pi 退出持久化。
+- 小扩展不得添加 npm 发布配置，也不得静态 import 第三方 npm 包或未随安装器复制的仓库文件。
+- 不在未授权时 push、发布、改用户本机配置。
 
 ## 架构考量
 
-- **默认源码直装，单一例外**：多数扩展以 TS 源 + jiti 加载；`pi-image-gen` 构建 `dist`，让 extension 与 bundled Skill CLI 共享同一生产 core，不复制 provider 实现。
-- **Worktree extension 隔离**：新 worktree 默认没有 `node_modules`，且 Pi 对 local package 按绝对路径判 identity；repo 不提交 `.pi/settings.json` 自动加载 workspace package，避免启动期缺依赖及与用户级来源重复注册 tools。`byspace.json` 在 worktree 创建后异步执行 `npm ci` 做开发环境准备；测试当前 worktree 源码前须等 setup 完成，再停用同名全局来源并隔离加载。
+- **源码直装**：两个包均以 TS 源 + jiti 加载，无构建产物需要同步。
+- **Worktree extension 隔离**：新 worktree 默认没有 `node_modules`；`.pi/settings.json` 由 `pi-dev-setup` 在 `npm ci` 后生成且不跟踪，避免启动期缺依赖及与全局同名包重复注册。
 - **包隔离**：proxy、fetch dispatcher 不改全局，避免多扩展互踩。
-- **background terminal 走 package-only**：复用 Pi 官方的 `createLocalBashOperations` 与内建 `read`，不重新实现 shell backend 或分页读取；不覆盖任何 Pi 原生工具，不把能力偷渡成 tmux 或 Pi core 依赖。
 - **配置 fail-closed 写路径**：运行时可读可 soft-fail；交互写配置必须先证明基底有效。
-- **包私有配置收在 `<pkg-config 根>`**：本仓包自己读写的文件进 `<agent dir>/pi-pkg-cfg/<包名>/`（vision / subagent 另有 local 的 `<project>/.pi/pi-pkg-cfg/<包名>/settings.json` 项目层，受信任闸约束）；Pi 本体按固定路径读的 `settings.json` / `models.json` / `mcp.json` / `auth.json` 留在 agent dir 根。**不为此新开共享包**——四个包各留约十行路径解析，互不依赖比抽公共运行时值；防漂移靠测试里的同一组场景断言。
+- **项目级 Pi 配置由 Skill 生成**：`.agents/skills/pi-dev-setup/setup.mjs` 扫描当前包生成 `.pi/settings.json` 并复制小扩展；产物漂移靠重跑而非手改。
 - **真相分层**：稳定结论进 project spec；一次执行进 issue；大变更线进 epic；旧流水与 gate JSON 进 archive。
-- **项目级 Pi 配置由 Skill 生成，不跟踪**：`.pi/` 整目录不入库；`.agents/skills/pi-dev-setup/setup.mjs`（幂等）扫描有 `pi` 字段的包生成 `.pi/settings.json`（本地路径条目 + 同名 npm 屏蔽条目成对出现）并复制小扩展进 `.pi/extensions/`。新 worktree 跑一次 Skill 即得完整本地调试面，产物漂移靠重跑而非手改。
 
 ## 证据索引（按需）
 
-- 根 `package.json` workspaces、`npm test`
-- BySpace worktree 准备：`byspace.json`
+- 根 `package.json` workspaces、`npm test`、`.github/workflows/ci.yml`
+- 当前包：`packages/pi-background-terminal`、`packages/pi-subagent`
 - 本地 package / worktree 加载边界：`byissue/notes/005-pi-local-package-loading.md`
-- 面向 LLM 的工具文案在 `codemode.mode: "only"` 下的落点：`byissue/notes/019-hidden-tool-guidelines-skip-rules.md`（hidden declaration 的 guidelines 进不了 `<rules>`，只有 description 保证渲染）；ask_user 据此改为触发优先：`byissue/issues/119-x-ff-ask-user-trigger-first-wording.md`（原 `pi-codemode-only` 小扩展已于 2026-10-28 移除，但「hidden declaration 只保证 description 渲染」这条 Pi 机制本身仍在，note 019 继续有效）
-- `packages/pi-web-search`、`packages/pi-vendor`、`packages/pi-image-gen`、`packages/pi-background-terminal`、`packages/pi-vision`
-- pi-ask-user 历史：曾为 npm 包后按 minimal-tool 原则删除（`byissue/issues/043-x-ff-ask-user-question.md`、`byissue/issues/047-x-ff-remove-pi-ask-user.md`）；2026-10-11 以最小单文件 small-extension 形态回归（`small-extensions/pi-ask-user/`，`byissue/issues/113-x-ff-ask-user-small-extension.md`），2026-10-16 扩充为统一 `questions[]` 入参（1–4 题批量提问、第 2..N 题带 `← Back to previous question` 回退改答案、`multiple: true` 多选勾选 + `Other` 并入已选集合，`byissue/issues/2026-10-16-x-ff-ask-user-batch-and-multiselect.md`）；形态边界：纯内置对话框状态机（TUI + RPC 通用，零运行时 import）、plain JSON Schema、无自定义 TUI/超时/配置/print 通道；2026-10-28 修 Windows Terminal 挂起：每个对话框都用 `ui.setWorkingVisible(false)` 包住并在 `finally` 里恢复（转圈 Loader 的 80ms 全屏重绘在对话框等待期间是纯浪费，一小时量级会拖垮终端），已知局限（只覆盖 ask_user、恢复的是 Pi 默认值、终端侧根因归属上游）写在 `small-extensions/pi-ask-user/README.md`
-- pi 依赖升级至 1.1.0 与两个新 small-extension（`pi-context-guard`、已移除的 `pi-codemode-only`）：`byissue/issues/116-x-pi-1.1.0-and-two-small-extensions.md`；踩坑记录 `byissue/notes/017-before-agent-start-normalized-options.md`、`byissue/notes/018-allow-scripts-exact-version-keys.md`
-- pi-context-guard 保持纯运行时 400k 守护与弃用配置改写路线的原因记录：`byissue/issues/117-d-ff-context-guard-slash-command.md`
-- 图像生成 fork 许可及归因：`packages/pi-image-gen/LICENSE`、`packages/pi-image-gen/NOTICE`
-- background terminal 历史重写：`byissue/issues/025-x-background-terminal-package.md`（第一版 PTY）、`byissue/issues/037-x-background-terminal-tool-selection.md`（第二版文案调优）、`byissue/issues/038-x-background-terminal-bash-override-redesign.md`（第二版覆盖 bash）；当前独立工具：`byissue/issues/039-x-background-terminal-standalone-tools.md`；不限时、清理与用户菜单：`byissue/issues/042-x-background-terminal-menu-lifecycle.md`
-- Pi 本地包加载坑点：`byissue/notes/005-pi-local-package-loading.md`
+- background terminal 历史：`byissue/issues/039-x-background-terminal-standalone-tools.md`、`byissue/issues/042-x-background-terminal-menu-lifecycle.md`
 - 自动发布工作流：`.github/workflows/release.yml`
-- 迁移映射：`byissue/archive/MIGRATION.md`
-- 旧体系全量：`byissue/archive/codestable-legacy/`
+- 旧体系与已迁移能力的完整历史：`byissue/archive/`、`byissue/epics/`、`byissue/issues/`

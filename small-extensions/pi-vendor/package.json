@@ -1,0 +1,32 @@
+{
+  "name": "pi-vendor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Small extension (never published to npm): /vendor interactive wizard and /vendor-ai prompt command for Pi models.json, with relative bundled scripts. Installed as one TypeScript file by scripts/install-small-extension.mjs.",
+  "type": "module",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./pi-vendor.ts"
+    }
+  },
+  "files": [
+    "pi-vendor.ts",
+    "scripts/**",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.1.0",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.11"
+  }
+}

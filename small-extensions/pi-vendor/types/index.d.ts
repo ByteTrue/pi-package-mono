@@ -1,0 +1,17 @@
+export { default } from "./src/index.js";
+export * from "./src/command.js";
+export * from "./src/config-core.js";
+export * from "./src/config-document.js";
+export * from "./src/fuzzy.js";
+export * from "./src/models-json.js";
+export * from "./src/model-source/bounded-discover.js";
+export * from "./src/model-source/catalog-search.js";
+export * from "./src/model-source/config-resolver.js";
+export * from "./src/model-source/enrich.js";
+export * from "./src/model-source/model-source-error.js";
+export * from "./src/model-source/official-catalog.js";
+export * from "./src/tui/model-pick.js";
+export * from "./src/tui/quick-adapter.js";
+export * from "./src/tui/quick-add-model.js";
+export * from "./src/tui/quick-add-provider.js";
+export * from "./src/tui/quick-root.js";

@@ -32,6 +32,3 @@ jobs:
       - run: npm run typecheck --workspaces --if-present
       # Run every workspace's test suite (vitest).
       - run: npm test
-      # Verify the source-loaded vendor extension and bundled skill are publishable.
-      - run: npm --workspace @bytetrue/pi-vendor pack --dry-run
-      - run: node packages/pi-image-gen/scripts/pack-smoke.mjs
