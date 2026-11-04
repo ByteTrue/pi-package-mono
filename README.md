@@ -4,6 +4,13 @@
 
 <h1 align="center">Pi Package Mono</h1>
 
+> [!IMPORTANT]
+> **This repository is archived and read-only.** It was split into two repositories:
+> - [`ByteTrue/pi-extensions-collection`](https://github.com/ByteTrue/pi-extensions-collection) — the drop-in extensions that used to live in `small-extensions/`, plus `pi-background-terminal`, all copied into `~/.pi/agent/extensions/` by one installer. No npm.
+> - [`ByteTrue/pi-subagent`](https://github.com/ByteTrue/pi-subagent) — the subagent extension, installed from git: `pi install git:github.com/ByteTrue/pi-subagent`.
+>
+> Nothing here is published to npm anymore; the `release.yml` workflow below is kept only as history.
+
 <!-- Decision record (BYTE-14): the slogan/tagline above is final — "delegated subagents" is the origin/BYTE-2 wording, concluded in b6d28c7f's README conflict resolution. Keep it on future README conflicts; do not re-litigate. -->
 <p align="center">
   Focused extensions for <a href="https://pi.dev">Pi</a>: background processes, an optional shell timeout cap, and delegated subagents.
@@ -81,7 +88,7 @@ In the menu: `↑`/`↓` move, `space` toggles, `a` toggles all, `enter` install
 | [`pi-bash-timeout`](small-extensions/pi-bash-timeout) | Optional 300s default-and-cap for the built-in `bash`/`powershell` tools (two event hooks; registers no tools) |
 | [`pi-ask-user`](small-extensions/pi-ask-user) | Minimal `ask_user` tool: one decision question per call with typed options, answered via Pi's built-in dialogs |
 | [`pi-goal`](small-extensions/pi-goal) | Minimal `/goal`: one durable objective per session, auto-continued at the settle boundary until the model calls `goal_done` with evidence. The model can also draft the objective itself via `goal_start` |
-| [`pi-context-guard`](small-extensions/pi-context-guard) | **Opt-in.** Compact above 400k context on large-window models; name the session file in the system prompt so compaction-lost details stay searchable |
+| [`pi-context-guard`](small-extensions/pi-context-guard) | **Opt-in.** Compact above 400k on large-window models, name the session file in the system prompt, and deterministically prune stale tool outputs with `ctx_reduce` / `ctx_search` / `ctx_expand` |
 | [`pi-vendor`](small-extensions/pi-vendor) | Pi-specific `/vendor` TUI plus the `/vendor-ai` prompt command and relative bundled scripts, with catalog/discovery and atomic `models.json` updates |
 
 ## How the packages fit Pi
